@@ -49,3 +49,20 @@ jobs:
         - pip install tox
       script:
         - tox -e behave
+    - name: Subtitle toolkit unit tests
+      install:
+        - pip install tox
+      script:
+        - tox -e subtitle
+    - name: Subtitle toolkit end-to-end
+      addons:
+        apt:
+          packages:
+            - ffmpeg
+            - tesseract-ocr
+            - tesseract-ocr-chi-tra
+            - fonts-noto-cjk
+      install:
+        - pip install tox
+      script:
+        - tox -e subtitle-e2e

@@ -75,9 +75,13 @@ def detect_band(video_path, samples=120, spec=None, search_top=0.55,
                                      width, height)
     top = region[1]
 
+    # Accumulate the full row x column profile, not just the two margins.
+    # The horizontal extent has to be measured *inside* the band that ends up
+    # being chosen -- measuring it across the whole search area lets a station
+    # logo or a passing highlight elsewhere in the frame decide where the
+    # subtitle starts and ends, which silently clips text off both sides.
     step = max(info["duration"] / float(samples), 0.5)
-    rows = np.zeros(height - top, dtype=np.float64)
-    cols = np.zeros(width, dtype=np.float64)
+    profile = np.zeros((height - top, width), dtype=np.float64)
     taken = 0
     for index in range(samples):
         ts = step * index
@@ -89,15 +93,14 @@ def detect_band(video_path, samples=120, spec=None, search_top=0.55,
         mask = stable_text_mask(frames, spec)
         if mask is None:
             continue
-        rows += mask.sum(axis=1)
-        cols += mask.sum(axis=0)
+        profile += mask
         taken += 1
     if taken == 0:
         raise RuntimeError("could not sample any frame from %s" % video_path)
-    rows /= taken
-    cols /= taken
+    profile /= taken
+    rows = profile.sum(axis=1)
 
-    region, ranked = region_from_profile(rows, cols, top, width, height,
+    region, ranked = region_from_profile(profile, top, width, height,
                                          min_hits=min_hits,
                                          max_band=max_band)
     return {
@@ -109,9 +112,9 @@ def detect_band(video_path, samples=120, spec=None, search_top=0.55,
     }
 
 
-def region_from_profile(rows, cols, top, width, height,
+def region_from_profile(profile, top, width, height,
                         min_hits=0.04, max_band=220, pad=6):
-    """Turn per-row/per-column ink profiles into a proposed crop box.
+    """Turn a row x column ink profile into a proposed crop box.
 
     Split out of detect_band so it can be exercised without decoding a video.
     That matters: this is the arithmetic where a candidate band's height once
@@ -119,7 +122,13 @@ def region_from_profile(rows, cols, top, width, height,
     the returned box to 2px -- a bug no amount of reading the profile code
     would reveal, because the profile was right and only the last few lines
     were wrong.
+
+    Takes the whole 2D profile rather than pre-summed margins because the
+    horizontal extent must be measured inside the chosen band; a column
+    profile summed over the entire search area lets ink from elsewhere in the
+    frame decide where the subtitle begins and ends.
     """
+    rows = profile.sum(axis=1)
     threshold = max(rows.max() * min_hits, 1.0)
     bands = []
     start = None
@@ -158,6 +167,7 @@ def region_from_profile(rows, cols, top, width, height,
     y0 = max(top + lo - pad, 0)
     y1 = min(top + hi + pad, height)
 
+    cols = profile[lo:hi, :].sum(axis=0)
     col_thresh = max(cols.max() * 0.02, 0.5)
     xs = np.nonzero(cols >= col_thresh)[0]
     if len(xs):

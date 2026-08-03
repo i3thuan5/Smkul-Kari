@@ -195,57 +195,68 @@ class TestRegionFromProfile(unittest.TestCase):
     HEIGHT = 1080
     TOP = 594
 
-    def _profiles(self):
-        rows = np.zeros(self.HEIGHT - self.TOP, dtype=np.float64)
+    def _profile(self):
+        prof = np.zeros((self.HEIGHT - self.TOP, self.WIDTH),
+                        dtype=np.float64)
         # strongest band, but deliberately NOT the last one in row order
-        rows[300:350] = 100.0
+        prof[300:350, 100:1800] = 100.0 / 1700
         # a weaker, shorter band below it -- the last loop iteration, and
         # the value that used to leak out and clamp the result
-        rows[360:400] = 50.0
-        cols = np.zeros(self.WIDTH, dtype=np.float64)
-        cols[100:1800] = 10.0
-        return rows, cols
+        prof[360:400, 100:1800] = 50.0 / 1700
+        return prof
 
     def test_box_covers_the_strongest_band(self):
-        rows, cols = self._profiles()
         region, _ = subs2srt.region_from_profile(
-            rows, cols, self.TOP, self.WIDTH, self.HEIGHT)
+            self._profile(), self.TOP, self.WIDTH, self.HEIGHT)
         x, y, w, h = region
         self.assertEqual(y, self.TOP + 300 - 6)
         self.assertEqual(h, 50 + 2 * 6)
 
     def test_box_is_not_clamped_by_a_later_shorter_band(self):
-        rows, cols = self._profiles()
         region, _ = subs2srt.region_from_profile(
-            rows, cols, self.TOP, self.WIDTH, self.HEIGHT)
+            self._profile(), self.TOP, self.WIDTH, self.HEIGHT)
         # the trailing band is 40px tall; a collapsed box would be <= that
         self.assertGreater(region[3], 40)
 
     def test_ranked_candidates_are_ordered_by_weight(self):
-        rows, cols = self._profiles()
         _, ranked = subs2srt.region_from_profile(
-            rows, cols, self.TOP, self.WIDTH, self.HEIGHT)
+            self._profile(), self.TOP, self.WIDTH, self.HEIGHT)
         self.assertEqual(len(ranked), 2)
         self.assertEqual(ranked[0]["y"], self.TOP + 300)
         self.assertGreater(ranked[0]["weight"], ranked[1]["weight"])
 
     def test_box_stays_inside_the_frame(self):
-        rows = np.zeros(self.HEIGHT - self.TOP, dtype=np.float64)
-        rows[-40:] = 100.0                    # band flush with the bottom
-        cols = np.zeros(self.WIDTH, dtype=np.float64)
-        cols[:] = 10.0
+        prof = np.zeros((self.HEIGHT - self.TOP, self.WIDTH),
+                        dtype=np.float64)
+        prof[-40:, :] = 100.0 / self.WIDTH    # band flush with the bottom
         region, _ = subs2srt.region_from_profile(
-            rows, cols, self.TOP, self.WIDTH, self.HEIGHT)
+            prof, self.TOP, self.WIDTH, self.HEIGHT)
         self.assertLessEqual(region[1] + region[3], self.HEIGHT)
         self.assertLessEqual(region[0] + region[2], self.WIDTH)
 
     def test_collapsed_box_is_refused_rather_than_returned(self):
-        rows, cols = self._profiles()
         with self.assertRaises(RuntimeError):
             # a frame height smaller than the band forces the collapse the
             # shadowing bug used to cause, and it must not pass silently
-            subs2srt.region_from_profile(rows, cols, self.TOP,
+            subs2srt.region_from_profile(self._profile(), self.TOP,
                                          self.WIDTH, 40)
+
+    def test_width_comes_from_the_chosen_band_only(self):
+        """Ink elsewhere in the frame must not set the horizontal extent.
+
+        Measuring columns across the whole search area let a wide band the
+        detector did not pick decide where the subtitle starts and ends,
+        clipping text off both sides of the band it did pick.
+        """
+        prof = np.zeros((self.HEIGHT - self.TOP, self.WIDTH),
+                        dtype=np.float64)
+        prof[300:350, 100:800] = 100.0 / 700     # chosen band: narrow, left
+        prof[360:400, 1000:1900] = 50.0 / 900    # other band: wide, right
+        region, _ = subs2srt.region_from_profile(
+            prof, self.TOP, self.WIDTH, self.HEIGHT)
+        x, _, w, _ = region
+        self.assertLess(x, 100)                  # starts near the band's ink
+        self.assertLess(x + w, 900)              # and stops well before 1000
 
 
 class TestBandPresence(unittest.TestCase):
@@ -783,7 +794,42 @@ def check_odd_region(video, fps=5.0):
     return seen
 
 
+def require_fixture_tools():
+    """Fail loudly on a missing dependency instead of on its symptoms.
+
+    Without a CJK font libass silently renders every Chinese glyph as a tofu
+    box. The pipeline then behaves plausibly -- it finds a band, cuts cues,
+    runs OCR -- and only the final text comparison looks wrong, which reads
+    exactly like a regression in the code under test. Diagnosing that from
+    the symptoms costs far more than this check.
+    """
+    missing = []
+    for tool in ("ffmpeg", "tesseract"):
+        found = subprocess.run(["which", tool], stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL)
+        if found.returncode != 0:
+            missing.append(tool)
+
+    langs = subprocess.run(["tesseract", "--list-langs"],
+                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    if b"chi_tra" not in langs.stdout:
+        missing.append("tesseract-ocr-chi-tra")
+
+    fonts = subprocess.run(["fc-list"], stdout=subprocess.PIPE,
+                           stderr=subprocess.DEVNULL)
+    if b"CJK" not in fonts.stdout:
+        missing.append("fonts-noto-cjk (否則中文會渲染成豆腐塊)")
+
+    if missing:
+        raise SystemExit(
+            "end-to-end 測試缺少系統相依：\n  - %s\n"
+            "安裝：sudo apt-get install ffmpeg tesseract-ocr "
+            "tesseract-ocr-chi-tra fonts-noto-cjk\n"
+            "（只跑單元測試請加 --quick）" % "\n  - ".join(missing))
+
+
 def end_to_end(keep=None):
+    require_fixture_tools()
     tmpdir = keep or tempfile.mkdtemp(prefix="subs2srt-selftest-")
     os.makedirs(tmpdir, exist_ok=True)
     print("fixture directory: %s" % tmpdir)
