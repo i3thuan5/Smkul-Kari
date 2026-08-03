@@ -36,6 +36,32 @@
       }
     ]
   },
+  "titv-news-mxf": {
+    "match": "NL00",
+    "note": "TITV 族語新聞 broadcast masters (ilrdf-corpus/2月/*.mxf, 1920x1080 mpeg2video, interlaced tt). Same layout as amis-titv-news: Chinese dialogue subtitle painted onto the footage, so the dark-outline test is required. Measured over six episodes the text plateau runs y=785..844 and is right-aligned, ending near x=1740 and reaching back to x~190 on long lines. The region stops at y=844 on purpose - the red lower-third starts at y=848 (a sharp ink spike in the row profile) and carries the indigenous-language headline and interviewee name supers, which are not dialogue and must not be read as such.",
+    "region": [
+      0,
+      722,
+      1920,
+      122
+    ],
+    "mask": {
+      "outline": true,
+      "white_min": 185,
+      "max_spread": 45,
+      "dark_max": 95,
+      "outline_size": 9
+    },
+    "lines": [
+      {
+        "name": "han",
+        "y": 0,
+        "h": 122,
+        "lang": "chi_tra",
+        "ocr_scale": 1
+      }
+    ]
+  },
   "amis-titv-news": {
     "match": "20210104s2000",
     "note": "TITV Amis evening news - Chinese dialogue subtitle painted straight onto the footage, so the dark-outline test is required. The box is tall because the subtitle uses two heights: y=786..838 normally, and y=730..778 over letterboxed clips. It stops at y=844 on purpose - the red lower-third starts at y=846, and its Amis keyword and reporter name would otherwise be read as dialogue.",

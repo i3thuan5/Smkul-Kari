@@ -7,7 +7,8 @@
     // 【關鍵：掛載Linux主機ê .claude 登入資訊到容器內】
     "mounts": [
         "source=${localEnv:HOME}/.claude,target=/home/vscode/.claude,type=bind",
-        "source=${localEnv:HOME}/.claude.json,target=/home/vscode/.claude.json,type=bind,consistency=cached"
+        "source=${localEnv:HOME}/.claude.json,target=/home/vscode/.claude.json,type=bind,consistency=cached",
+        "source=${localEnv:HOME}/git/ilrdf/Corpus-Cleanup/kithann/ilrdf-corpus,target=/home/vscode/ilrdf-corpus,type=bind"
 
     ],
     // 【關鍵新增：Kā Claude Code 講，設定檔tī tsia】

@@ -1,0 +1,14 @@
+# pip 相依（請裝在 venv 內；Ubuntu 24.04 有 PEP 668，不能直接裝進系統 Python）
+#   python3 -m venv ~/.venvs/subs2srt
+#   ~/.venvs/subs2srt/bin/pip install -r requirements.txt
+#
+# 另需 apt 套件（見 SKILL.md）：
+#   ffmpeg tesseract-ocr tesseract-ocr-chi-tra python3-venv
+numpy==2.5.1
+Pillow==12.3.0
+
+# 選用 —— 只有 `ocr --engine claude-api` 需要（另需 ANTHROPIC_API_KEY）
+# anthropic
+
+# 選用 —— 只有跑 lint 需要
+# flake8==7.3.0

@@ -165,9 +165,70 @@ python3 scripts/subs2srt.py srt    work/ -o out.srt
 python3 scripts/subs2srt.py auto   VIDEO -o out.srt
 ```
 
-Needs `ffmpeg`, `numpy`, `Pillow`, and `tesseract-ocr` (+ `-chi-tra` for
-Traditional Chinese). Decode runs at roughly 11× realtime, so a 50-minute
-1080p video takes about 5 minutes per pass.
+Decode runs at roughly 11× realtime, so a 50-minute 1080p video takes about
+5 minutes per pass.
+
+## Installing the dependencies
+
+Verified on **Ubuntu 24.04.4 LTS / Python 3.12.3** (this devcontainer).
+
+```bash
+sudo apt-get update
+sudo apt-get install -y ffmpeg tesseract-ocr tesseract-ocr-chi-tra python3-venv
+
+python3 -m venv ~/.venvs/subs2srt
+~/.venvs/subs2srt/bin/pip install numpy Pillow
+~/.venvs/subs2srt/bin/python scripts/subs2srt.py --help
+```
+
+**A venv is not optional here.** Ubuntu 24.04 ships PEP 668, so a plain
+`pip install numpy` fails outright:
+
+```
+error: externally-managed-environment
+× This environment is externally managed
+```
+
+`--break-system-packages` would also work but puts these into the system
+Python; a venv keeps the OCR toolchain isolated from anything else on the box.
+
+### What each piece is for
+
+| 套件 | 版本（實測） | 用途 | 少了會怎樣 |
+|---|---|---|---|
+| `ffmpeg` | 7:6.1.1-3ubuntu5 | 解碼、`crop`／`fps` 濾鏡；附帶 `ffprobe` 用來檢查有無 soft subtitle | 完全不能跑 |
+| `numpy` | 2.5.1 | 文字遮罩、Jaccard 距離、中位數合成 | 完全不能跑 |
+| `Pillow` | 12.3.0 | 讀寫 PNG 圖條、contact sheet 排版 | 完全不能跑 |
+| `tesseract-ocr` | 5.3.4-1build5 | 方案 A 的辨識器 | `ocr --engine tesseract` 失敗 |
+| `tesseract-ocr-chi-tra` | 1:4.1.0-2 | 繁體中文語言包 | 中文行讀不出來 |
+| `python3-venv` | 3.12.3 | 建立 venv（見上） | 無法安裝 numpy／Pillow |
+| `fonts-dejavu-core` | Ubuntu 預裝 | contact sheet 左欄的編號與時間戳 | 退回 Pillow 內建點陣字，很小但仍可讀 |
+
+`tesseract --list-langs` 應列出 `chi_tra eng osd`。方案 A 的阿美語行用 `eng`
+（沒有阿美語模型，這正是它整行正確率只有 20% 的根本原因）。
+
+### 選用
+
+```bash
+# 只有 selftest 的合成影片需要（要在畫面上燒中文字幕）
+sudo apt-get install -y fonts-noto-cjk
+
+# 只有 ocr --engine claude-api 需要
+~/.venvs/subs2srt/bin/pip install anthropic   # 另需 ANTHROPIC_API_KEY
+
+# 只有要跑 lint 時需要
+~/.venvs/subs2srt/bin/pip install flake8
+```
+
+`selftest.py` 的端對端測試還依賴 ffmpeg 內建的 **libass**（`subtitles` 濾鏡）
+與 **libx264** 編碼器。Ubuntu 的 `ffmpeg` 套件兩者都有，用
+`ffmpeg -filters | grep subtitles` 與 `ffmpeg -encoders | grep libx264` 可確認。
+
+### 不需要的東西
+
+沒有用到 OpenCV、PyTorch、pytesseract 或任何 OCR 包裝套件 —— tesseract 是以
+`subprocess.run()` 傳 list 直接呼叫 CLI（不經 shell，見採購合規說明關於
+`CVE-2026-26832` 的說明）。第三方 import 就只有 `numpy` 與 `PIL` 兩個。
 
 ## Finding the band
 
