@@ -378,6 +378,21 @@ def write_preview(video_path, region, lines, path, count=6):
 def stage_cues(args):
     video = args.video
     key, preset = match_preset(video)
+
+    # An explicit --preset beats guessing from the file name. File names in a
+    # delivered corpus are not a reliable signal -- across one month of TITV
+    # news the same programme appears as `魯凱語-霧台20210101S1100.mp4`,
+    # `賽德克-20210102s1100.mp4` and `排灣-20210102s1800.mp4`, so no single
+    # substring catches them all without also risking a hit on a different
+    # programme with a completely different subtitle layout. What the file
+    # sits *in* does identify the programme, so let the caller say so.
+    if getattr(args, "preset", None):
+        presets = load_presets()
+        if args.preset not in presets:
+            raise SystemExit("no preset %r (have: %s)"
+                             % (args.preset, ", ".join(sorted(presets))))
+        key, preset = args.preset, presets[args.preset]
+
     spec = cuelib.MaskSpec()
     region = None
     lines = None
@@ -1340,6 +1355,10 @@ def add_srt_options(parser):
 
 def add_cue_options(parser):
     parser.add_argument("--region", help="x,y,w,h (overrides preset)")
+    parser.add_argument("--preset",
+                        help="name a preset explicitly rather than matching "
+                             "it against the file name; use when the folder, "
+                             "not the name, identifies the programme")
     parser.add_argument("--autodetect", action="store_true",
                         help="ignore any matching preset")
     parser.add_argument("--fps", type=float, default=5.0,

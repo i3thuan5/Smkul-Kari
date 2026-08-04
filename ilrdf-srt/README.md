@@ -12,6 +12,16 @@
 
 ## 跑法
 
+**新的月份（從 SFTP 抓）**——一行指令，或用 `/ilrdf-month` 這個 slash command：
+
+```bash
+bash ilrdf-srt/fetch_sftp.sh '族語新聞/110.1-110.10/3月'   # 先加 --limit 2 試跑
+```
+
+之後接第 3 步（視覺辨識）與第 4 步（組裝）。
+
+**已在本機的影片**（2 月那批 mxf 就是這樣做的）：
+
 ```bash
 python3 ilrdf-srt/build_inventory.py   # 1. 影片 → 節目資料 → SRT 檔名
 bash    ilrdf-srt/run_cues.sh          # 2. 切 cue（約 2.5 小時，I/O 綁死）
@@ -80,16 +90,47 @@ ilrdf-srt/sftp.sh 'get "/docker/…/魯凱語-霧台20210101S1100.mp4" /tmp/x.mp
 `ffprobe` 的 duration 照樣宣稱完整（見下）。遠端 `ls -l` 的 size 對本機
 size，不符就重抓、不進解碼。
 
+### 版型由「資料夾」決定，不是檔名
+
+`presets.json` 原本只能拿**檔名子字串**比對，但這批語料的檔名不可信：同一個
+節目會叫 `魯凱語-霧台20210101S1100.mp4`、`賽德克-20210102s1100.mp4`、
+`排灣-20210102s1800.mp4`，沒有共同片段；硬找一個又可能誤中「開會了」那批
+版型完全不同的檔案，套錯 region 會整批切在錯的地方而且**不會報錯**。
+
+所以 `subs2srt.py cues` 加了 `--preset NAME`，由呼叫端指定：
+
+```bash
+subs2srt.py cues VIDEO -o WORK --preset titv-news    # 族語新聞/ 底下都用這個
+```
+
+判斷依據是**檔案在哪個資料夾**（`族語新聞/` → `titv-news`；
+`族語節目/開會了/` → `amis-xiuguluan-bilingual`），這比檔名可靠。
+preset 名稱打錯會直接中止並列出可用的名稱。
+
+### 開跑前用 verify_band.py 對照畫面
+
+`subs2srt.py detect` 在這批素材上**不能單獨採信**——它會把氣象圖卡和台標
+排在對白字幕前面。`verify_band.py` 改成量測 + 比對：抓幾分鐘的列剖面，
+確認兩個地標，不合就中止。
+
+```bash
+python3 ilrdf-srt/verify_band.py VIDEO --preset titv-news    # 加 --quiet 只看結論
+```
+
+- **對白平台**要落在 preset 的 region 內，否則就是讀錯地方了
+- **紅帶上緣**（整張圖最亮的那一列）不可以落在 region **裡面**，否則標題與
+  受訪者名條會被當成對白切進去
+
+紅帶在 region **下方**多遠都沒關係：2 月母帶是 y=848（距 region 底 4 px），
+1 月一支卑南是 y=917，兩個都安全。`fetch_sftp.sh` 每個資料夾自動跑一次。
+
 ### mp4 的字幕帶跟 mxf 一樣
 
 mp4 是 1920×1080 h264，沒有 soft subtitle。實測 300 秒的列剖面：字幕平台
 788–844，848 是紅色標題帶上緣的尖峰（值 382，是平台的兩倍），跟 mxf 完全
 同一個形狀。所以 region 一樣是 `[0, 722, 1920, 122]`。
 
-**未解**：`presets.json` 是用檔名**子字串**比對的，而這批 mp4 檔名沒有共同
-的固定片段（`魯凱語-霧台…`、`賽德克-…`、`排灣-…`，有的有「語」有的沒有），
-`titv-news-mxf` 的 `NL00` 也對不到。開跑前要先決定用哪個 needle
-（`-20` 可行但要確認不會誤中「開會了」那批雙語黃帶的檔案）。
+（版型怎麼選見上面「版型由資料夾決定」一節。）
 
 ## 幾個踩過的坑
 
@@ -184,6 +225,11 @@ sheet 讀了一遍，還多花了建兩次 contact sheet 的工。真正的價�
 | `make_srt.py` | 單集組裝 SRT |
 | `make_all.py` | 全部組裝＋寫 `smkul.csv` |
 | `check_align.py` | 早期用手讀 TSV 量文稿對齊正確率 |
+| `sftp.sh` | SFTP 包裝：密碼只以檔案存在，處理 BatchMode／askpass 兩個坑 |
+| `sftp-askpass.sh` | 給 OpenSSH 讀密碼檔的 hook（`SSH_ASKPASS`）|
+| `fetch_sftp.sh` | 逐集：下載 → 驗位元組 → 驗band → 切cue → **刪影片** |
+| `verify_band.py` | 量列剖面，確認字幕帶真的在 preset 說的位置 |
+| `resolve_slug.py` | 用 `ilrdf-corpus.csv` 把檔名對成 work dir／SRT 名稱 |
 | `vision/` | 第一輪視覺逐字稿 TSV（文稿沒蓋到的 cue）|
 | `vision-wenkao/` | 第二輪視覺逐字稿 TSV（文稿蓋到的 cue）|
 
@@ -196,7 +242,44 @@ sheet 讀了一遍，還多花了建兩次 contact sheet 的工。真正的價�
 - `kithann/srt/smkul.csv` —— 進度表
 - `kithann/srt/wenkao-vs-vision.md` / `.json` —— 文稿 vs 視覺比對報告
 
+## 換機器要帶什麼
+
+進 git 的（跟著 repo 走，不用管）：`ilrdf-srt/` 全部（含 `vision/`、
+`vision-wenkao/` 兩萬行逐字稿、`inventory.json`）、
+`.claude/skills/video-subtitle-srt/`（含 `presets.json`）、
+`.claude/commands/ilrdf-month.md`、`CLAUDE.md`。
+
+**不在 git、要自己搬或重建的**：
+
+| | 怎麼辦 |
+|---|---|
+| `kithann/srt/` | 22 個 SRT ＋ `smkul.csv` ＋ 比對報告。**要搬**，重算要重跑整條線 |
+| `kithann/out/mxf/*/cues.json` | 每集的時間軸（約 8.9 MB）。**要搬**——沒有它，`vision/` 的逐字稿對不回時間，得重新解碼影片 |
+| `kithann/out/mxf/*/strips`,`sheets` | 圖檔約 15 GB，**不用搬**，需要時可重建 |
+| `kithann/tongan/ilrdf-corpus.csv` | 節目目錄，`resolve_slug.py` 和 `build_inventory.py` 都要它 |
+| `.sftp-pass` | 故意不進 git。到新機器**自己在終端機重建**，不要叫 Claude 寫 |
+
+新機器上還要做的：
+
+1. `sudo apt install ffmpeg tesseract-ocr tesseract-ocr-chi-tra python3-venv`
+   ＋ `python3 -m venv ~/.venvs/subs2srt && ~/.venvs/subs2srt/bin/pip install numpy Pillow`
+   （devcontainer 重建過一次就掉光，這是實際發生過的）
+2. 重新 `ssh-keyscan 192.168.35.10 >> ~/.ssh/known_hosts`
+3. `.devcontainer/devcontainer.json` 裡那條 `ilrdf-corpus` 的 bind mount 是舊機器的
+   路徑，新機器如果只用 SFTP 就可以整條拿掉
+
 ## 還沒做的
+
+**`verify_band.py` 的紅帶判準還沒實測過。** 這支是加 SFTP 那次新寫的，2 月
+那批當初是手動確認帶位、沒有用到它。已測：`魯凱語-霧台20210101S1100.mp4`
+用 `titv-news` 通過（邊緣 y=848、平台 y=816），故意用錯 preset 會失敗。
+未測：試跑 1 月時 `卑南語-20210103S1800.mp4` 的紅帶邊緣在 y=917 而非 848，
+判準因此放寬成「只擋落在 region 裡面的邊緣」——推理上成立（邊緣在下方不可能
+把標題文字漏進 y=844 就結束的區域），但**改完之後沒有再拿任何影片跑過**。
+下次開跑含這類檔案的月份，第一支請不加 `--quiet` 跑一次、看剖面，再開
+`sheets/sheet_001.png` 確認圖條上只有對白。
+
+
 
 burned-in 字幕**只有中文**。族語只存在於聲音，以及 `.rtf` 文稿裡那些
 拉丁字母的族語行——`wenkao.py` 的 `is_cjk_line()` 目前把它們濾掉了，因為
