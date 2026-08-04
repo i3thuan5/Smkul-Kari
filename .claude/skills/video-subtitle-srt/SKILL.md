@@ -93,6 +93,41 @@ python3 $S/subs2srt.py ocr out/myvideo.tess.work --engine tesseract
 python3 $S/subs2srt.py srt out/myvideo.tess.work -o out/myvideo.tesseract.srt
 ```
 
+### A script of the programme is not the subtitle
+
+Broadcast material often ships with the production script — the news copy,
+the shooting script — and it is tempting to treat it as free ground truth:
+the subtitle is that text, so align the cues to it and skip the reading.
+
+It does not work, and the reason is not alignment error. **The subtitler
+edits while typesetting.** Measured on 4,344 cues that were first supplied
+from the script and then read again from the picture, 22 TITV news episodes:
+
+| | |
+|---|---|
+| script and picture agree | 4,008 (92.3%) |
+| differ | 336 (7.7%) |
+
+Every one of the 336 was resolved in the picture's favour, and they split
+into two kinds:
+
+- **58% are span errors** — the alignment cut a few characters too many or
+  too few off a narration paragraph, because the script records the
+  paragraph, not where the subtitler broke it into screens.
+- **40% are the subtitler disagreeing with the script.** `裝紙` in the copy
+  is `裝死` on screen (playing dead, in advice about bears — the copy has a
+  typo the subtitler fixed). `3件事` became `3件事情`. `有時可能` became
+  `有可能`. No amount of alignment work recovers these, because the script
+  is simply not what was broadcast.
+
+One case had the script supplying `企劃/文字 黃慧如` — a closing credit — for
+a cue that carries no subtitle at all.
+
+So: a script is worth having as an **independent check** on a vision pass,
+and 92.3% agreement across thousands of lines is real evidence the reading is
+sound. It is not worth having as the text itself. If the deliverable must be
+faithful to the picture, read the picture.
+
 ### Farming the vision pass out to subagents
 
 Reading 389 sheets does not fit in one context, but each subagent gets its
