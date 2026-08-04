@@ -1,0 +1,44 @@
+# Task 1.3 引用清單（apply 前基準，2026-08-04）
+
+## pattern: ilrdf-srt
+     10 ilrdf-srt/README.md
+      4 ilrdf-srt/fetch_sftp.sh
+      2 ilrdf-srt/sftp.sh
+      1 ilrdf-srt/verify_band.py
+      1 ilrdf-srt/sftp-askpass.sh
+      1 ilrdf-srt/run_cues.sh
+
+## pattern: wenkao
+     13 ilrdf-srt/make_srt.py
+     10 ilrdf-srt/README.md
+      7 ilrdf-srt/make_all.py
+      7 ilrdf-srt/gap_sheets.py
+      6 ilrdf-srt/compare_wenkao.py
+      4 ilrdf-srt/align.py
+      2 ilrdf-srt/check_align.py
+      1 ilrdf-srt/wenkao_sheets.py
+
+## pattern: /workspaces/Corpus-Cleanup
+      2 ilrdf-srt/wenkao_sheets.py
+      2 ilrdf-srt/ingest.py
+      2 ilrdf-srt/gap_sheets.py
+      1 ilrdf-srt/verify_band.py
+      1 ilrdf-srt/sftp-askpass.sh
+      1 ilrdf-srt/run_cues.sh
+      1 ilrdf-srt/resolve_slug.py
+      1 ilrdf-srt/make_srt.py
+      1 ilrdf-srt/make_all.py
+      1 ilrdf-srt/fetch_sftp.sh
+      1 ilrdf-srt/compare_wenkao.py
+      1 ilrdf-srt/build_inventory.py
+      1 ilrdf-srt/batches.py
+
+## pattern: .claude/skills/video-subtitle-srt/scripts
+      2 tox.ini
+      1 ilrdf-srt/wenkao_sheets.py
+      1 ilrdf-srt/verify_band.py
+      1 ilrdf-srt/run_cues.sh
+      1 ilrdf-srt/make_srt.py
+      1 ilrdf-srt/ingest.py
+      1 ilrdf-srt/gap_sheets.py
+      1 ilrdf-srt/fetch_sftp.sh

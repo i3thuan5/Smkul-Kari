@@ -8,15 +8,15 @@ Process one month of 原視族語新聞 from the SFTP server into SRT subtitles.
 Month to do: **$ARGUMENTS**
 
 If no month was given, list what is on the server and ask which one:
-`ilrdf-srt/sftp.sh 'ls /docker/ilrdf-corpus/族語新聞/110.1-110.10'`
+`scripts/news/sftp.sh 'ls /docker/ilrdf-corpus/族語新聞/110.1-110.10'`
 
-Read `ilrdf-srt/README.md` first — it holds the measured numbers and the
+Read `scripts/news/README.md` first — it holds the measured numbers and the
 traps. The short version of the procedure:
 
 ## 1. Fetch and cut
 
 ```bash
-bash ilrdf-srt/fetch_sftp.sh '<月份>'          # add --limit 2 for a dry run
+bash scripts/news/fetch_sftp.sh '<月份>'          # add --limit 2 for a dry run
 ```
 
 This downloads one video at a time, checks its byte count against the
@@ -30,7 +30,7 @@ the strips show the dialogue line and nothing else.
 ## 2. 文稿 alignment, then gap sheets
 
 ```bash
-python3 ilrdf-srt/gap_sheets.py
+python3 -m scripts.news.gap_sheets
 ```
 
 Only months with a matching 文稿 folder get script text; the rest is all gap.
@@ -40,11 +40,11 @@ transcripts, so it is safe to re-run.
 ## 3. Vision pass
 
 ```bash
-python3 ilrdf-srt/batches.py <slug> --size 24     # lists the sheet batches
+python3 -m scripts.news.batches <slug> --size 24     # lists the sheet batches
 ```
 
 Farm each batch to a subagent, 24 sheets each, writing a TSV straight to
-`ilrdf-srt/vision/<集>/bNN.tsv`. Two things the prompt must say, both learned
+`Kari-SRT/vision/<集>/bNN.tsv`. Two things the prompt must say, both learned
 the hard way:
 
 - **Cue numbers on a gap sheet JUMP.** The 文稿-covered cues are not on the
@@ -58,7 +58,7 @@ the hard way:
 Then per episode:
 
 ```bash
-python3 ilrdf-srt/ingest.py <slug> ilrdf-srt/vision/<集>
+python3 -m scripts.news.ingest <slug> Kari-SRT/vision/<集>
 ```
 
 `ingest.py` refuses the whole batch if a TSV names a cue that was not on the
@@ -67,7 +67,7 @@ sheets that reader was given.
 ## 4. Assemble
 
 ```bash
-python3 ilrdf-srt/make_all.py       # writes SRTs + kithann/srt/smkul.csv
+python3 -m scripts.news.make_all       # writes SRTs + kithann/srt/smkul.csv
 ```
 
 ## Scale — say this out loud before starting

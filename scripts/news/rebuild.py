@@ -1,0 +1,154 @@
+#!/usr/bin/env python3
+"""Rebuild every delivered SRT from Kari-SRT alone, and prove it.
+
+    python3 -m scripts.news.rebuild --verify
+    python3 -m scripts.news.rebuild -o /some/dir      # keep the output
+
+This is the executable form of the srt-data-store spec's core guarantee:
+main repo (code) + Kari-SRT (cues/ + vision/ + vision-rtf/ + inventory.json)
+suffice to rebuild all 22 SRTs and smkul.csv byte-identical to the committed
+deliverables in Kari-SRT/srt/ -- offline, touching no video and calling no
+model. If that holds, everything under kithann/ really is a regenerable
+cache.
+
+How it stays byte-identical: it does not reimplement assembly. For each
+episode it synthesises a work dir (cues.json copied from Kari-SRT, a
+transcripts.json rebuilt from the vision TSVs, vision-rtf winning where both
+read a cue -- the order ingest applied them in) and then runs the very same
+`scripts.news.make_srt` that built the deliverables, followed by the same
+tracker-row code make_all uses for smkul.csv.
+
+Any missing input -- an absent cues/<srt_name>.json, an episode with no
+TSVs -- is reported by name and exits non-zero before anything is compared.
+Nothing incomplete is ever passed off as a rebuilt deliverable.
+"""
+import argparse
+import glob
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+
+from scripts.news import make_all
+from scripts.news import paths
+
+
+def episode_transcripts(srt_name):
+    """transcripts.json content, rebuilt from the episode's vision TSVs."""
+    resolved = {}
+    for source in (paths.KARI_VISION, paths.KARI_VISION_RTF):
+        folder = os.path.join(source, srt_name)
+        if not os.path.isdir(folder):
+            continue
+        for path in sorted(glob.glob(os.path.join(folder, "*.tsv"))):
+            with open(path, encoding="utf-8") as handle:
+                for line in handle:
+                    line = line.rstrip("\n")
+                    if not line.strip():
+                        continue
+                    parts = line.split("\t")
+                    text = parts[2] if len(parts) > 2 else ""
+                    resolved[parts[0]] = {"han": text}
+    return resolved
+
+
+def check_inputs(entries):
+    problems = []
+    for entry in entries:
+        if entry["truncated"]:
+            continue
+        name = entry["srt_name"]
+        if not os.path.exists(os.path.join(paths.KARI_CUES, name + ".json")):
+            problems.append("missing cues/%s.json" % name)
+        if not episode_transcripts(name):
+            problems.append("no vision TSVs for %s" % name)
+        if not os.path.exists(os.path.join(paths.SRT_DIR, name + ".srt")):
+            problems.append("missing delivered srt/%s.srt to compare against"
+                            % name)
+    return problems
+
+
+def rebuild_one(entry, tmp):
+    """Synthesise a work dir and run the real make_srt over it."""
+    name = entry["srt_name"]
+    work = os.path.join(tmp, name + ".work")
+    os.makedirs(work, exist_ok=True)
+    shutil.copy2(os.path.join(paths.KARI_CUES, name + ".json"),
+                 os.path.join(work, "cues.json"))
+    with open(os.path.join(work, "transcripts.json"), "w",
+              encoding="utf-8") as handle:
+        json.dump(episode_transcripts(name), handle, ensure_ascii=False)
+
+    out = os.path.join(tmp, "srt", name + ".srt")
+    proc = subprocess.run(
+        [paths.VENV_PY, "-m", "scripts.news.make_srt", work, "-o", out],
+        capture_output=True, text=True, cwd=paths.ROOT)
+    if proc.returncode != 0:
+        lines = proc.stderr.strip().splitlines() or ["?"]
+        raise SystemExit("make_srt failed for %s: %s" % (name, lines[-1]))
+    qc = json.loads(proc.stdout.strip().splitlines()[-1])
+    return ("已產生 %d 行；Claude 視覺辨識，%d 個 cue 全數校讀"
+            % (qc["srt_lines"], qc["cues"]))
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--verify", action="store_true",
+                    help="byte-compare the rebuild against Kari-SRT/srt/")
+    ap.add_argument("-o", "--out", default="",
+                    help="rebuild into this directory instead of a tempdir")
+    args = ap.parse_args()
+
+    entries = json.load(open(os.path.join(paths.KARI, "inventory.json"),
+                             encoding="utf-8"))
+    problems = check_inputs(entries)
+    if problems:
+        for line in problems:
+            print("MISSING:", line)
+        raise SystemExit(1)
+
+    tmp = args.out or tempfile.mkdtemp(prefix="rebuild-")
+    os.makedirs(os.path.join(tmp, "srt"), exist_ok=True)
+
+    rows = []
+    for entry in entries:
+        if entry["truncated"]:
+            status = "略過：" + entry["truncated"]
+        else:
+            status = rebuild_one(entry, tmp)
+        rows.append(make_all.tracker_row(entry, status))
+        print("%-46s %s" % (entry["srt_name"], status))
+    make_all.write_tracker(rows, os.path.join(tmp, "srt", "smkul.csv"))
+
+    if not args.verify:
+        print("\nrebuilt into", tmp)
+        return 0
+
+    mismatched = []
+    for entry in entries:
+        if entry["truncated"]:
+            continue
+        name = entry["srt_name"] + ".srt"
+        built = open(os.path.join(tmp, "srt", name), "rb").read()
+        shipped = open(os.path.join(paths.SRT_DIR, name), "rb").read()
+        if built != shipped:
+            mismatched.append(name)
+    built = open(os.path.join(tmp, "srt", "smkul.csv"), "rb").read()
+    shipped = open(os.path.join(paths.SRT_DIR, "smkul.csv"), "rb").read()
+    if built != shipped:
+        mismatched.append("smkul.csv")
+
+    if not args.out:
+        shutil.rmtree(tmp)
+    if mismatched:
+        for name in mismatched:
+            print("DIFFERS:", name)
+        raise SystemExit(1)
+    print("\nOK: 22 SRTs + smkul.csv rebuilt byte-identical from Kari-SRT")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -5,6 +5,12 @@ description: Use when asked to pull burned-in (hardcoded) subtitles out of a vid
 
 # Extracting burned-in subtitles as SRT
 
+> **程式碼已遷出這個目錄。** 引擎是主 repo 的正式 package：
+> `scripts/subs2srt/`（`cli.py`＋`cuelib.py`），從 repo 根目錄以
+> `python -m scripts.subs2srt.cli` 執行。corpus 專屬的編排、preset 與
+> 路徑設定在 `scripts/news/`（見其 `README.md`）。這份 SKILL.md 只是
+> 說明書；程式已全部遷出，測試在 `tests/`（單元）與 `tests/e2e/`（round trip）。
+
 ## First: is it actually burned in?
 
 Always check before doing any pixel work — a soft subtitle track is a
@@ -33,32 +39,32 @@ use, so a tesseract run can still serve as a rough draft or a fallback — see
 "When tesseract is the right call".
 
 ```bash
-S=.claude/skills/video-subtitle-srt/scripts
+SUBS="$HOME/.venvs/subs2srt/bin/python -m scripts.subs2srt.cli"   # 從 repo 根目錄執行
 V=path/to/video.mp4
 W=out/myvideo.work
 
 # 0. confirm the band before spending 5 minutes on a decode
-python3 $S/subs2srt.py detect $V --preview /tmp/band.png   # eyeball, then add a preset
+$SUBS detect $V --preview /tmp/band.png   # eyeball, then add a preset
 
 # 1. one cues pass -> strips/ + sheets/ + sheets.json   (~5 min per 50 min)
-python3 $S/subs2srt.py cues $V -o $W
+$SUBS cues $V -o $W
 
 # 2. read the contact sheets with vision, batch by batch
-python3 $S/subs2srt.py pending $W --limit 10           # which sheets are left
+$SUBS pending $W --limit 10           # which sheets are left
 #   -> Read each named sheets/sheet_NNN.png, transcribe into a TSV:
 #        12<TAB>ami<TAB>Nga'ay ho^
 #        12<TAB>han<TAB>大家好
 #        13<TAB>ami<TAB>              <- confirmed blank: leave the text empty
-python3 $S/subs2srt.py import $W --from batch01.tsv
+$SUBS import $W --from batch01.tsv
 
 # 3. after the first batch or two, lock in the spellings already settled and
 #    paste them into every later batch's prompt
-python3 $S/subs2srt.py glossary $W --min-count 3
+$SUBS glossary $W --min-count 3
 
 #    repeat pending -> read -> import until pending reports 0 remaining
 
 # 4. assemble
-python3 $S/subs2srt.py srt $W -o out/myvideo.srt
+$SUBS srt $W -o out/myvideo.srt
 ```
 
 The vision pass is **resumable on purpose**. A 50-minute video is 160+
@@ -89,8 +95,8 @@ second work dir at the same strips so the timings stay identical:
 mkdir -p out/myvideo.tess.work
 cp $W/cues.json $W/sheets.json out/myvideo.tess.work/
 ln -s ../myvideo.work/strips out/myvideo.tess.work/strips
-python3 $S/subs2srt.py ocr out/myvideo.tess.work --engine tesseract
-python3 $S/subs2srt.py srt out/myvideo.tess.work -o out/myvideo.tesseract.srt
+$SUBS ocr out/myvideo.tess.work --engine tesseract
+$SUBS srt out/myvideo.tess.work -o out/myvideo.tesseract.srt
 ```
 
 ### A script of the programme is not the subtitle
@@ -177,7 +183,7 @@ with a single quote, disagreeing with four earlier occurrences.
 Tell later batches what has already been decided:
 
 ```bash
-python3 $S/subs2srt.py glossary WORK --line ami --min-count 3
+$SUBS glossary WORK --line ami --min-count 3
 # 既定寫法（出現 >= 3 次）-- 貼進後續批次的 prompt
 #   niyaro'   (66 次)
 #   ho^       (43 次)
@@ -210,16 +216,16 @@ every frame, dedupe the strings afterwards) is far slower and produces worse
 timings, because OCR noise makes two frames of the *same* subtitle look
 different.
 
-So: `scripts/subs2srt.py` cuts the video into cues by differencing the text
+So: `scripts/subs2srt/cli.py` cuts the video into cues by differencing the text
 mask, exports one image strip per cue, and only then recognises text.
 
 ```bash
-python3 scripts/subs2srt.py detect VIDEO --preview /tmp/band.png
-python3 scripts/subs2srt.py cues   VIDEO -o work/
-python3 scripts/subs2srt.py ocr    work/ --engine tesseract
-python3 scripts/subs2srt.py srt    work/ -o out.srt
+python3 -m scripts.subs2srt.cli detect VIDEO --preview /tmp/band.png
+python3 -m scripts.subs2srt.cli cues   VIDEO -o work/
+python3 -m scripts.subs2srt.cli ocr    work/ --engine tesseract
+python3 -m scripts.subs2srt.cli srt    work/ -o out.srt
 # or all at once:
-python3 scripts/subs2srt.py auto   VIDEO -o out.srt
+python3 -m scripts.subs2srt.cli auto   VIDEO -o out.srt
 ```
 
 Decode runs at roughly 11× realtime, so a 50-minute 1080p video takes about
@@ -235,7 +241,7 @@ sudo apt-get install -y ffmpeg tesseract-ocr tesseract-ocr-chi-tra python3-venv
 
 python3 -m venv ~/.venvs/subs2srt
 ~/.venvs/subs2srt/bin/pip install numpy Pillow
-~/.venvs/subs2srt/bin/python scripts/subs2srt.py --help
+~/.venvs/subs2srt/bin/python -m scripts.subs2srt.cli --help
 ```
 
 **A venv is not optional here.** Ubuntu 24.04 ships PEP 668, so a plain
@@ -267,7 +273,7 @@ Python; a venv keeps the OCR toolchain isolated from anything else on the box.
 ### 選用
 
 ```bash
-# 只有 selftest 的合成影片需要（要在畫面上燒中文字幕）
+# 只有 tests/e2e 的合成影片需要（要在畫面上燒中文字幕）
 sudo apt-get install -y fonts-noto-cjk
 
 # 只有 ocr --engine claude-api 需要
@@ -277,7 +283,7 @@ sudo apt-get install -y fonts-noto-cjk
 ~/.venvs/subs2srt/bin/pip install flake8
 ```
 
-`selftest.py` 的端對端測試還依賴 ffmpeg 內建的 **libass**（`subtitles` 濾鏡）
+`tests/e2e/` 的端對端測試還依賴 ffmpeg 內建的 **libass**（`subtitles` 濾鏡）
 與 **libx264** 編碼器。Ubuntu 的 `ffmpeg` 套件兩者都有，用
 `ffmpeg -filters | grep subtitles` 與 `ffmpeg -encoders | grep libx264` 可確認。
 
@@ -299,7 +305,7 @@ crops with the detected line edges drawn on. Two things reliably fool it:
 - Detection picks a single band, so on a bilingual video it returns whichever
   of the two lines carries more ink, not both.
 
-Once confirmed, record the region in `scripts/presets.json` keyed by a
+Once confirmed, record the region in `scripts/news/presets.json`（引擎不再自帶 preset，執行時用 `--presets` 指路徑） keyed by a
 substring of the file name; `cues` then picks it up automatically. That file
 already holds verified entries for the two videos in `kithann/`.
 
@@ -455,8 +461,8 @@ model reads them without downscaling. Roughly 4 bilingual cues fit per sheet.
 ```
 
 ```bash
-python3 scripts/subs2srt.py import work/ --from vision.tsv
-python3 scripts/subs2srt.py srt    work/ -o out.srt
+python3 -m scripts.subs2srt.cli import work/ --from vision.tsv
+python3 -m scripts.subs2srt.cli srt    work/ -o out.srt
 ```
 
 `import` merges over whatever is already in `transcripts.json` and refuses
@@ -477,7 +483,7 @@ The cue strips are already what tesstrain wants — single text lines about
 with checked text:
 
 ```bash
-python3 scripts/subs2srt.py export-gt work/ -o gt/ --line ami
+python3 -m scripts.subs2srt.cli export-gt work/ -o gt/ --line ami
 # gt/sub_00042_ami.png  +  gt/sub_00042_ami.gt.txt
 ```
 
@@ -512,13 +518,13 @@ the clock, not just the index, and re-read the sheets after re-running `cues`.
 
 ## Verifying changes
 
-`scripts/selftest.py` is the guard. It burns a known SRT into a synthetic
+`tests/e2e/test_roundtrip.py` is the guard. It burns a known SRT into a synthetic
 1080p clip over moving content — once bare, once with a coloured band — runs
 the real pipeline, and diffs recovered cues against ground truth.
 
 ```bash
-python3 scripts/selftest.py            # unit tests + round trip
-python3 scripts/selftest.py --quick    # unit tests only, no encode
+~/.venvs/subs2srt/bin/python -m unittest discover -s tests -t . && :   # 全部（含 e2e）
+tox -e subtitle        # 單元測試；tox -e subtitle-e2e 跑合成影片 round trip
 ```
 
 Current state: 51 unit tests, and both round trips recover 7/7 cues with no

@@ -3,8 +3,10 @@
 ## Why
 
 字幕抽取工作已全部完成（22 集、20,108 個 cue 全由視覺辨識供字），但成果散落在
-歷史遺留的位置：程式一半在 `ilrdf-srt/`、一半在 `.claude/skills/` 裡；14 處
-絕對路徑寫死；約 20M tokens 換來的逐字稿 TSV 跟程式混在同一目錄；時間軸
+歷史遺留的位置：程式一半在 `ilrdf-srt/`、一半在 `.claude/skills/` 裡；17 處
+絕對路徑寫死（且指向已改名的舊 workspace，新加的 SFTP 工具因此在本機
+跑不起來）；約 20M tokens 換來的逐字稿 TSV **untracked** 跟程式混在同一
+目錄；時間軸
 `cues.json` 埋在 15G 的未 commit work dir 裡——今天 `rm -rf kithann/out`，
 光靠 git 拼不回任何一個 SRT。趁工作告一段落，把程式、資料、測試各歸各位，
 讓成果可以被安全保存、離線重建、之後的《開會了》等批次可以複用。

@@ -4,15 +4,24 @@
 
 動機見 proposal.md。設計上重要的現況約束：
 
-- 14 處 `/workspaces/Corpus-Cleanup/...` 絕對路徑分散在
-  `ilrdf-srt/*.py`、`run_cues.sh` 與 `.claude` 引擎；跨檔 import 靠
-  `sys.path.insert(0, SKILL)` 黑魔法。
+- 17 處 `/workspaces/Corpus-Cleanup/...` 絕對路徑分散在
+  `ilrdf-srt/*.py`、`run_cues.sh`、`.claude` 引擎，以及 apply 前夕新增的
+  SFTP 工具三支（`fetch_sftp.sh`、`resolve_slug.py`、`verify_band.py`）；
+  本機 workspace 已改名 `/workspaces/Smkul-Kari`，這些路徑指向的位置
+  **不存在**，該三支目前在本機跑不起來。跨檔 import 靠
+  `sys.path.insert(0, SKILL)` 黑魔法。（處數以 task 1.3 的 grep 為準。）
 - `selftest.py`（893 行）是自製 runner，51 個單元測試 + 合成影片 e2e
   混在一檔；tox 已有 `subtitle`／`subtitle-e2e` env 伸手進 `.claude/` 執行。
-- Kari-SRT submodule 已由使用者建立（目前為空 checkout，主 repo 尚無
-  `.gitmodules` 記錄）。
+- Kari-SRT 已由使用者建立為獨立 repo（remote
+  `git@github.com:i3thuan5/Kari-SRT.git`，已有一個 commit：rtf-vs-vision
+  比對報告兩檔）；主 repo 已 commit gitlink，但 `.gitmodules` 尚未存在
+  （task 4.6 的使用者步驟補上）。
 - 早期 vision TSV 命名不一致：三種目錄名（slug／`032午_泰雅` 簡寫／
   `srt_name`）加一種攤平檔（`rukai_043_b01-03.tsv`，一檔含三批）。
+- `ilrdf-srt/vision/`、`ilrdf-srt/vision-wenkao/` **untracked、無任何
+  git 備份**（ilrdf-srt/README「換機器要帶什麼」聲稱已進 git，與現實
+  不符）。第一個備份點是 task 4.6 的 Kari-SRT commit；在那之前的一切
+  搬移只能用複製，不得移動或刪除原位置。
 - 22 集的 `cues.json`、`from_wenkao.json`、`verified.json` 都在
   `kithann/out/mxf/<slug>.B.work/`，未進版本控制。
 - CLAUDE.md 禁止 Claude 執行 `git add`／`commit` 等指令。
@@ -123,6 +132,10 @@ tests/
   比對，若有非決定性來源在改動前修好（屬 bug 修正，不屬行為改變）。
 - [`vision/` 早期攤平檔拆批時 cue 歸屬可能弄錯] → 拆完用「聯集 =
   work dir `verified.json` 的 cue 集合」做總量對帳，缺一多一都擋下。
+- [`vision/`、`vision-rtf/` 是 untracked 的唯一正本，搬移期間任何
+  誤刪都不可回復] → 全程複製不移動；原位置保留到 D4 重建驗證通過
+  （task 5.2）之後才刪；task 3.8 刪 `ilrdf-srt/` 時明確排除這兩個
+  目錄。
 - [submodule 空 checkout：`.gitmodules` 尚未存在，remote 未知] →
   任務清單把「確認 remote／`git submodule add`」列為使用者步驟，
   Claude 只往 `Kari-SRT/` 工作樹寫檔。
