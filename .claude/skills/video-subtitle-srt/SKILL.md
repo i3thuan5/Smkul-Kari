@@ -1,6 +1,6 @@
 ---
 name: video-subtitle-srt
-description: Use when asked to pull burned-in (hardcoded) subtitles out of a video file and turn them into an .srt — e.g. Formosan-language broadcast recordings where the subtitle is painted into the picture and there is no soft subtitle track. Covers finding the subtitle band, cutting the video into timed cues by pixel differencing, recognising the text two ways (plan A = tesseract offline, plan B = Claude vision via contact sheets) so the two can be compared, resuming a part-finished vision pass, keeping spelling consistent across batches via a glossary, and exporting checked text as tesstrain ground truth. Triggers on requests like "kā字幕提出來", "做srt", "產生兩種 srt", "方案A 方案B 比較", "extract hardcoded subtitles", "影片字幕轉逐字稿".
+description: Use when asked to pull burned-in (hardcoded) subtitles out of a video file and turn them into an .srt — e.g. Formosan-language broadcast recordings where the subtitle is painted into the picture and there is no soft subtitle track. Covers finding the subtitle band, cutting the video into timed cues by pixel differencing, reading the text with Claude vision off contact sheets (the default and the only output fit to ship), resuming a part-finished vision pass, keeping spelling consistent across batches via a glossary, and exporting checked text as tesstrain ground truth. An offline tesseract path exists but is only for when the caller asks for it by name, or when the video may not leave the machine. Triggers on requests like "kā字幕提出來", "做srt", "產生兩種 srt", "方案A 方案B 比較", "extract hardcoded subtitles", "影片字幕轉逐字稿".
 ---
 
 # Extracting burned-in subtitles as SRT
@@ -21,12 +21,16 @@ Both videos in `kithann/` were checked this way: video + audio + a timecode
 data stream, no subtitle stream. So the subtitles are painted into the
 picture and have to be read off the pixels.
 
-## Recipe: two SRTs for one video (plan A vs plan B)
+## Recipe: video → SRT (Claude vision)
 
-The usual ask. Plan A is tesseract, plan B is Claude vision reading the
-contact sheets. Both reuse **one** `cues` pass, so the expensive decode
-happens once and the timings are identical — which is what makes the two
-files comparable line for line.
+**Read the text with Claude vision unless told otherwise.** On this material
+tesseract reaches 20.0% whole-line accuracy on Amis and 52.9% on Chinese;
+vision was correct on every line spot-checked. Measurements and the reason
+tesseract cannot be tuned past this are in "Recognition" below.
+
+Timing comes from the `cues` pass and is independent of which recogniser you
+use, so a tesseract run can still serve as a rough draft or a fallback — see
+"When tesseract is the right call".
 
 ```bash
 S=.claude/skills/video-subtitle-srt/scripts
@@ -34,44 +38,62 @@ V=path/to/video.mp4
 W=out/myvideo.work
 
 # 0. confirm the band before spending 5 minutes on a decode
-python3 $S/subs2srt.py detect $V --preview /tmp/band.png     # eyeball it, then add a preset
+python3 $S/subs2srt.py detect $V --preview /tmp/band.png   # eyeball, then add a preset
 
 # 1. one cues pass -> strips/ + sheets/ + sheets.json   (~5 min per 50 min)
 python3 $S/subs2srt.py cues $V -o $W
 
-# 2. plan A: offline, free, instant
-python3 $S/subs2srt.py ocr $W --engine tesseract
-python3 $S/subs2srt.py srt $W -o out/myvideo.planA.srt
-
-# 3. plan B: same cues, vision-read text in a separate work dir
-mkdir -p out/myvideo.B.work
-cp $W/cues.json $W/sheets.json out/myvideo.B.work/
-ln -s ../myvideo.work/strips out/myvideo.B.work/strips
-cp $W/transcripts.json out/myvideo.B.work/     # optional: A as a fallback
-
-python3 $S/subs2srt.py pending out/myvideo.B.work --limit 10   # what to read
+# 2. read the contact sheets with vision, batch by batch
+python3 $S/subs2srt.py pending $W --limit 10           # which sheets are left
 #   -> Read each named sheets/sheet_NNN.png, transcribe into a TSV:
 #        12<TAB>ami<TAB>Nga'ay ho^
 #        12<TAB>han<TAB>大家好
-#        13<TAB>ami<TAB>                 <- confirmed blank: leave text empty
-python3 $S/subs2srt.py import out/myvideo.B.work --from batch01.tsv
+#        13<TAB>ami<TAB>              <- confirmed blank: leave the text empty
+python3 $S/subs2srt.py import $W --from batch01.tsv
 
-# after the first batch or two, collect the spellings already settled and
-# paste them into the prompt of every later batch (see "Keeping spelling
-# consistent across batches" below)
-python3 $S/subs2srt.py glossary out/myvideo.B.work --min-count 3
+# 3. after the first batch or two, lock in the spellings already settled and
+#    paste them into every later batch's prompt
+python3 $S/subs2srt.py glossary $W --min-count 3
 
-#   repeat pending -> read -> import until pending reports 0 remaining
-python3 $S/subs2srt.py srt out/myvideo.B.work -o out/myvideo.planB.srt
+#    repeat pending -> read -> import until pending reports 0 remaining
+
+# 4. assemble
+python3 $S/subs2srt.py srt $W -o out/myvideo.srt
 ```
 
-Plan B is **resumable on purpose**. A 50-minute video is 160+ sheets, which
-does not fit in one sitting; `pending` diffs `sheets.json` against
-`verified.json` and names the next batch, so the work survives being stopped
-and picked up later. Import each batch as you go rather than hoarding one
-huge TSV.
+The vision pass is **resumable on purpose**. A 50-minute video is 160+
+sheets, which does not fit in one sitting; `pending` diffs `sheets.json`
+against `verified.json` and names the next batch, so the work survives being
+stopped and picked up later. Import each batch as you go rather than hoarding
+one huge TSV.
 
-### Farming plan B out to subagents
+Note `srt` only emits cues whose text arrived via `import`, so a part-finished
+pass yields a short but honest SRT — never tesseract guesses padding the gaps.
+
+### When tesseract is the right call
+
+`ocr --engine tesseract` fills `transcripts.json` without `import`, so it is
+worth reaching for when:
+
+- **The caller asks for it by name**, or wants the two compared.
+- **The video must not leave the machine.** Vision sends the cue strips to
+  Anthropic; tesseract is entirely local. For sensitive material this decides
+  it regardless of accuracy.
+- **You want a throwaway draft of the timings**, e.g. to sanity-check the
+  detected band before committing to a full vision pass.
+
+Do not ship its text as corpus data. To run both for comparison, point a
+second work dir at the same strips so the timings stay identical:
+
+```bash
+mkdir -p out/myvideo.tess.work
+cp $W/cues.json $W/sheets.json out/myvideo.tess.work/
+ln -s ../myvideo.work/strips out/myvideo.tess.work/strips
+python3 $S/subs2srt.py ocr out/myvideo.tess.work --engine tesseract
+python3 $S/subs2srt.py srt out/myvideo.tess.work -o out/myvideo.tesseract.srt
+```
+
+### Farming the vision pass out to subagents
 
 Reading 389 sheets does not fit in one context, but each subagent gets its
 own, and the main session only takes back TSV text. Measured cost is about
@@ -140,8 +162,8 @@ After importing everything, grep the transcripts for `"`, `^` and `□` and
 eyeball every hit — on these two videos that surfaced 11 double quotes, all
 legitimate once checked, plus the one real inconsistency above.
 
-To compare only the cues you have actually read, filter both SRTs to that
-cue set — otherwise plan B looks worse simply because it is unfinished.
+When comparing a vision SRT against a tesseract one, restrict both to the
+cues actually read — otherwise an unfinished vision pass merely looks worse.
 
 ## The shape of the problem
 
@@ -327,7 +349,7 @@ frame between them are indistinguishable from one long subtitle, and will be
 emitted as one cue. This is inherent to pixel differencing, and is pinned by
 a test so it cannot regress silently.
 
-## Recognition: pick the backend by script
+## Recognition: why vision is the default
 
 Measured against a hand-read ground truth off the contact sheets (15 Amis
 rows, 17 Chinese rows, sampled from the start, middle and end of video A):
@@ -341,6 +363,16 @@ rows, 17 Chinese rows, sampled from the start, middle and end of video A):
 **Score whole lines, not characters.** One wrong character makes a subtitle
 line unusable, so 75–79% per character still means only a fifth to a half of
 lines are shippable. Character accuracy hides the problem.
+
+Accuracy also decides whether the *downstream* steps work at all. On video B
+the vision pass let `merge_repeats` fuse 296 duplicate cues (878 → 657); the
+tesseract run merged almost none, because its two readings of the same
+sentence carried different errors and so never compared equal. On video A it
+correctly left the Chinese-interview stretches' Amis rows empty, where
+tesseract emitted noise into blank strips.
+
+The tuning notes below are kept for the tesseract fallback. They do not
+change the conclusion — the ceiling is the model, not the settings.
 
 Do not upscale binarised strips much — see `prep_for_tesseract`, where the
 measurements live. The original `scale=3` was a guess and was among the worst
