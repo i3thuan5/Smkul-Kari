@@ -15,6 +15,27 @@
   Kari-SRT 是私有 repo，CI 抓不到 submodule，這條不進 CI。
 - **`kithann/`**（gitignore）：來源資料與可重生快取（work dir、log）。
 
+### `kithann/` 每次執行後會有什麼
+
+不算舊資料（FFmpeg／kaldi／開會了／ilrdf-corpus 那些既有素材），pipeline
+往後每跑一次，只會在 `kithann/out/` 底下寫東西，而且全部是快取／日誌，
+沒有任何一份是正本：
+
+| 路徑 | 何時產生 | 內容 | 性質 |
+|---|---|---|---|
+| `out/mxf/<slug>.work/` | `fetch_sftp.sh`／`run_cues.sh` 跑 `cues` 步驟 | `cues.json`（時間軸）、`sheets.json`、`sheets/*.png`、`strips/*.png` | 快取，遷入 Kari-SRT 後可刪 |
+| `out/mxf/<slug>.work/transcripts.json` | 有跑 `ocr --engine tesseract`（現在只當 fallback，非預設）| tesseract 辨識草稿 | 快取，不供字，可刪 |
+| `out/mxf/<slug>.work/verified.json` | `ingest.py` 匯入 TSV 之後 | 哪些 cue 已核實過的文字 | 快取，可從 Kari-SRT 的 vision TSV 重建 |
+| `out/mxf/<slug>.B.work/` | `gap_sheets.py`（只重讀文稿沒蓋到的 cue）| 同一套（`cues.json`、`sheets.json`、`transcripts.json`、`verified.json`）＋ `from_rtf.json`；`strips` 是 symlink 回 `.work/strips` | 快取，可刪 |
+| `out/mxf/<slug>.C.work/` | `rtf_sheets.py`（回頭把文稿供過字的 cue 也讀一次，做全量普查比對）| 同一套，子集反過來（只含文稿對到的 cue）| 快取，可刪 |
+| `out/mxf-logs/<slug>.get.log` | `fetch_sftp.sh` 下載階段 | SFTP `get` 輸出紀錄 | 日誌，可刪 |
+| `out/mxf-logs/<slug>.cues.log` | `fetch_sftp.sh` 切 cue 階段 | `cues` 指令 stdout/stderr | 日誌，可刪 |
+
+兩點容易誤會：原始影片不會留在這裡——`fetch_sftp.sh` 下載到 `/tmp/ilrdf-stage`，
+`cues.json` 一寫出來就刪片。視覺辨識的 TSV 也不會寫進這裡——`ingest.py`
+預設直接讀寫 `Kari-SRT/vision*/<slug>/`，`kithann/` 這邊的 `verified.json`
+只是本地追蹤「這個 work dir 核實到哪」的快取。
+
 **現況：24 個影片檔，2 個上傳不完整跳過，其餘 22 集全部完成。
 20,108 個 cue 100% 由 Claude 視覺辨識供字**，tesseract 與文稿都不供字。
 

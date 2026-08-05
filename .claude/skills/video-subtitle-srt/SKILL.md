@@ -141,11 +141,22 @@ own, and the main session only takes back TSV text. Measured cost is about
 **3,450 tokens per sheet** including prompt, reasoning and output — roughly
 2.4× a naive pixels/750 estimate, so budget from the measured figure.
 
-Twelve sheets per agent worked well. Two things to insist on in the prompt:
+Twelve sheets per agent worked well. Three things to insist on in the prompt:
 
 - Spell out the orthography. Told explicitly to preserve `^`, `'` and `:`,
   subagents reproduced `ina^ mama^ salikaka^ nga'ay ho^`, `mido^do^` and
-  `Po:long` correctly — the exact marks tesseract never emits.
+  `Po:long` correctly — the exact marks tesseract never emits. Measured over
+  200 bilingual cues, that instruction alone recovers **229 of 229** marks
+  on Sonnet 5, Opus 5 and Fable 5.
+- **Contrast `'` against `"` by name.** It is the one systematic misread
+  left. Every single one of Opus 5's Amis line errors in that run was the
+  same substitution — `kasini'adaan` → `kasini"adaan`, `mi'ami'ad` →
+  `mi"ami'ad`, five times, never the reverse — while Sonnet and Fable made
+  none. At 60px the two glyphs differ only by a second stroke, and a prompt
+  that lists both marks together without saying they are distinct invites
+  the reader to collapse them. Say something like: *both `'` (one stroke)
+  and `"` (two strokes) occur, sometimes in the same word — count the
+  strokes and do not normalise one to the other.*
 - Tell them to transcribe adjacent duplicate cues verbatim rather than
   deduplicating. `merge_repeats` handles that later with the timings in hand.
 
