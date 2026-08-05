@@ -292,7 +292,7 @@ def main():
         return
 
     os.makedirs(paths.KARI, exist_ok=True)
-    for sub in ("srt", "cues", "from_rtf"):
+    for sub in ("srt", "cues", "from_rtf", "report"):
         os.makedirs(os.path.join(paths.KARI, sub), exist_ok=True)
 
     for ep in eps:
@@ -312,10 +312,14 @@ def main():
     srt_src = os.path.join(paths.ROOT, "kithann", "srt")
     copied = 0
     for name in sorted(os.listdir(srt_src)):
-        if name.endswith(".srt") or name == "smkul.csv" \
-                or name.startswith("rtf-vs-vision."):
+        if name.endswith(".srt") or name == "smkul.csv":
             shutil.copy2(os.path.join(srt_src, name),
                          os.path.join(paths.KARI, "srt", name))
+            copied += 1
+        elif name.startswith("rtf-vs-vision."):
+            # reports live beside the deliverables, not among them
+            shutil.copy2(os.path.join(srt_src, name),
+                         os.path.join(paths.KARI, "report", name))
             copied += 1
     shutil.copy2(paths.INVENTORY, os.path.join(paths.KARI, "inventory.json"))
 

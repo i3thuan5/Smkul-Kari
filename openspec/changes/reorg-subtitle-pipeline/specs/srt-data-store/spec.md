@@ -19,7 +19,7 @@ Kari-SRT/
 ├── inventory.json               影片 ↔ 節目資料對應
 ├── srt/<srt_name>.srt           交付字幕（22 集）
 ├── srt/smkul.csv                進度表
-├── srt/rtf-vs-vision.md|.json   文稿 vs 視覺比對報告
+├── report/rtf-vs-vision.md|.json 文稿 vs 視覺比對報告（單一版本）
 ├── cues/<srt_name>.json         每集時間軸
 ├── from_rtf/<srt_name>.json     哪些 cue 曾由文稿供字
 ├── vision/<srt_name>/*.tsv      第一輪視覺逐字稿

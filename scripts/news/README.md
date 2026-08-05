@@ -10,7 +10,9 @@
 - **這裡（`scripts/news/`）**：程式與 `presets.json`、`inventory.json`。
 - **`Kari-SRT/` submodule**：資料正本——交付 SRT、`smkul.csv`、每集時間軸
   `cues/`、視覺逐字稿 `vision/`、`vision-rtf/`。僅靠主 repo + Kari-SRT
-  即可離線重建全部 SRT：`python3 -m scripts.news.rebuild --verify`。
+  即可離線重建全部 SRT：`python3 -m scripts.news.rebuild --verify`
+  （或 `tox -e subtitle-rebuild`）。**每次程式修改完在本機跑一次**——
+  Kari-SRT 是私有 repo，CI 抓不到 submodule，這條不進 CI。
 - **`kithann/`**（gitignore）：來源資料與可重生快取（work dir、log）。
 
 **現況：24 個影片檔，2 個上傳不完整跳過，其餘 22 集全部完成。
@@ -200,7 +202,7 @@ sheet 讀了一遍，還多花了建兩次 contact sheet 的工。真正的價�
 對照**：4,344 行、92.3% 一致，而且不一致的部分有系統性解釋，這是目前唯一
 能證明視覺辨識可信的證據。
 
-比對報告：`Kari-SRT/srt/rtf-vs-vision.md`（分類與範例）、
+比對報告：`Kari-SRT/report/rtf-vs-vision.md`（分析與範例）、
 `rtf-vs-vision.json`（完整 336 筆）。
 
 ### 視覺辨識的三個實作重點
@@ -251,7 +253,7 @@ sheet 讀了一遍，還多花了建兩次 contact sheet 的工。真正的價�
 
 - `Kari-SRT/srt/<播出日期>_<集數>_<時段>_<族語英>_<族語中>.srt` —— 22 集
 - `Kari-SRT/srt/smkul.csv` —— 進度表
-- `Kari-SRT/srt/rtf-vs-vision.md` / `.json` —— 文稿 vs 視覺比對報告
+- `Kari-SRT/report/rtf-vs-vision.md` / `.json` —— 文稿 vs 視覺比對報告
 - `Kari-SRT/cues/`、`vision/`、`vision-rtf/`、`from_rtf/`、
   `inventory.json` —— 重建 SRT 所需的全部過程資料
 
