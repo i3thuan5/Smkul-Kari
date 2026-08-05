@@ -1,5 +1,15 @@
 # CLAUDE 規定
 
+## SRT 產出規定
+
+任何 SRT 語句，邊界都盡量要留白，以利語音辨識模型訓練取得正確聲學參數。每段前面、後面各延伸 **0.5 秒**，0.5 秒為參考  Kaldi cleanup `segment_ctm_edits.py` 的 [--max-edge-silence-length](https://github.com/i3thuan5/kaldi/blob/d9ab0465aa2849ff645c027110c48899d5ec6ca8/egs/wsj/s5/steps/cleanup/internal/segment_ctm_edits.py#L42-L46)
+預設值。規則：
+
+- 相鄰兩段聲音之間過於接近無法各往外延伸 0.5 秒時，延伸到兩段聲音實際聲音邊界的**中點**相接（會使拄好相接，袂使重疊）。
+  例：第一段1.0–5.0秒、第二段5.2–8.3秒，延伸為第一段 1.0–5.1秒、第二段 5.1–8.3秒。
+- start 不為負；且end 不能超過影片長度。
+- 留白只影響** SRT 輸出**；時間軸資料（`cues.json` 等）保存真實切換點，無含留白。
+
 ## Git 操作規定
 
 Claude Code **毋准**執行下底ê git 指令（會影響 staged 檔案、commit 紀錄、分支、抑是遠端）：
