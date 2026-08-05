@@ -30,7 +30,7 @@
 - [x] 2.4 更新 `ilrdf-srt/README.md` 與 `kithann/srt/wenkao-vs-vision.*`
       檔名（→ `rtf-vs-vision.*`）及文內引用
 - [x] 2.5 驗證：`make_all.py` 重跑後輸出與 1.2 快照逐 byte 相同
-- [ ] 2.6 【使用者】commit「rename wenkao → rtf」
+- [x] 2.6 【使用者】commit「rename wenkao → rtf」（與 3.8 併入 745efda「refactor」）
 
 ## 3. 程式搬移與 package 化
 
@@ -53,11 +53,11 @@
       `.claude/commands/smkul-news.md` 的指令路徑同步改指 `scripts/`
 - [x] 3.7 驗證：`python -m scripts.news.make_all` 輸出與 1.2 快照相同；
       flake8 通過（含新的 CLAUDE.md for-loop 風格）
-- [ ] 3.8 刪除 `ilrdf-srt/` 內的**程式檔**與 `.claude/.../scripts/`
+- [x] 3.8 刪除 `ilrdf-srt/` 內的**程式檔**與 `.claude/.../scripts/`
       （selftest.py 留待 6.x 拆完再刪）；**`ilrdf-srt/vision/`、
       `vision-rtf/` 絕不可刪**——untracked 無備份，留待 4.2 遷移、
       5.2 驗證通過後由 5.3 收尾；【使用者】commit「move
-      engine+orchestration into scripts/」
+      engine+orchestration into scripts/」✓ 745edfa
 
 ## 4. Kari-SRT 資料遷移（design D3）
 
@@ -73,8 +73,10 @@
       → `Kari-SRT/srt/`；`inventory.json` → `Kari-SRT/inventory.json`
 - [x] 4.5 `paths.py` 增加 KARI 相關路徑；`make_all.py` 輸出目標改
       `Kari-SRT/srt/`；`ingest.py`／`batches.py` 的 TSV 預設位置改 Kari-SRT
-- [ ] 4.6 【使用者】在 Kari-SRT 內 commit 資料；主 repo `git submodule add`
+- [x] 4.6 【使用者】在 Kari-SRT 內 commit 資料；主 repo `git submodule add`
       （remote 由使用者提供）＋ commit pointer
+      ✓ 資料 commit 5650a24、pointer 已入 745edfa；`.gitmodules`
+      由 Claude 補寫＋`submodule init` 註冊，待併入最終 commit
 
 ## 5. 重建驗證（design D4，spec 的可執行形式）
 
@@ -83,9 +85,10 @@
       缺件即非零退出並列名（不產出不完整交付）
 - [x] 5.2 執行驗證：模擬 `kithann/out` 不存在（改名頂替）跑 `rebuild
       --verify` 全數通過，證明離線閉環
-- [ ] 5.3 驗證通過後刪除 `kithann/srt/`（design D7）與 `ilrdf-srt/`
+- [x] 5.3 驗證通過後刪除 `kithann/srt/`（design D7）與 `ilrdf-srt/`
       殘餘（`vision/`、`vision-rtf/` 原位置，此時 Kari-SRT 已 commit、
       有備份）；確認 `kithann/` 無任何被 git 追蹤的檔案
+      ✓ 刪後 rebuild --verify 仍逐 byte 通過、kithann 0 tracked
 - [ ] 5.4 【使用者】commit「retire kithann/srt; canonical data in Kari-SRT」
 
 ## 6. selftest 拆解（design D6）
