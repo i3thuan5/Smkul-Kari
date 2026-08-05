@@ -52,3 +52,10 @@ Claude Code **毋准**執行下底ê git 指令（會影響 staged 檔案、comm
 ## Python sir-tái-luh
 
 - `for` khǹg 頭前（`for x in ...:`），毋准用 list comprehension 抑是 generator expression kā `for` khǹg tī 後壁（`[... for x in ...]`）。若欲，ài 有特殊理由，而且經過使用者同意。
+
+## 程式修改了後ê驗收
+
+- 每擺程式修改完，ài佇本機走 `tox -e subtitle-rebuild`——對 Kari-SRT
+  ê資料離線重建全部交付SRT、逐byte比對。這條**無入CI**（Kari-SRT
+  是私人repo，CI掠袂著submodule），所以本機這步是唯一ê把關。
+- 順紲走 `tox -e flake8` 佮 `tox -e subtitle`（單元測試）。

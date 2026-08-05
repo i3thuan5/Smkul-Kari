@@ -6,6 +6,10 @@ python:
   - '3.10'
 before_install:
   - pip install --upgrade pip setuptools
+# Kari-SRT submodule 是私有 repo，CI 抓不到；關掉自動 checkout，
+# 否則 .gitmodules 進 main 後所有 job 會在 clone 階段就掛。
+git:
+  submodules: false
 branches:
   only:
     - main
