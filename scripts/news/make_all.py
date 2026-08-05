@@ -105,6 +105,13 @@ def make_one(entry):
 def tracker_row(entry, status):
     """One smkul.csv row. rebuild.py reuses this so that a rebuilt tracker
     is byte-comparable with the delivered one."""
+    # An episode whose only surviving source is short still gets subtitled --
+    # a partial transcript beats none -- but the tracker has to say so, or the
+    # SRT reads as a complete episode that simply stops. The note is attached
+    # here rather than where the SRT is built so that make_all and rebuild
+    # cannot drift apart on it.
+    if entry.get("partial"):
+        status = "%s；來源不完整：%s" % (status, entry["partial"])
     script = ""
     if entry["文稿位置"]:
         script = "ilrdf-corpus/" + entry["文稿位置"]

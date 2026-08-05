@@ -6,8 +6,8 @@
 
 This is the executable form of the srt-data-store spec's core guarantee:
 main repo (code) + Kari-SRT (cues/ + vision/ + vision-rtf/ + inventory.json)
-suffice to rebuild all 22 SRTs and smkul.csv byte-identical to the committed
-deliverables in Kari-SRT/srt/ -- offline, touching no video and calling no
+suffice to rebuild every delivered SRT and smkul.csv byte-identical to the
+committed deliverables in Kari-SRT/srt/ -- offline, no video, calling no
 model. If that holds, everything under kithann/ really is a regenerable
 cache.
 
@@ -146,7 +146,12 @@ def main():
         for name in mismatched:
             print("DIFFERS:", name)
         raise SystemExit(1)
-    print("\nOK: 22 SRTs + smkul.csv rebuilt byte-identical from Kari-SRT")
+    built_count = 0
+    for entry in entries:
+        if not entry["truncated"]:
+            built_count += 1
+    print("\nOK: %d SRTs + smkul.csv rebuilt byte-identical from Kari-SRT"
+          % built_count)
     return 0
 
 

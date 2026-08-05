@@ -23,6 +23,17 @@ This downloads one video at a time, checks its byte count against the
 server's, verifies the subtitle band, cuts cues, and **deletes the video**
 before moving on. Never hold more than one video locally.
 
+Filling a gap rather than doing a month — a few named episodes scattered
+through a folder — takes `--only`, an extended regex matched against the file
+name, followed by `add_episodes.py` to name them in the inventory (the video
+is gone by then, so `build_inventory.py` has nothing to scan):
+
+```bash
+bash scripts/news/fetch_sftp.sh '族語新聞/110.1-110.10/7月' \
+     --only '^(21NL005_37晨間|21NL004_37晚間)族語新聞\.mp4$'
+python3 -m scripts.news.add_episodes '族語新聞/110.1-110.10/7月/…mp4' …
+```
+
 Before committing to a whole month, run it with `--limit 2` and look at a
 contact sheet (`kithann/out/mxf/<slug>.work/sheets/sheet_001.png`) to confirm
 the strips show the dialogue line and nothing else.
@@ -30,12 +41,17 @@ the strips show the dialogue line and nothing else.
 ## 2. 文稿 alignment, then gap sheets
 
 ```bash
-python3 -m scripts.news.gap_sheets
+python3 -m scripts.news.gap_sheets            # or --no-rtf for every cue
 ```
 
 Only months with a matching 文稿 folder get script text; the rest is all gap.
 `gap_sheets.py` refuses to touch a work dir that already holds verified
 transcripts, so it is safe to re-run.
+
+Pass `--no-rtf` to put every cue on the sheets even where a 文稿 exists.
+Measured on February: 7.7% of the script's lines differ from the picture and
+the picture is right every time, so those cues get re-read anyway — reading
+them once here is cheaper than reading them twice.
 
 ## 3. Vision pass
 
@@ -67,7 +83,9 @@ sheets that reader was given.
 ## 4. Assemble
 
 ```bash
-python3 -m scripts.news.make_all       # writes SRTs + kithann/srt/smkul.csv
+python3 -m scripts.news.make_all       # writes SRTs + Kari-SRT/srt/smkul.csv
+python3 -m scripts.news.publish        # cues/from_rtf/inventory -> Kari-SRT
+python3 -m scripts.news.rebuild --verify   # prove the store rebuilds them
 ```
 
 ## Scale — say this out loud before starting

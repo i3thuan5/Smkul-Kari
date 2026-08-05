@@ -18,15 +18,30 @@ minutes of video and checks it against the band the preset already claims,
 failing loudly on a mismatch. `fetch_sftp.sh` runs it once per folder before
 committing to a batch.
 
-TWO LANDMARKS
--------------
-  dialogue plateau  the busiest row once the edge is masked out. Must be
-                    INSIDE the preset's region, else we are reading the wrong
-                    strip entirely.
-  lower-third edge  the single brightest row -- the horizontal white border on
-                    top of the red banner. Must NOT be inside the region, else
+TWO LANDMARKS, TOLD APART BY SHAPE
+----------------------------------
+A line of subtitle is a *broad* feature: fifty-odd rows of similar ink, the
+height of the glyph bodies. A graphic's border is a *thin* one: two or three
+near-white rows with ordinary picture either side. Reading the profile by
+height alone confuses them, and did, twice -- so each landmark is found by
+the shape that defines it.
+
+  dialogue plateau  the busiest row of the profile after smoothing over a
+                    glyph's height, which levels thin rules and leaves broad
+                    ones standing. Must be INSIDE the preset's region, else we
+                    are reading the wrong strip entirely.
+  lower-third edge  the row standing highest above its own local baseline --
+                    what the smoothing threw away. It counts as a border only
+                    at SPIKE times that baseline; below it there is no graphic
+                    in view, only the densest row of the subtitle itself.
+                    Where there is one, it must NOT be inside the region, else
                     the headline and interviewee name supers get segmented as
                     if they were dialogue.
+
+The spike is measured against its own neighbourhood rather than against the
+dialogue, which keeps it readable when the graphic is on screen for only part
+of the sampled window: both terms of the ratio shrink together, where a
+fraction-of-the-dialogue reading would simply collapse.
 
 Deliberately not checked: where ink first appears. There is always some above
 the band (white shirts, sky, and the subtitle itself rides higher over
@@ -38,25 +53,37 @@ PROVENANCE AND VALIDATION STATE  (read this before trusting it)
 New in the session that added SFTP fetching; it did not exist for the
 February batch, whose band was confirmed by hand instead.
 
-Measured, on 魯凱語-霧台20210101S1100.mp4 (240 sampled frames):
+Measured, 240 sampled frames from t=300s. `spike` is the tallest row over its
+own local baseline; a real border is a multiple of it, a subtitle row is not:
 
-  --preset titv-news                  PASS   edge y=848, plateau y=816
-  --preset amis-xiuguluan-bilingual   FAIL   correctly rejected, exit 1
+  file                         preset      plateau  spike        verdict
+  魯凱語-霧台20210101S1100.mp4  titv-news   y=814    y=849  3.12  PASS
+  魯凱語-霧台20210101S1100.mp4  amis-…      y=848    y=836  1.01  FAIL, right:
+      the plateau falls outside that preset's 876..1014, which is what
+      catches a preset applied to the wrong material
+  21NL003_41午間族語新聞.mp4     titv-news   y=807    y=835  1.23  PASS
+      no lower third on screen at all, only a language badge below the
+      region; y=835 is the bottom stroke of the glyphs
+  21NL004_37晚間族語新聞.mp4     titv-news   y=800    y=919  4.50  PASS
+      the full news layout: two borders below the region, at y=846 and
+      y=919, and the dialogue inside it
 
-NOT yet measured -- the open item:
+3.12 and 4.50 against 1.23 and 1.01 is the gap SPIKE splits.
 
-The edge rule was loosened after the fact and has not been run against any
-video since. A dry run of `fetch_sftp.sh` on 卑南語-20210103S1800.mp4 aborted
-because that episode puts its lower-third edge at y=917 rather than the y=848
-of the February masters, and the rule then demanded the edge sit just below
-the region. Reasoning says an edge *further* below is harmless -- it cannot
-leak banner text into a region that ends at y=844 -- so the rule now only
-rejects an edge that falls strictly inside the region. That reasoning is
-sound but untested: nobody has confirmed that the y=796 plateau on that file
-is really dialogue.
+Both of the PASSes above were failures before the shape reading went in, and
+both would have made a whole folder unfetchable:
 
-Before trusting a month that contains files like it: run this WITHOUT
---quiet on one of them, eyeball the printed profile, and open
+  41午  its brightest row is the glyphs' own bottom stroke, which is inside
+        the region by construction, so it was refused as a border in the band
+  37晚  its busiest single row is a border 3 px BELOW the region, so the
+        plateau was reported at y=847 and called outside
+
+An edge below the region is fine and does happen: the February masters put
+one at y=848, four pixels under, and a January 卑南 episode at y=917. Only an
+edge landing within lo..hi is rejected.
+
+This is a measurement, not a proof. On the first file of any new folder, run
+WITHOUT --quiet, eyeball the printed profile, and open
 `kithann/out/mxf/<slug>.work/sheets/sheet_001.png` to see that the strips
 carry the dialogue line and nothing else.
 """
@@ -67,6 +94,16 @@ import numpy as np
 
 from scripts.news import paths
 from scripts.subs2srt import cuelib
+
+# Rows to average over when separating broad features from thin ones: about
+# the height of a subtitle glyph, so a line of text survives and a two-pixel
+# rule does not.
+SMOOTH = 24
+
+# How far a row must stand above its own local baseline before it is read as a
+# graphic's border rather than as part of the subtitle. Measured: 3.12 and
+# 4.50 for real borders, 1.23 and 1.01 for the densest row of a subtitle.
+SPIKE = 2.0
 
 
 def profile(path, region, spec, start, duration, fps=1.0):
@@ -79,6 +116,31 @@ def profile(path, region, spec, start, duration, fps=1.0):
     if not frames:
         raise SystemExit("no frames decoded from %s" % path)
     return rows / float(frames), frames
+
+
+def landmarks(rows):
+    """(edge index or None, plateau index, spike ratio).
+
+    Split the profile into what survives smoothing over a glyph's height and
+    what that smoothing throws away. The first is where the text is; the
+    second is where the thin bright rules are, if any. Judging both by height
+    instead confuses a graphic's border with the densest row of a subtitle,
+    which is what made this refuse two perfectly good layouts.
+    """
+    broad = np.convolve(rows, np.ones(SMOOTH) / SMOOTH, mode="same")
+    plateau = int(np.argmax(broad))
+    thin = rows - broad
+    edge = int(np.argmax(thin))
+    baseline = broad[edge]
+    if baseline <= 0:
+        return None, plateau, 0.0
+    # Against its own baseline, not against the dialogue: a border on screen
+    # for only part of the window shrinks both terms together, so the ratio
+    # degrades gently instead of collapsing.
+    ratio = float(thin[edge]) / float(baseline)
+    if ratio < SPIKE:
+        return None, plateau, ratio
+    return edge, plateau, ratio
 
 
 def main():
@@ -110,26 +172,27 @@ def main():
             print("y=%4d %7.1f %s" % (probe[1] + i, value,
                                       "#" * int(min(60, value / 5))))
 
-    # Two landmarks, both unambiguous:
-    #
-    #   edge     the brightest row by a wide margin -- the top border of the
-    #            red lower-third, a horizontal rule of near-white pixels
-    #   plateau  the busiest row once the edge is masked out -- the dialogue
+    # Two landmarks, each found by its shape (see the module docstring):
+    # a broad plateau is text, a thin spike is a graphic's border, and not
+    # every layout has a border in view at all.
     #
     # Deliberately NOT checked: where ink first appears. There is always some
     # above the band (white shirts, sky, and the subtitle itself rides higher
     # over letterboxed clips), so "topmost inky row" flags healthy files.
-    edge_i = int(np.argmax(rows))
-    edge = probe[1] + edge_i
-    body = rows.copy()
-    body[max(0, edge_i - 8):edge_i + 9] = 0
-    plateau = probe[1] + int(np.argmax(body))
+    edge_i, plateau_i, ratio = landmarks(rows)
+    edge = None if edge_i is None else probe[1] + edge_i
+    plateau = probe[1] + plateau_i
 
     lo, hi = want[1], want[1] + want[3]
-    print("\npreset %s region y=%d..%d" % (args.preset, lo, hi))
-    print("brightest row  y=%d  <- red lower-third edge (%d frames)"
-          % (edge, frames))
-    print("busiest row    y=%d  <- dialogue plateau" % plateau)
+    print("\npreset %s region y=%d..%d  (%d frames)"
+          % (args.preset, lo, hi, frames))
+    print("broad plateau  y=%d  <- dialogue" % plateau)
+    if edge is None:
+        print("no thin rule   (tallest spike only %.2fx its baseline, under "
+              "%.2f) <- no lower third on screen" % (ratio, SPIKE))
+    else:
+        print("thin rule      y=%d  <- lower-third edge, %.2fx its baseline"
+              % (edge, ratio))
 
     # What actually has to hold:
     #
@@ -146,7 +209,7 @@ def main():
     if not lo <= plateau <= hi:
         problems.append("dialogue plateau at y=%d falls outside the region "
                         "(%d..%d)" % (plateau, lo, hi))
-    if lo < edge < hi:
+    if edge is not None and lo < edge < hi:
         problems.append("lower-third edge at y=%d is inside the region "
                         "(%d..%d); its headline text would be read as "
                         "dialogue" % (edge, lo, hi))

@@ -100,6 +100,14 @@ def prepare(slug, rtf):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("slugs", nargs="*", help="work-dir slugs; default all")
+    ap.add_argument("--no-rtf", action="store_true",
+                    help="put every cue on the sheets, even where a 文稿 "
+                         "exists. Measured on the February batch: the 文稿 "
+                         "is not faithful enough to ship (7.7%% of its lines "
+                         "differ from the picture, and the picture is right "
+                         "every time), so cues it covers get read anyway -- "
+                         "reading them once here is cheaper than reading "
+                         "them twice.")
     args = ap.parse_args()
 
     entries = json.load(open(paths.INVENTORY, encoding="utf-8"))
@@ -119,7 +127,7 @@ def main():
             print("skip %s (already prepared or read)" % slug)
             continue
         rtf = ""
-        if entry["文稿位置"]:
+        if entry["文稿位置"] and not args.no_rtf:
             rtf = os.path.join(CORPUS, entry["文稿位置"])
         cues, aligned, gap, made = prepare(slug, rtf)
         total_sheets += made

@@ -37,6 +37,22 @@ def pending_sheets(work):
     return out
 
 
+def srt_name_of(slug):
+    """The name Kari-SRT files this episode's transcripts under.
+
+    It has to come from the inventory, not from chopping up the slug: the two
+    names carry the same fields in a different order, and `ingest.py` and
+    `rebuild.py` both look the TSVs up by srt_name. A guessed folder name
+    means readers write where nothing will ever look, and the first sign of it
+    is an episode that assembles with no text.
+    """
+    with open(paths.INVENTORY, encoding="utf-8") as handle:
+        for entry in json.load(handle):
+            if entry["slug"] == slug:
+                return entry["srt_name"]
+    raise SystemExit("slug %r is not in inventory.json" % slug)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("slug")
@@ -45,7 +61,7 @@ def main():
     args = ap.parse_args()
 
     work = os.path.join(WORK, args.slug + ".B.work")
-    tag = args.slug.split("_")[1] + "_" + args.slug.split("_")[-1]
+    tag = srt_name_of(args.slug)
     sheets = pending_sheets(work)
     print("# %s: %d sheet(s) pending" % (args.slug, len(sheets)))
     made = 0

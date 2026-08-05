@@ -59,10 +59,35 @@ python3 -m scripts.news.ingest <slug> <tsv 目錄>   # 驗證＋匯入
 python3 -m scripts.news.make_all          # 4. 產 SRT ＋ 寫 Kari-SRT/srt/smkul.csv
 ```
 
+**補特定幾集**（不是整個月，例如把某幾個族語從 0 集補到 2 集）：
+
+```bash
+# 1. 只抓指定的幾支：--only 是對「檔名」比對的 ERE
+bash scripts/news/fetch_sftp.sh '族語新聞/110.1-110.10/7月' \
+     --only '^(21NL005_37晨間|21NL004_37晚間)族語新聞\.mp4$'
+# 2. 把這幾集寫進 inventory（影片已經刪掉了，所以不能用 build_inventory）
+python3 -m scripts.news.add_episodes '族語新聞/110.1-110.10/7月/21NL005_37晨間族語新聞.mp4' …
+# 3. 出 contact sheet；--no-rtf 表示文稿蓋到的 cue 也照樣讀
+python3 -m scripts.news.gap_sheets --no-rtf <slug> …
+# 4. 視覺辨識 → ingest → make_all（同上）
+# 5. 把 cues/from_rtf/inventory 遷進 Kari-SRT，再驗離線閉環
+python3 -m scripts.news.publish
+python3 -m scripts.news.rebuild --verify
+```
+
+`--only` 存在的理由是磁碟：一個資料夾動輒上百支、幾百 GB，補三支不該用
+`--limit` 從頭數。`add_episodes.py` 存在的理由是 `build_inventory.py` 掃的是
+**本機資料夾**，而 SFTP 這條一切完 cue 就把影片刪了，掃無可掃——它改成用
+檔名查 `ilrdf-corpus.csv`，跟 `resolve_slug.py` 命名 work dir 的方式同一套。
+已經在 inventory 裡的集數會跳過，只有標記 `truncated` 的會被新來源取代。
+
+`--no-rtf` 的理由見下面「文稿：當交叉驗證有用，當文字來源沒用」：文稿供字
+的 cue 最後還是得重讀一次，先用文稿等於同一批 sheet 讀兩遍。
+
 每一步都可中斷重跑：`run_cues.sh` 跳過已有 `cues.json` 的 work dir，
-`gap_sheets.py` 拒絕覆蓋已校讀的 work dir，`verified.json` 記錄哪些 sheet
-讀過。這在實務上救過兩次——一次 devcontainer 重建、一次 session 中斷，
-都是直接接著跑完。
+`fetch_sftp.sh` 也是，`gap_sheets.py` 拒絕覆蓋已校讀的 work dir，
+`verified.json` 記錄哪些 sheet 讀過。這在實務上救過兩次——一次 devcontainer
+重建、一次 session 中斷，都是直接接著跑完。
 
 ## 影片來源：SFTP
 
@@ -147,17 +172,49 @@ python3 -m scripts.news.verify_band VIDEO --preset titv-news    # 加 --quiet �
 ```
 
 - **對白平台**要落在 preset 的 region 內，否則就是讀錯地方了
-- **紅帶上緣**（整張圖最亮的那一列）不可以落在 region **裡面**，否則標題與
-  受訪者名條會被當成對白切進去
+- **紅帶上緣**如果看得到，不可以落在 region **裡面**，否則標題與受訪者名條
+  會被當成對白切進去
 
 紅帶在 region **下方**多遠都沒關係：2 月母帶是 y=848（距 region 底 4 px），
 1 月一支卑南是 y=917，兩個都安全。`fetch_sftp.sh` 每個資料夾自動跑一次。
 
-### mp4 的字幕帶跟 mxf 一樣
+**兩個地標要用「形狀」分，不能用「高度」分。** 一行字幕是**寬**的特徵——
+五十幾列差不多的墨，字身那麼高；圖卡邊框是**細**的——兩三列近白，上下都是
+普通畫面。原本兩個地標都取「最亮的列」，在 7月 那批 mp4 上連錯兩次，兩次
+都是把好檔案擋掉：
 
-mp4 是 1920×1080 h264，沒有 soft subtitle。實測 300 秒的列剖面：字幕平台
-788–844，848 是紅色標題帶上緣的尖峰（值 382，是平台的兩倍），跟 mxf 完全
-同一個形狀。所以 region 一樣是 `[0, 722, 1920, 122]`。
+| 檔案 | 原本判成 | 實際 |
+|---|---|---|
+| `21NL003_41午間` | 「紅帶上緣 y=835 落在 region 裡」→ 中止 | 這集**根本沒有紅帶**，y=835 是字身最下面那一列 |
+| `21NL004_37晚間` | 「對白平台 y=847 落在 region 外」→ 中止 | y=847 是紅帶邊框，只差 region 底 3 px；真正的對白平台在 y=800 |
+
+改成：對白平台取**平滑過後**（視窗 24 列，約一個字高）最高的列，細線會被
+抹平；紅帶上緣取**平滑丟掉的那部分**最高的列，而且要比它**自己附近的底**高
+2 倍以上才算數。跟自己的底比而不是跟對白比，紅帶只出現半場也還讀得出來
+（分子分母一起縮），四個實測案例分得很開：
+
+| 檔案 | preset | 對白平台 | 細線 | 細線/底 | 結果 |
+|---|---|---|---|---|---|
+| 魯凱語-霧台20210101S1100 | titv-news | y=814 | y=849 | **3.12** | PASS |
+| 魯凱語-霧台20210101S1100 | amis…（故意套錯）| y=848 | y=836 | 1.01 | FAIL（平台落在 876..1014 外）|
+| 21NL003_41午間 | titv-news | y=807 | y=835 | 1.23 | PASS（無紅帶）|
+| 21NL004_37晚間 | titv-news | y=800 | y=919 | **4.50** | PASS |
+
+門檻設 2.0。套錯 preset 照樣被平台那條擋下來，這點沒有變鬆。
+
+### mp4 的字幕帶跟 mxf 一樣，版型卻不只一種
+
+mp4 是 1920×1080 h264，沒有 soft subtitle。region 一樣是
+`[0, 722, 1920, 122]`，四個實測檔的對白平台都落在裡面。
+
+但**同一個資料夾裡的版型不保證一致**。`110.1-110.10/7月/` 底下至少兩種：
+
+- **完整新聞版型**：紅帶在 y=846 與 y=919 兩道，對白在 region 內（037晚 排灣）
+- **無紅帶版型**：整場只有左下角一塊族語標章（在 region 下方），對白直接壓在
+  畫面上（041午 鄒，春節特別節目）
+
+所以 `fetch_sftp.sh` 那句「每個資料夾驗一次」只是省時間，不是保證；換新資料夾
+第一支請不加 `--quiet` 看剖面，再開 `sheets/sheet_001.png` 確認圖條上只有對白。
 
 （版型怎麼選見上面「版型由資料夾決定」一節。）
 
@@ -176,9 +233,29 @@ mp4 是 1920×1080 h264，沒有 soft subtitle。實測 300 秒的列剖面：�
 （泰雅／撒奇萊雅／Seediq…）截出來跟目錄對照，24 個檔全部相符。
 
 **上傳不完整的檔案。** 完整母帶是固定 6.30 MB/s 的 CBR。有兩個檔明顯偏低
-（2.83 與 3.44 MB/s），檔頭仍宣稱完整長度，但尾端解碼毀損 —— 這兩集跳過
-（041 鄒、037晚 排灣）。只看 `ffprobe` 的 duration 看不出來，要拿位元組數
-除以長度才會現形。
+（2.83 與 3.44 MB/s），檔頭仍宣稱完整長度，但尾端解碼毀損 —— 這兩集當初
+跳過（041午 鄒、037晚 排灣）。只看 `ffprobe` 的 duration 看不出來，要拿
+位元組數除以長度才會現形。
+
+**「上傳不完整」要分清楚是這一份壞，還是這集只有這麼多。** 後來拿
+`110.1-110.10/7月/` 的 mp4 版本重抓這兩集，結果分岔：
+
+- **037晚 排灣救回來了**：mp4 完整 49:20，2 月那份 mxf 只是壞掉的複本。
+- **041午 鄒沒救**：mp4 只有 11:13，最後一句講到一半、末幀破圖，跟 mxf 那份
+  「約完整檔 45%」完全吻合——伺服器上兩個位置是同一份短檔。
+
+所以「來源短缺」跟「這一份抓壞了」是兩件事：前者換來源沒用，後者換就好。
+041午 鄒照樣做成 SRT（有總比沒有好），inventory 多一個 `partial` 欄，
+`make_all.tracker_row()` 把它接在狀態後面 —— 掛在 `tracker_row()` 而不是
+產 SRT 的地方，`rebuild.py` 才不會跟 `make_all.py` 講不一樣的話。
+
+**`fetch_sftp.sh` 只做一集就說整批做完。** 迴圈原本是
+`while read ... done < "$listing"`，清單掛在 stdin；迴圈裡的 `ssh`（下載）
+跟 `ffmpeg`（切 cue）都會把 stdin 吸乾，剩下的集數整批消失，然後印
+`finished: 1 episode(s) cut` 收工——**看起來完全正常**。這支從加進來就只用
+`--limit 1`／`--limit 2` 試跑過，限流本來就只做一兩集，所以一直沒現形；
+第一次真的拿去跑 13 集才炸出來。清單改掛 fd 3（`read <&3` ＋
+`done 3< "$listing"`），子行程愛吸 stdin 隨便它。
 
 **母帶開頭的 slate 會被當成字幕。** 播出母帶開頭是彩條與識別卡，識別卡的
 白字剛好落在字幕帶範圍內，segmenter 會在第 0 幀開一個十幾秒的 cue。
@@ -242,7 +319,8 @@ sheet 讀了一遍，還多花了建兩次 contact sheet 的工。真正的價�
 
 | | |
 |---|---|
-| `build_inventory.py` | 影片↔節目資料對應，寫 `inventory.json` |
+| `build_inventory.py` | 掃本機資料夾：影片↔節目資料對應，寫 `inventory.json` |
+| `add_episodes.py` | 補登 SFTP 抓來的集數（影片已刪，只剩檔名可查）|
 | `run_cues.sh` | 複製到本機 → 切 cue |
 | `rtf.py` | 讀 Big5 RTF 文稿（檔頭寫 cp1252，其實是 Big5） |
 | `align.py` | 把 OCR 訊號對回文稿（現已不供字，保留供比對用） |
@@ -261,6 +339,7 @@ sheet 讀了一遍，還多花了建兩次 contact sheet 的工。真正的價�
 | `resolve_slug.py` | 用 `ilrdf-corpus.csv` 把檔名對成 work dir／SRT 名稱 |
 | `paths.py` | 全部路徑的單一出處；`--var` 供 shell 取值 |
 | `migrate_kari.py` | 一次性：舊命名資料 → Kari-SRT（保留當對照文件）|
+| `publish.py` | 把讀完的集數的 `cues`／`from_rtf`／`inventory.json` 遷進 Kari-SRT |
 | `rebuild.py` | 從 Kari-SRT 離線重建全部 SRT 並逐 byte 驗證 |
 | `Kari-SRT/vision/` | 第一輪視覺逐字稿 TSV（文稿沒蓋到的 cue）|
 | `Kari-SRT/vision-rtf/` | 第二輪視覺逐字稿 TSV（文稿蓋到的 cue）|
@@ -305,14 +384,10 @@ Kari-SRT 的資料重組全部 SRT 並逐 byte 比對，缺件即指名失敗。
 
 ## 還沒做的
 
-**`verify_band.py` 的紅帶判準還沒實測過。** 這支是加 SFTP 那次新寫的，2 月
-那批當初是手動確認帶位、沒有用到它。已測：`魯凱語-霧台20210101S1100.mp4`
-用 `titv-news` 通過（邊緣 y=848、平台 y=816），故意用錯 preset 會失敗。
-未測：試跑 1 月時 `卑南語-20210103S1800.mp4` 的紅帶邊緣在 y=917 而非 848，
-判準因此放寬成「只擋落在 region 裡面的邊緣」——推理上成立（邊緣在下方不可能
-把標題文字漏進 y=844 就結束的區域），但**改完之後沒有再拿任何影片跑過**。
-下次開跑含這類檔案的月份，第一支請不加 `--quiet` 跑一次、看剖面，再開
-`sheets/sheet_001.png` 確認圖條上只有對白。
+**`verify_band.py` 的判準已經有四個實測案例**（見上面那張表），涵蓋「有紅帶
+／沒紅帶／紅帶在 region 外 3 px／故意套錯 preset」四種。還沒涵蓋的是**紅帶
+只出現一部分時間**的檔案：判準對這種情形會變弱而不是失效（分子分母一起縮），
+但沒有實際檔案可以驗。真遇到就要改成逐幀量，不要靠平均。
 
 
 
