@@ -36,8 +36,16 @@
 預設直接讀寫 `Kari-SRT/vision*/<slug>/`，`kithann/` 這邊的 `verified.json`
 只是本地追蹤「這個 work dir 核實到哪」的快取。
 
-**現況：24 個影片檔，2 個上傳不完整跳過，其餘 22 集全部完成。
-20,108 個 cue 100% 由 Claude 視覺辨識供字**，tesseract 與文稿都不供字。
+**現況：35 集全部完成，29,220 個 cue 100% 由 Claude 視覺辨識供字**，
+tesseract 與文稿都不供字。分兩批做的：
+
+- **2 月母帶 22 集**（20,108 cue）：本機 mxf，24 個檔扣掉 2 個上傳不完整。
+- **補集 13 集**（9,112 cue）：從 SFTP 的 `110.1-110.10/7月/` 抓 mp4，
+  把 9 個族語從 0～1 集補到各 2 集。其中 037晚 排灣就是 2 月那兩個壞檔之一，
+  mp4 版本完整、救回來了；041午 鄒兩個來源都是同一份短檔，照做但標
+  `partial`。
+
+族語涵蓋：16 族語各至少 2 集（午間 17、晚間 14、晨間 4）。
 
 ## 跑法
 
@@ -259,7 +267,7 @@ mp4 是 1920×1080 h264，沒有 soft subtitle。region 一樣是
 
 **母帶開頭的 slate 會被當成字幕。** 播出母帶開頭是彩條與識別卡，識別卡的
 白字剛好落在字幕帶範圍內，segmenter 會在第 0 幀開一個十幾秒的 cue。
-22 集裡最早的真實字幕出現在 5.8 秒，所以 `make_srt.py` 直接丟掉
+2 月那 22 集裡最早的真實字幕出現在 5.8 秒，所以 `make_srt.py` 直接丟掉
 「start < 0.5 秒」的 cue。
 
 ## 文字全部來自 Claude 視覺辨識
@@ -344,14 +352,14 @@ sheet 讀了一遍，還多花了建兩次 contact sheet 的工。真正的價�
 | `Kari-SRT/vision/` | 第一輪視覺逐字稿 TSV（文稿沒蓋到的 cue）|
 | `Kari-SRT/vision-rtf/` | 第二輪視覺逐字稿 TSV（文稿蓋到的 cue）|
 
-`vision/` 與 `vision-rtf/` 加起來就是 20,108 個 cue 的完整逐字稿，
+`vision/` 與 `vision-rtf/` 加起來就是 29,220 個 cue 的完整逐字稿，
 是這批工作最可重複使用的成果，正本在 `Kari-SRT/`。
 
 ## 產出
 
 正本都在 `Kari-SRT/`（submodule，進版本控制）：
 
-- `Kari-SRT/srt/<播出日期>_<集數>_<時段>_<族語英>_<族語中>.srt` —— 22 集
+- `Kari-SRT/srt/<播出日期>_<集數>_<時段>_<族語英>_<族語中>.srt` —— 35 集
 - `Kari-SRT/srt/smkul.csv` —— 進度表
 - `Kari-SRT/report/rtf-vs-vision.md` / `.json` —— 文稿 vs 視覺比對報告
 - `Kari-SRT/cues/`、`vision/`、`vision-rtf/`、`from_rtf/`、

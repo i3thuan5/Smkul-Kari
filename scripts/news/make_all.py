@@ -61,12 +61,16 @@ def make_one(entry):
     work = os.path.join(WORK, slug + ".work")
     if not os.path.exists(os.path.join(work, "cues.json")):
         return "待處理（尚未切cue）"
-    if not os.path.exists(os.path.join(work, "transcripts.json")):
-        return "待處理（已切cue，尚未辨識）"
 
     # A finished vision pass supersedes everything else: its text was read off
     # the contact sheets rather than recognised, so it needs no 文稿 to correct
     # it and must not be diluted by tesseract's version.
+    #
+    # It is therefore asked about FIRST. The February batch happened to have a
+    # tesseract draft in every .work dir, so a "have we recognised anything
+    # yet?" guard could sit above this and never fire wrongly. Episodes read
+    # by vision alone have no such draft, and that guard reported thirteen
+    # fully-read episodes as 尚未辨識 while their transcripts sat in .B.work.
     vision = os.path.join(WORK, slug + ".B.work")
     if vision_complete(vision):
         out = os.path.join(SRT_DIR, entry["srt_name"] + ".srt")
@@ -79,6 +83,11 @@ def make_one(entry):
         qc = json.loads(proc.stdout.strip().splitlines()[-1])
         return ("已產生 %d 行；Claude 視覺辨識，%d 個 cue 全數校讀"
                 % (qc["srt_lines"], qc["cues"]))
+
+    # No finished vision pass, so fall back to the older sources -- which
+    # need a tesseract draft to exist at all.
+    if not os.path.exists(os.path.join(work, "transcripts.json")):
+        return "待處理（已切cue，尚未辨識）"
 
     rtf = ""
     if entry["文稿位置"]:
