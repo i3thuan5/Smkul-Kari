@@ -89,7 +89,8 @@
       殘餘（`vision/`、`vision-rtf/` 原位置，此時 Kari-SRT 已 commit、
       有備份）；確認 `kithann/` 無任何被 git 追蹤的檔案
       ✓ 刪後 rebuild --verify 仍逐 byte 通過、kithann 0 tracked
-- [ ] 5.4 【使用者】commit「retire kithann/srt; canonical data in Kari-SRT」
+- [x] 5.4 【使用者】commit「retire kithann/srt; canonical data in Kari-SRT」
+      ✓ 內容併入 745edfa「refactor」＋ a52394c「補submoduel」
 
 ## 6. selftest 拆解（design D6）
 
@@ -133,4 +134,7 @@
       （歷史文件與 change 目錄除外）
 - [x] 8.5 全套測試最終執行：tox flake8 + subtitle + subtitle-e2e +
       `rebuild --verify`
-- [ ] 8.6 【使用者】最終 commit（tests + config）
+- [x] 8.6 【使用者】最終 commit（tests + config）
+      ✓ a52394c「補submoduel」、64f2d0f「整理整合試驗」、
+      bc8d28c「報告path整理」——`.gitmodules`、tox/CI 設定、
+      CLAUDE.md 驗收規定、Kari-SRT 報告目錄整理皆已 commit
