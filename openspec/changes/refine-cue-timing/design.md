@@ -2,14 +2,25 @@
 
 ## Context
 
-- 現行切分：5fps 取樣（0.2s 格點）、`min_stable=2`；22 集邊界已實測全部
-  落在 0.2s 整數倍上。e2e 斷言 worst-start ≤ 0.30s。
+（tidy-subtitle-pipeline 完成後更新。驗收原則沿用它：**一律用推導的
+數字，不用寫死的常數**——集數 = store inventory 非 pending 筆數。）
+
+- 現行切分：5fps 取樣（0.2s 格點）、`min_stable=2`；全部已交付集
+  （寫此文時 35 集，含 da2f0b3 補做的 13 集）邊界實測全落在 0.2s
+  整數倍上。e2e 斷言 worst-start ≤ 0.30s。
+- 引擎已拆檔：`merge_repeats`／`apply_gap_rules` 等組裝函數在
+  `scripts/subs2srt/assemble.py`；`make_srt.run(work, out)` 直接
+  import、回傳 qc dict（無 subprocess、`.qc.json` 只在 CLI 路徑寫）。
+- 文稿路徑（align／rtf 系列）已整組刪除；唯一文字來源是校讀過的
+  視覺辨識。inventory 唯一正本在 `Kari-SRT/`，批次進行中以
+  `pending` 旗標標示（`add_episodes` 標、`publish` 清），rebuild 與
+  tracker 跳過 pending。
 - 影片已不在本機：2 月 mxf 母帶（每集 ~16GB）在 SFTP
   `族語新聞/110.1-110.10/2月原始mxf檔`；下載實測 75MB/s。
 - 母帶為 1080i tt 交錯掃描——切換瞬間可能出現上下場各半張字幕的過渡幀。
 - `cuelib` 已有可重用的原語：`stream_region`（區域串流解碼，可指定
   start/duration/fps）、`text_mask`、`mask_distance`。
-- 20,108 個已校讀 cue 的文字對映絕不可失效——重切會改變 cue 集合，
+- 全部已校讀 cue 的文字對映絕不可失效——重切會改變 cue 集合，
   是明確禁手。
 - `verify_band.py` 的「只擋落在 region 內的紅帶邊緣」判準改完未實測。
 - CLAUDE.md：git 操作由使用者執行；Python 用 for 迴圈不用 comprehension。
@@ -65,10 +76,10 @@ fps=25 幀距 0.04s，滿足 spec 的 ≤0.05s；窗取邊界 ±0.24s（含一�
 
 ### D4：兩條執行路徑共用同一支程式
 
-- **回頭精修（22 集）**：`refine_fetch.sh` 逐集「SFTP 下載 → 驗位元組 →
-  refine_cues → 刪影片」，沿用 `fetch_sftp.sh` 的密碼／驗檔模式；跑完
-  `make_all` 重產 SRT → `rebuild --verify` → 使用者一個 commit 同時換
-  `Kari-SRT/cues/` 與 `srt/`。
+- **回頭精修（全部已交付集）**：`refine_fetch.sh` 逐集「SFTP 下載 →
+  驗位元組 → refine_cues → 刪影片」，沿用 `fetch_sftp.sh` 的密碼／
+  驗檔模式；跑完 `make_all` 重產 SRT → `rebuild --verify` → 使用者
+  一個 commit 同時換 `Kari-SRT/cues/` 與 `srt/`。
 - **新月份**：`fetch_sftp.sh` 在 cues 成功後、`rm 影片`之前插一步
   refine_cues（影片就在 STAGE，零額外下載）。
 
@@ -91,8 +102,12 @@ scenario 的可執行形式）。
 
 ### D6：SRT 留白在組裝層做，0.5s 對齊 Kaldi 預設
 
-留白規則實作在 SRT 組裝（`make_srt` 的 entries 後處理，
-`merge_repeats` 之後、`apply_gap_rules` 之前）。與鄰句的間隔
+規則本身已進 CLAUDE.md（f9ea256），本 change 實作它。位置在 SRT
+組裝的**最後一步**（`assemble.merge_repeats` → `apply_gap_rules` →
+留白）：`apply_gap_rules` 會把過近的句對強制拉開 0.04s 最小間隔，
+若留白在它之前做，拄好相接的中點（spec 的 2.1/2.1 案例）會被它
+重新拆開——所以留白必須在其後，且留白本身保證不產生重疊，不需要
+再過 gap 規則。與鄰句的間隔
 `g = next_start − prev_end`，兩側各延伸 `min(0.5, g/2)`——間隔不足
 1 秒時在中點相接（可相接、不重疊；例 1.0–2.0 與 2.2–3.2 →
 1.0–2.1 與 2.1–3.2），再以 `[0, 影片長度]` 截短。影片長度來源：
@@ -108,47 +123,35 @@ scenario 的可執行形式）。
 捨棄：把留白寫進 cues.json——資料失真，之後任何以切換點為準的用途
 （對齊、統計）都會被 0.5s 污染。
 
-### D7：2 月補完走「目錄驅動」而非 mxf 資料夾驅動
+### D7：（已由外部完成）二月補集與 pending 語意
 
-`build_inventory.py` 現以本機 mxf 資料夾為輸入，只涵蓋 24 集。補完
-改由 `ilrdf-corpus.csv` 目錄驅動：2 月共 64 集（16 族語 × 4 集，
-含晨間時段——NL005 代碼，`find_transcript` 的 0800 對映已支援）。
-**範圍不是全部**：先做到「每族語至少 2 集」，缺額集數以 2 月內
-集數較早（播出較早）者優先——共 13 集（清單在 tasks 6.1，經使用者
-確認後定案）。目錄資料已知的坑：鄒 034午 在目錄裡**沒有影片
-路徑**；鄒 041午 與 排灣 037晚 本機那兩份 mxf 上傳不完整，但 SFTP
-版本預期完整——排最前面先做、下載後以位元組數驗證，仍不完整則
-遞補（排灣→051晚、鄒→055午）；目錄把 037晚 指到 37「午間」檔名、
-賽夏 057晚 檔名也寫「午間」——一律以「集數＋時段查目錄」為準、
-下載後驗位元組數。晨間集的版型
-未驗過，該資料夾第一支照例跑 verify_band。`inventory.json` 擴充
-收錄新集數（沿用 `srt_name`／slug 規則）。
-
-smkul.csv 是生成物（make_all 產生、rebuild 逐 byte 比對），要補
-13 列「待處理」必須走資料流而非手改：inventory 擴充後，rebuild 需要
-「未交付集」語意——cues 與 srt **皆無**的集產「待處理（尚未切cue）」
-列且不做比對；只缺其一仍視為交付集缺件、照舊指名失敗；兩者皆失的
-退化情形照舊靠 tracker 逐 byte 比對把關（重建出的列會變待處理、與已
-commit 的 smkul.csv 不符而被抓到）。此作法已在規劃期試做驗證可行
-（rebuild --verify 與測試全過）後還原，apply 時照做（task 6.1）。
-
-無文稿的集不跑對齊，
-`gap_sheets` 天生把無文稿當全 gap，流程不變。視覺辨識照
-`/smkul-news` 慣例：先報 sheet 數與 token 估算、取得同意再放
-subagent。
+原規劃的「每族語至少 2 集」13 集補做，已由另一批次於 `da2f0b3`
+完成入庫（粗切精度、走 `add_episodes`→視覺辨識→`publish` 流程）；
+「批次進行中的 smkul.csv／rebuild 一致性」也由 tidy-subtitle-pipeline
+的 `pending` 旗標機制正式解決，取代本文件先前試做的「未交付集」
+語意。本 change 不再包含補集工作；該 13 集以粗切交付，納入 D4 的
+回頭精修範圍。文稿對齊與 C-pass 已於 tidy 移除，對任何集數都不再
+是處理步驟。
 
 ### D8：交付基準的換版程序
 
-時間戳全變 → `Kari-SRT/srt/` 逐 byte 基準改版。程序：精修完成 →
-`make_all`（來源仍是 work dir transcripts；文字不變）→ 新 SRT 與舊 SRT
-diff 應**只有時間行**（加一道檢查：逐 cue 文字序列相同）→
-`rebuild --verify` 以新資料自洽 → 使用者 commit。change 目錄留
-`timing-delta.txt`（每集邊界偏移分佈統計）供審閱。
+時間戳全變 → `Kari-SRT/srt/` 逐 byte 基準改版。程序：精修完成
+（cues 直接寫 `Kari-SRT/cues/`）→ `make_all` 重產 SRT 進
+`Kari-SRT/srt/`、`publish` 定版 `smkul.csv`（tidy 之後 smkul 的定版
+歸 publish／tracker，狀態列的行數可能隨重組變動）→
+`rebuild --verify` 以新資料自洽 → 使用者一個 commit 同時換
+`cues/`＋`srt/`。
+
+文字不變的驗證放在**資料層**：cue 逐編號文字與精修前完全相同
+（spec 已保證、rebuild 的 TSV 來源也未動）。SRT 層面不逐行比對——
+精修把邊界挪動 ±0.2s 後，`merge_repeats` 對「間隔 ≤1s 的同文相鄰句」
+的合併判斷可能翻轉，行數與行的切分可以合法改變；這類差異連同邊界
+偏移分佈一起輸出到 change 目錄的 `timing-delta.txt` 供人工審閱。
 
 ## Risks / Trade-offs
 
-- [SFTP 上母帶被移動／删除] → 開跑前先 `ls -l` 驗 22 支俱在且位元組數
-  與 inventory 相符；缺集則該集保持粗切、列名回報，不阻塞其他集。
+- [SFTP 上母帶被移動／删除] → 開跑前先 `ls -l` 驗全部已交付集俱在
+  且位元組數合理；缺集則該集保持粗切、列名回報，不阻塞其他集。
 - [參考 mask 取到污染幀（cue 內插圖卡切換）] → 參考幀取 cue 中段
   且與該 cue 粗切 mask 距離超閾值時換樣本幀；仍不明則該邊界維持粗切
   並計數回報（安全網保證不會寫入壞值）。
@@ -157,8 +160,11 @@ diff 應**只有時間行**（加一道檢查：逐 cue 文字序列相同）→
 - [mp4 月份（新流程）GOP 較長，區域解碼 seek 成本高] → stream_region
   以 -ss 前置 seek，實測後若過慢改為每集一次連續解碼、Python 端跳窗。
 - [rebuild 用的 cues 來自 Kari-SRT，精修寫的是 work dir] → 回頭精修
-  直接以 `Kari-SRT/cues/` 為讀寫對象（22 集的正本在那裡），work dir
-  不再是來源。
+  直接以 `Kari-SRT/cues/` 為讀寫對象（已交付集的正本在那裡），
+  work dir 不再是來源。
+- [精修期間有新批次並行（pending 集）] → 精修範圍取「非 pending」
+  集數；pending 集會在自己的 fetch 流程內精修（D4 新月份路徑），
+  兩邊不重疊。
 
 ## Open Questions
 

@@ -20,8 +20,9 @@ bash scripts/news/fetch_sftp.sh '<月份>'          # add --limit 2 for a dry ru
 ```
 
 This downloads one video at a time, checks its byte count against the
-server's, verifies the subtitle band, cuts cues, and **deletes the video**
-before moving on. Never hold more than one video locally.
+server's, verifies the subtitle band, cuts cues, refines the cue
+boundaries to ≤0.05s while the video is still on disk, and **deletes the
+video** before moving on. Never hold more than one video locally.
 
 Filling a gap rather than doing a month — a few named episodes scattered
 through a folder — takes `--only`, an extended regex matched against the file

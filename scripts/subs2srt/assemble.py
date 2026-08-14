@@ -64,6 +64,38 @@ def apply_gap_rules(entries, min_gap):
     return fixed
 
 
+def pad_edges(entries, pad=0.5, duration=None):
+    """Extend every entry into the silence around it, per the CLAUDE.md rule.
+
+    Each side grows by up to `pad` seconds so downstream speech tooling gets
+    the edge silence it wants to keep (Kaldi's segment_ctm_edits.py retains
+    at most 0.5s per edge). Where two entries sit closer than 2*pad they
+    meet at the midpoint of the true gap -- touching exactly, never
+    overlapping -- and the result is clamped to [0, duration]. Must run
+    LAST in assembly: apply_gap_rules would pull a midpoint-touching pair
+    apart again.
+
+    The stored cue data keeps the true switch points; this is display-only.
+    """
+    padded = []
+    for index, (start, end, text) in enumerate(entries):
+        if index:
+            gap = start - entries[index - 1][1]
+            start = start - min(pad, gap / 2.0)
+        else:
+            start = start - pad
+        if index + 1 < len(entries):
+            gap = entries[index + 1][0] - end
+            end = end + min(pad, gap / 2.0)
+        else:
+            end = end + pad
+        start = max(0.0, start)
+        if duration is not None:
+            end = min(duration, end)
+        padded.append((start, end, text))
+    return padded
+
+
 def parse_transcript_tsv(text, default_line):
     """Read `index <TAB> [line <TAB>] text` rows into a transcript dict.
 

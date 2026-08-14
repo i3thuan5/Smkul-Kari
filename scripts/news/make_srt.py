@@ -85,9 +85,12 @@ def entries_from(records):
     return out
 
 
-def write_srt(path, entries, merge_gap=1.0, min_gap=0.04):
+def write_srt(path, entries, merge_gap=1.0, min_gap=0.04, duration=None):
     entries = assemble.merge_repeats(entries, merge_gap)
     entries = assemble.apply_gap_rules(entries, min_gap)
+    # Padding is last on purpose: it may leave pairs touching at a gap's
+    # midpoint, which apply_gap_rules would pull apart again.
+    entries = assemble.pad_edges(entries, duration=duration)
     body = cuelib.render_srt(entries)
     with open(path, "w", encoding="utf-8") as handle:
         handle.write(body)
@@ -104,7 +107,7 @@ def run(work, out):
     stdout as JSON -- a contract nothing declared and nothing checked, which
     an extra print() at the end would have broken silently.
     """
-    _manifest, records = build(work)
+    manifest, records = build(work)
     records = drop_leader(records)
 
     with_text = 0
@@ -112,10 +115,12 @@ def run(work, out):
         if rec["text"].strip():
             with_text += 1
 
+    duration = manifest.get("duration")
     return {
         "cues": len(records),
         "cues_with_text": with_text,
-        "srt_lines": write_srt(out, entries_from(records)),
+        "srt_lines": write_srt(out, entries_from(records),
+                               duration=duration),
     }
 
 

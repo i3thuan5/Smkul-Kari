@@ -24,7 +24,7 @@ PY=$(python3 -m scripts.news.paths --var VENV_PY)
 WORK=$(python3 -m scripts.news.paths --var WORK)
 LOG=$(python3 -m scripts.news.paths --var LOGS)
 PRESETS=$(python3 -m scripts.news.paths --var ENGINE_PRESETS)
-STAGE="${STAGE:-/tmp/ilrdf-stage}"
+STAGE="${STAGE:-$ROOT/kithann/out/stage}"
 REMOTE_ROOT=/docker/ilrdf-corpus
 
 PRESET=titv-news
@@ -114,19 +114,24 @@ while IFS=$'\t' read -r size name <&3; do
     fi
 
     local_file="$STAGE/$name"
-    echo "$(date +%H:%M:%S) get   $slug  ($(( size / 1000000 )) MB)"
-    if ! "$HERE/sftp.sh" "get \"$REMOTE_ROOT/$REMOTE_DIR/$name\" \"$local_file\"" \
-         > "$LOG/$slug.get.log" 2>&1; then
-        echo "$(date +%H:%M:%S) FAIL  download $slug"; rm -f "$local_file"; continue
-    fi
+    have=$(stat -c %s "$local_file" 2>/dev/null || echo 0)
+    if [ "$have" = "$size" ]; then
+        echo "$(date +%H:%M:%S) reuse $slug (already staged)"
+    else
+        echo "$(date +%H:%M:%S) get   $slug  ($(( size / 1000000 )) MB)"
+        if ! "$HERE/sftp.sh" "get \"$REMOTE_ROOT/$REMOTE_DIR/$name\" \"$local_file\"" \
+             > "$LOG/$slug.get.log" 2>&1; then
+            echo "$(date +%H:%M:%S) FAIL  download $slug"; rm -f "$local_file"; continue
+        fi
 
-    # Verify before decoding. Two of the 24 February masters were truncated
-    # uploads whose headers still claimed the full duration -- ffprobe could
-    # not tell, only the byte count could.
-    got=$(stat -c %s "$local_file" 2>/dev/null || echo 0)
-    if [ "$got" != "$size" ]; then
-        echo "$(date +%H:%M:%S) FAIL  $slug incomplete: $got of $size bytes"
-        rm -f "$local_file"; continue
+        # Verify before decoding. Two of the 24 February masters were
+        # truncated uploads whose headers still claimed the full duration --
+        # ffprobe could not tell, only the byte count could.
+        got=$(stat -c %s "$local_file" 2>/dev/null || echo 0)
+        if [ "$got" != "$size" ]; then
+            echo "$(date +%H:%M:%S) FAIL  $slug incomplete: $got of $size bytes"
+            rm -f "$local_file"; continue
+        fi
     fi
 
     # Check the band once per folder, on the first file that gets this far.
@@ -145,7 +150,18 @@ while IFS=$'\t' read -r size name <&3; do
     if "$PY" -m scripts.subs2srt.cli cues "$local_file" -o "$dst" \
          --presets "$PRESETS" --preset "$PRESET" --sheets \
          > "$LOG/$slug.cues.log" 2>&1; then
-        rm -f "$local_file"          # the video is not needed past this point
+        # Refine the boundaries while the video is still on disk (design
+        # D4). A refine failure keeps the coarse 0.2s timings and does not
+        # stop the batch -- the log names the episode for a later retry.
+        echo "$(date +%H:%M:%S) refine $slug"
+        if ! "$PY" -m scripts.news.refine_cues "$local_file" \
+             "$dst/cues.json" > "$LOG/$slug.refine.log" 2>&1; then
+            echo "$(date +%H:%M:%S) WARN  refine $slug failed, keeping" \
+                 "coarse timings -- see $LOG/$slug.refine.log"
+        fi
+        if [ ! -f "$local_file.keep" ]; then
+            rm -f "$local_file"      # the video is not needed past this point
+        fi
         done_count=$((done_count + 1))
         ncues=$("$PY" -c "import json,sys;print(len(json.load(open(sys.argv[1]))['cues']))" "$dst/cues.json")
         echo "$(date +%H:%M:%S) done  $slug  $ncues cues, video deleted"

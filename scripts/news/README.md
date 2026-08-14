@@ -30,7 +30,7 @@
 | `out/mxf-logs/<slug>.get.log` | `fetch_sftp.sh` 下載階段 | SFTP `get` 輸出紀錄 | 日誌，可刪 |
 | `out/mxf-logs/<slug>.cues.log` | `fetch_sftp.sh` 切 cue 階段 | `cues` 指令 stdout/stderr | 日誌，可刪 |
 
-兩點容易誤會：原始影片不會留在這裡——`fetch_sftp.sh` 下載到 `/tmp/ilrdf-stage`，
+兩點容易誤會：原始影片不會留在這裡——`fetch_sftp.sh` 下載到 `kithann/out/stage/`（同名同位元組數會重用；放 `影片名.keep` 可留給別的 session，誰放誰刪），
 `cues.json` 一寫出來就刪片。視覺辨識的 TSV 也不會寫進這裡——`ingest.py`
 預設直接讀寫 `Kari-SRT/vision*/<slug>/`，`kithann/` 這邊的 `verified.json`
 只是本地追蹤「這個 work dir 核實到哪」的快取。
@@ -227,6 +227,7 @@ python3 -m scripts.news.verify_band VIDEO --preset titv-news    # 加 --quiet �
 | 魯凱語-霧台20210101S1100 | amis…（故意套錯）| y=848 | y=836 | 1.01 | FAIL（平台落在 876..1014 外）|
 | 21NL003_41午間 | titv-news | y=807 | y=835 | 1.23 | PASS（無紅帶）|
 | 21NL004_37晚間 | titv-news | y=800 | y=919 | **4.50** | PASS |
+| 卑南語-20210103S1800 | titv-news | y=805 | y=917 | **6.40** | PASS |
 
 門檻設 2.0。套錯 preset 照樣被平台那條擋下來，這點沒有變鬆。
 
@@ -364,7 +365,9 @@ sheet 讀了一遍，還多花了建兩次 contact sheet 的工。真正的價�
 | `tracker.py` | `smkul.csv` 的欄位與單列組法，三方共用 |
 | `sftp.sh` | SFTP 包裝：密碼只以檔案存在，處理 BatchMode／askpass 兩個坑 |
 | `sftp-askpass.sh` | 給 OpenSSH 讀密碼檔的 hook（`SSH_ASKPASS`）|
-| `fetch_sftp.sh` | 逐集：下載 → 驗位元組 → 驗band → 切cue → **刪影片** |
+| `fetch_sftp.sh` | 逐集：下載 → 驗位元組 → 驗band → 切cue → 精修 → **刪影片** |
+| `refine_cues.py` | 邊界精修：0.2s 粗切 → 25fps 逐幀分類 → ≤0.05s |
+| `refine_fetch.sh` | 回頭精修已交付集：下載 → refine → 刪影片（可續跑）|
 | `verify_band.py` | 量列剖面，確認字幕帶真的在 preset 說的位置 |
 | `resolve_slug.py` | 用 `ilrdf-corpus.csv` 把檔名對成 work dir／SRT 名稱 |
 | `paths.py` | 全部路徑的單一出處；`--var` 供 shell 取值 |
@@ -389,6 +392,16 @@ sheet 讀了一遍，還多花了建兩次 contact sheet 的工。真正的價�
 
 驗證離線閉環：`python3 -m scripts.news.rebuild --verify` 會只用
 Kari-SRT 的資料重組全部 SRT 並逐 byte 比對，缺件即指名失敗。
+
+### 時間精度與留白
+
+- **邊界精度**：`cues` 粗切在 0.2s 格點（5fps）；`refine_cues.py` 在每個
+  邊界 ±0.24s 窗內以 25fps 逐幀分類（不重切、不動 cue 集合與文字），
+  精修到 ≤0.05s，manifest 記 `refined` 與 `duration`。新月份由
+  `fetch_sftp.sh` 在刪影片前自動跑；舊集用 `refine_fetch.sh` 回頭補。
+- **SRT 留白**：組裝時每句前後各延伸至多 0.5s（CLAUDE.md 規定，對齊
+  Kaldi `--max-edge-silence-length` 預設）；間隔不足在中點相接，
+  截短於 `[0, duration]`。留白只在 SRT 輸出，`cues.json` 是真實切換點。
 
 ## 換機器要帶什麼
 
@@ -415,8 +428,10 @@ Kari-SRT 的資料重組全部 SRT 並逐 byte 比對，缺件即指名失敗。
 
 ## 還沒做的
 
-**`verify_band.py` 的判準已經有四個實測案例**（見上面那張表），涵蓋「有紅帶
-／沒紅帶／紅帶在 region 外 3 px／故意套錯 preset」四種。還沒涵蓋的是**紅帶
+**`verify_band.py` 的判準已經有五個實測案例**（見上面那張表），涵蓋「有紅帶
+／沒紅帶／紅帶在 region 外 3 px／紅帶低位 y=917（1 月卑南，判準放寬時
+推理的那個案例，實測通過）／故意套錯 preset」。判準本身另有合成剖面
+單元測試（`tests/news/test_verify_band.py`）。還沒涵蓋的是**紅帶
 只出現一部分時間**的檔案：判準對這種情形會變弱而不是失效（分子分母一起縮），
 但沒有實際檔案可以驗。真遇到就要改成逐幀量，不要靠平均。
 

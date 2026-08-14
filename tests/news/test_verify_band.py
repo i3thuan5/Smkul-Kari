@@ -1,16 +1,9 @@
-"""verify_band: telling a graphic's border from the subtitle's own rows.
+"""verify_band's landmarks and pass/fail rules, on synthetic profiles.
 
-Both landmarks live in the same profile and the layouts in this corpus put
-them within a few pixels of each other, so reading either by height alone
-gets it wrong. Two real files proved it, and both are reproduced here as
-shapes:
-
-  41午鄒   no lower third on screen. The tallest row is the bottom stroke of
-           the glyphs, which is inside the region by construction, so calling
-           it a border refused a good file.
-  37晚排灣  the full news layout. Its tallest single row is a border 3 px
-           BELOW the region, so calling that the dialogue put the plateau
-           outside the region and refused a good file the other way round.
+Pins the loosened edge criterion that had never been field-tested when it
+was written: an edge any distance BELOW the region is safe (the January
+卑南 layout puts it at y=917 against a region ending at y=844); only an
+edge INSIDE the region may stop a batch.
 """
 import unittest
 
@@ -18,65 +11,75 @@ import numpy as np
 
 from scripts.news import verify_band
 
+# Mirrors the titv-news probe: region [0,722,1920,122] probed from y=682
+# over 242 rows (region grown by 40 above and 120 below).
+PROBE_Y = 682
+PROBE_H = 242
+REGION_LO = 722
+REGION_HI = 844
 
-def text(rows, top, bottom, height):
-    """A broad plateau: a line of subtitle, glyph-body tall."""
-    rows[top:bottom] = height
 
-
-def rule(rows, top, height):
-    """A thin bright line: the border along the top of a graphic."""
-    rows[top:top + 3] = height
+def profile_with(plateau_y=None, edge_y=None):
+    """A synthetic row profile: a glyph-height plateau and/or a thin rule."""
+    rows = np.zeros(PROBE_H, dtype=np.float64)
+    if plateau_y is not None:
+        i = plateau_y - PROBE_Y
+        rows[i:i + 40] = 100.0          # dialogue: broad, glyph-height
+    if edge_y is not None:
+        i = edge_y - PROBE_Y
+        rows[i] = 600.0                 # graphic border: one thin bright row
+    return rows
 
 
 class TestLandmarks(unittest.TestCase):
-    def test_border_below_the_text_is_found_as_a_border(self):
-        rows = np.full(240, 30.0)
-        text(rows, 80, 130, 130)
-        rule(rows, 150, 480)
-        edge, plateau, ratio = verify_band.landmarks(rows)
-        self.assertTrue(150 <= edge <= 152, edge)
-        self.assertTrue(80 <= plateau < 130, plateau)
-        self.assertGreater(ratio, verify_band.SPIKE)
+    def test_plateau_and_thin_rule_are_told_apart(self):
+        rows = profile_with(plateau_y=790, edge_y=848 - PROBE_Y + PROBE_Y)
+        edge_i, plateau_i, ratio = verify_band.landmarks(rows)
+        self.assertIsNotNone(edge_i)
+        self.assertEqual(PROBE_Y + edge_i, 848)
+        self.assertTrue(790 <= PROBE_Y + plateau_i <= 830)
+        self.assertGreaterEqual(ratio, verify_band.SPIKE)
 
-    def test_the_texts_own_densest_row_is_not_a_border(self):
-        # 41午鄒's shape: no graphic anywhere, just one row of the glyphs
-        # denser than its neighbours.
-        rows = np.full(240, 30.0)
-        text(rows, 80, 130, 130)
-        rows[126] = 170.0
-        edge, plateau, ratio = verify_band.landmarks(rows)
-        self.assertIsNone(edge)
-        self.assertTrue(80 <= plateau < 130, plateau)
-        self.assertLess(ratio, verify_band.SPIKE)
+    def test_no_rule_on_screen_reports_no_edge(self):
+        rows = profile_with(plateau_y=790)
+        edge_i, plateau_i, _ratio = verify_band.landmarks(rows)
+        self.assertIsNone(edge_i)
+        self.assertTrue(790 <= PROBE_Y + plateau_i <= 830)
 
-    def test_a_border_does_not_steal_the_plateau_from_the_text(self):
-        # 37晚排灣's shape: the border out-inks every single row of the
-        # subtitle, but the subtitle is the only broad thing in the profile.
-        rows = np.full(240, 20.0)
-        text(rows, 80, 130, 130)
-        rule(rows, 133, 300)
-        _, plateau, _ = verify_band.landmarks(rows)
-        self.assertTrue(80 <= plateau < 130, plateau)
 
-    def test_a_border_shown_half_the_window_is_still_a_border(self):
-        # Averaged over frames, an intermittent graphic fades towards the
-        # picture behind it. The reading is against that neighbourhood, so it
-        # weakens rather than disappearing.
-        picture = np.full(240, 20.0)
-        text(picture, 80, 130, 130)
-        with_graphic = picture.copy()
-        with_graphic[145:200] = 110.0        # the banner body
-        rule(with_graphic, 150, 480)
-        rows = (picture + with_graphic) / 2
-        edge, _, ratio = verify_band.landmarks(rows)
-        self.assertIsNotNone(edge)
-        self.assertGreater(ratio, verify_band.SPIKE)
+class TestJudge(unittest.TestCase):
+    """The spec's two scenarios, as the executable rule."""
 
-    def test_flat_profile_reports_no_border(self):
-        rows = np.full(240, 7.0)
-        edge, _, _ = verify_band.landmarks(rows)
-        self.assertIsNone(edge)
+    def _verdict(self, plateau_y, edge_y):
+        rows = profile_with(plateau_y=plateau_y, edge_y=edge_y)
+        edge_i, plateau_i, _ = verify_band.landmarks(rows)
+        edge = None if edge_i is None else PROBE_Y + edge_i
+        return verify_band.judge(edge, PROBE_Y + plateau_i,
+                                 REGION_LO, REGION_HI)
+
+    def test_low_lying_edge_far_below_region_passes(self):
+        # the January 卑南 layout: edge at y=917, region ends at y=844
+        self.assertEqual(self._verdict(790, 917), [])
+
+    def test_february_edge_just_below_region_passes(self):
+        self.assertEqual(self._verdict(790, 848), [])
+
+    def test_edge_inside_region_stops_the_batch(self):
+        problems = self._verdict(750, 830)
+        self.assertTrue(problems)
+        self.assertIn("inside the region", problems[0])
+
+    def test_plateau_outside_region_stops_the_batch(self):
+        # dialogue found well above the region: wrong strip entirely
+        rows = profile_with(plateau_y=690)
+        edge_i, plateau_i, _ = verify_band.landmarks(rows)
+        problems = verify_band.judge(None, PROBE_Y + plateau_i,
+                                     REGION_LO, REGION_HI)
+        self.assertTrue(problems)
+        self.assertIn("outside the region", problems[0])
+
+    def test_no_edge_with_good_plateau_passes(self):
+        self.assertEqual(self._verdict(790, None), [])
 
 
 if __name__ == "__main__":

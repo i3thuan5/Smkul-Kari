@@ -143,6 +143,25 @@ def landmarks(rows):
     return edge, plateau, ratio
 
 
+def judge(edge, plateau, lo, hi):
+    """The two rules that must hold before a batch may be cut.
+
+    The dialogue plateau must sit inside the preset's region, and a
+    lower-third edge (when one is on screen at all) must not: an edge any
+    distance BELOW the region is fine -- the February masters put it 4px
+    under (y=848), a January 卑南 episode 73px under (y=917), both safe.
+    """
+    problems = []
+    if not lo <= plateau <= hi:
+        problems.append("dialogue plateau at y=%d falls outside the region "
+                        "(%d..%d)" % (plateau, lo, hi))
+    if edge is not None and lo < edge < hi:
+        problems.append("lower-third edge at y=%d is inside the region "
+                        "(%d..%d); its headline text would be read as "
+                        "dialogue" % (edge, lo, hi))
+    return problems
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("video")
@@ -205,14 +224,7 @@ def main():
     # February masters put it at y=848, four pixels under the region, while a
     # January 卑南 episode puts it at y=917. Both are safe; only an edge that
     # lands within lo..hi is not.
-    problems = []
-    if not lo <= plateau <= hi:
-        problems.append("dialogue plateau at y=%d falls outside the region "
-                        "(%d..%d)" % (plateau, lo, hi))
-    if edge is not None and lo < edge < hi:
-        problems.append("lower-third edge at y=%d is inside the region "
-                        "(%d..%d); its headline text would be read as "
-                        "dialogue" % (edge, lo, hi))
+    problems = judge(edge, plateau, lo, hi)
     if problems:
         for line in problems:
             print("FAIL:", line)
