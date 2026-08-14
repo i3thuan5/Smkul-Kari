@@ -24,6 +24,13 @@ CORPUS = os.environ.get("ILRDF_CORPUS", "/home/vscode/ilrdf-corpus")
 WORK = os.path.join(ROOT, "kithann", "out", "mxf")
 LOGS = os.path.join(ROOT, "kithann", "out", "mxf-logs")
 
+# Working copy of the progress table, refreshed by make_all as often as you
+# like. The delivered one lives in Kari-SRT and is written only by publish,
+# once a whole batch is done: mid-batch a row says which step an episode is
+# stuck at, and that lives in the work dir, which rebuild does not have -- so
+# a mid-batch table in the store could never be rebuilt byte-for-byte.
+TRACKER_CACHE = os.path.join(ROOT, "kithann", "out", "smkul.csv")
+
 # Kari-SRT is the submodule holding the canonical data: delivered SRTs,
 # per-episode timing, and the vision transcripts. kithann/ holds only
 # sources and regenerable caches.
@@ -34,8 +41,15 @@ KARI_FROM_RTF = os.path.join(KARI, "from_rtf")
 KARI_VISION = os.path.join(KARI, "vision")
 KARI_VISION_RTF = os.path.join(KARI, "vision-rtf")
 
+# presets.json is corpus knowledge -- which programme is laid out how -- so it
+# is part of the code and lives beside it. inventory.json is derived data (the
+# catalogue, resolved against the files that actually arrived), so its one
+# copy belongs in the store with everything else that is derived. There used
+# to be a second copy here, and publish kept them in step by overwriting one
+# with the other; two copies of the same truth is a synchronisation problem
+# nobody asked for.
 ENGINE_PRESETS = os.path.join(HERE, "presets.json")
-INVENTORY = os.path.join(HERE, "inventory.json")
+INVENTORY = os.path.join(KARI, "inventory.json")
 CATALOGUE = os.path.join(ROOT, "kithann", "tongan", "ilrdf-corpus.csv")
 
 VENV_PY = os.path.expanduser("~/.venvs/subs2srt/bin/python")

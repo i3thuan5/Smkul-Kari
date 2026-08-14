@@ -1,28 +1,26 @@
 #!/usr/bin/env python3
-"""Prepare an episode for a vision pass that only reads what is still unknown.
+"""Prepare an episode's contact sheets for the vision pass.
 
-The 文稿-aligned cues are already exact (96% measured against hand-read
-truth), so re-reading them would be paid work for no gain. This builds a
-plan-B work dir whose contact sheets carry *only* the cues without script
-text, which is about a quarter less to read across the corpus.
+Every cue goes on a sheet. There was once a filter here: cues the episode's
+文稿 could supply were left off, on the grounds that re-reading them was paid
+work for no gain. Measuring it settled the question the other way -- of 4,344
+cues the script supplied, 336 disagreed with the picture and the picture was
+right every time -- so those cues had to be read anyway, and building two
+rounds of contact sheets to read the same strips twice cost more than reading
+them once. The 文稿 path is gone; see git history and
+`Kari-SRT/report/rtf-vs-vision.*` for the comparison it produced.
 
-The work dir keeps the FULL cue list in cues.json on purpose:
-
-  * `import` validates every TSV row against it, so a stray cue number is
-    still refused rather than silently landing on the wrong subtitle
-  * the SRT is assembled from it, so the 文稿 cues keep their timings
-
-Only sheets.json is restricted to the gap, and that is what `pending` walks.
+The work dir this builds is `<slug>.B.work`, beside the `<slug>.work` that
+`cues` produced. It carries its own cues.json and sheets.json but symlinks
+the strips, which are gigabytes of PNG.
 """
 import argparse
 import json
 import os
 
-from scripts.news import align as aligner
 from scripts.news import paths
-from scripts.subs2srt import cli as subs2srt
+from scripts.subs2srt import sheets
 
-CORPUS = paths.CORPUS
 WORK = paths.WORK
 
 
@@ -40,7 +38,7 @@ def already_read(dst):
         return bool(json.load(handle))
 
 
-def prepare(slug, rtf):
+def prepare(slug):
     src = os.path.join(WORK, slug + ".work")
     dst = os.path.join(WORK, slug + ".B.work")
     if already_read(dst):
@@ -56,59 +54,21 @@ def prepare(slug, rtf):
     if not os.path.islink(link):
         os.symlink(os.path.join("..", slug + ".work", "strips"), link)
 
-    aligned = {}
-    if rtf and os.path.isdir(rtf):
-        records, _, _ = aligner.resolve(src, rtf)
-        for rec in records:
-            if rec["aligned"].strip():
-                aligned[rec["index"]] = rec["aligned"].strip()
-
-    # The full list is what import and the SRT are checked against...
     with open(os.path.join(dst, "cues.json"), "w", encoding="utf-8") as handle:
         json.dump(manifest, handle, ensure_ascii=False)
+    made = sheets.build_sheets(dst, manifest)
 
-    # ...but the sheets only show the cues nobody has read yet.
-    gap = []
-    for cue in manifest["cues"]:
-        if cue["index"] not in aligned:
-            gap.append(cue)
-    filtered = dict(manifest)
-    filtered["cues"] = gap
-    made = subs2srt.build_sheets(dst, filtered)
+    for name in ("transcripts.json", "verified.json"):
+        with open(os.path.join(dst, name), "w", encoding="utf-8") as handle:
+            json.dump({}, handle, ensure_ascii=False, indent=1)
 
-    line = manifest["lines"][0]["name"]
-    transcripts = {}
-    verified = {}
-    for index, text in aligned.items():
-        transcripts[str(index)] = {line: text}
-        verified[str(index)] = {line: True}
-    with open(os.path.join(dst, "transcripts.json"), "w",
-              encoding="utf-8") as handle:
-        json.dump(transcripts, handle, ensure_ascii=False, indent=1)
-    with open(os.path.join(dst, "verified.json"), "w",
-              encoding="utf-8") as handle:
-        json.dump(verified, handle, ensure_ascii=False, indent=1)
-    # Remember which cues came from the script rather than from a reader, so
-    # the tracker can report the two sources separately.
-    with open(os.path.join(dst, "from_rtf.json"), "w",
-              encoding="utf-8") as handle:
-        json.dump(sorted(aligned), handle)
-
-    return len(manifest["cues"]), len(aligned), len(gap), made
+    return len(manifest["cues"]), made
 
 
-def main():
-    ap = argparse.ArgumentParser()
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("slugs", nargs="*", help="work-dir slugs; default all")
-    ap.add_argument("--no-rtf", action="store_true",
-                    help="put every cue on the sheets, even where a 文稿 "
-                         "exists. Measured on the February batch: the 文稿 "
-                         "is not faithful enough to ship (7.7%% of its lines "
-                         "differ from the picture, and the picture is right "
-                         "every time), so cues it covers get read anyway -- "
-                         "reading them once here is cheaper than reading "
-                         "them twice.")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     entries = json.load(open(paths.INVENTORY, encoding="utf-8"))
     total_sheets = 0
@@ -122,18 +82,15 @@ def main():
             print("skip %s (not decoded)" % slug)
             continue
         dst = os.path.join(WORK, slug + ".B.work")
-        if os.path.exists(os.path.join(dst, "from_rtf.json")) \
+        if os.path.exists(os.path.join(dst, "sheets.json")) \
                 or already_read(dst):
             print("skip %s (already prepared or read)" % slug)
             continue
-        rtf = ""
-        if entry["文稿位置"] and not args.no_rtf:
-            rtf = os.path.join(CORPUS, entry["文稿位置"])
-        cues, aligned, gap, made = prepare(slug, rtf)
+        cues, made = prepare(slug)
         total_sheets += made
-        print("%-44s cues=%4d 文稿=%4d 待讀=%4d sheets=%3d"
-              % (entry["srt_name"], cues, aligned, gap, made))
-    print("\ngap sheets to read: %d" % total_sheets)
+        print("%-44s cues=%4d sheets=%3d" % (entry["srt_name"], cues, made))
+    print("\nsheets to read: %d" % total_sheets)
+    return 0
 
 
 if __name__ == "__main__":

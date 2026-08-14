@@ -24,10 +24,9 @@
 | 路徑 | 何時產生 | 內容 | 性質 |
 |---|---|---|---|
 | `out/mxf/<slug>.work/` | `fetch_sftp.sh`／`run_cues.sh` 跑 `cues` 步驟 | `cues.json`（時間軸）、`sheets.json`、`sheets/*.png`、`strips/*.png` | 快取，遷入 Kari-SRT 後可刪 |
-| `out/mxf/<slug>.work/transcripts.json` | 有跑 `ocr --engine tesseract`（現在只當 fallback，非預設）| tesseract 辨識草稿 | 快取，不供字，可刪 |
-| `out/mxf/<slug>.work/verified.json` | `ingest.py` 匯入 TSV 之後 | 哪些 cue 已核實過的文字 | 快取，可從 Kari-SRT 的 vision TSV 重建 |
-| `out/mxf/<slug>.B.work/` | `gap_sheets.py`（只重讀文稿沒蓋到的 cue）| 同一套（`cues.json`、`sheets.json`、`transcripts.json`、`verified.json`）＋ `from_rtf.json`；`strips` 是 symlink 回 `.work/strips` | 快取，可刪 |
-| `out/mxf/<slug>.C.work/` | `rtf_sheets.py`（回頭把文稿供過字的 cue 也讀一次，做全量普查比對）| 同一套，子集反過來（只含文稿對到的 cue）| 快取，可刪 |
+| `out/mxf/<slug>.work/transcripts.json` | 有跑 `ocr --engine tesseract` 才有（非預設）| tesseract 辨識草稿 | 快取，不供字，可刪 |
+| `out/mxf/<slug>.B.work/` | `gap_sheets.py` 出 contact sheet | `cues.json`、`sheets.json`、`transcripts.json`、`verified.json`；`strips` 是 symlink 回 `.work/strips` | 快取，可刪 |
+| `out/smkul.csv` | `make_all.py` | 進度表**工作版**（含還沒做完的集數）| 快取，可刪；交付版由 `publish.py` 寫進 Kari-SRT |
 | `out/mxf-logs/<slug>.get.log` | `fetch_sftp.sh` 下載階段 | SFTP `get` 輸出紀錄 | 日誌，可刪 |
 | `out/mxf-logs/<slug>.cues.log` | `fetch_sftp.sh` 切 cue 階段 | `cues` 指令 stdout/stderr | 日誌，可刪 |
 
@@ -64,7 +63,9 @@ python3 -m scripts.news.build_inventory   # 1. 影片 → 節目資料 → SRT �
 bash    scripts/news/run_cues.sh                 # 2. 切 cue（約 2.5 小時，I/O 綁死）
 # 3. 視覺辨識：subagent 一批讀 24 張 sheet、直接把 TSV 寫進磁碟
 python3 -m scripts.news.ingest <slug> <tsv 目錄>   # 驗證＋匯入
-python3 -m scripts.news.make_all          # 4. 產 SRT ＋ 寫 Kari-SRT/srt/smkul.csv
+python3 -m scripts.news.make_all          # 4. 產 SRT（進度表寫 kithann/out/）
+python3 -m scripts.news.publish           # 5. 遷資料＋定版 smkul.csv
+python3 -m scripts.news.rebuild --verify  # 6. 驗離線重建
 ```
 
 **補特定幾集**（不是整個月，例如把某幾個族語從 0 集補到 2 集）：
@@ -75,10 +76,10 @@ bash scripts/news/fetch_sftp.sh '族語新聞/110.1-110.10/7月' \
      --only '^(21NL005_37晨間|21NL004_37晚間)族語新聞\.mp4$'
 # 2. 把這幾集寫進 inventory（影片已經刪掉了，所以不能用 build_inventory）
 python3 -m scripts.news.add_episodes '族語新聞/110.1-110.10/7月/21NL005_37晨間族語新聞.mp4' …
-# 3. 出 contact sheet；--no-rtf 表示文稿蓋到的 cue 也照樣讀
-python3 -m scripts.news.gap_sheets --no-rtf <slug> …
+# 3. 出 contact sheet（全部 cue 都上）
+python3 -m scripts.news.gap_sheets <slug> …
 # 4. 視覺辨識 → ingest → make_all（同上）
-# 5. 把 cues/from_rtf/inventory 遷進 Kari-SRT，再驗離線閉環
+# 5. 整批做完才能 publish：清 pending、遷 cues、定版 smkul.csv
 python3 -m scripts.news.publish
 python3 -m scripts.news.rebuild --verify
 ```
@@ -89,8 +90,27 @@ python3 -m scripts.news.rebuild --verify
 檔名查 `ilrdf-corpus.csv`，跟 `resolve_slug.py` 命名 work dir 的方式同一套。
 已經在 inventory 裡的集數會跳過，只有標記 `truncated` 的會被新來源取代。
 
-`--no-rtf` 的理由見下面「文稿：當交叉驗證有用，當文字來源沒用」：文稿供字
-的 cue 最後還是得重讀一次，先用文稿等於同一批 sheet 讀兩遍。
+### `pending`：登記了，但還沒做完
+
+`inventory.json` 的正本在 `Kari-SRT/`（spec 說主 repo 只放程式／測試／文件）。
+但登記必須發生在校讀之前——`batches.py`、`ingest.py` 都要靠它查每集的
+`srt_name`。所以 `add_episodes.py` 寫進去的集數帶 `"pending": true`：
+
+- `rebuild --verify` **跳過** pending 集數，不要求它們的 cues／TSV／SRT
+- `smkul.csv` 的交付版也**不列** pending 集數
+- `publish.py` 整批把關通過後才清掉旗標
+
+於是批次做到一半，store 仍然自洽，`rebuild --verify` 全程可以是綠的。三個
+標記語意不重疊：`truncated`（來源不完整，永不交付）、`partial`（已交付但
+來源短）、`pending`（本批還在做）。
+
+### 兩份 `smkul.csv`
+
+`make_all.py` 寫 `kithann/out/smkul.csv`，列**全部**集數含還沒做完的，隨時可
+刷新，是給人看進度的。`publish.py` 寫 `Kari-SRT/srt/smkul.csv`，只列已交付
+的，而且整批做完才寫。分開的理由是可重建性：「待處理（尚未切cue）」這種狀態
+只存在 work dir，而 `rebuild` 沒有 work dir，重建不出來——交付版裡若有這種
+列，就永遠對不起來了。
 
 每一步都可中斷重跑：`run_cues.sh` 跳過已有 `cues.json` 的 work dir，
 `fetch_sftp.sh` 也是，`gap_sheets.py` 拒絕覆蓋已校讀的 work dir，
@@ -282,6 +302,12 @@ mp4 是 1920×1080 h264，沒有 soft subtitle。region 一樣是
 
 ### 文稿：當交叉驗證有用，當文字來源沒用
 
+> **程式已移除。** `align.py`／`rtf.py`／`rtf_sheets.py`／`compare_rtf.py`／
+> `check_align.py`（894 行）與其測試（375 行）都刪掉了。要看它們，
+> checkout **`da2f0b3`**——那是最後一個含這批程式的 commit。比對結果本身留著：
+> `Kari-SRT/report/rtf-vs-vision.md`／`.json`、以及
+> `Kari-SRT/from_rtf/<srt_name>.json`（哪些 cue 曾由文稿供字）。
+
 `.rtf` 新聞稿的內容確實就是字幕的來源，`align.py` 也真的能把 cue 對回稿子
 （3-gram 投票找位置，再解一次最長遞增子序列強迫單調）。但**逐字忠實於畫面
 這件事，稿子在原理上做不到**。
@@ -327,19 +353,15 @@ sheet 讀了一遍，還多花了建兩次 contact sheet 的工。真正的價�
 
 | | |
 |---|---|
-| `build_inventory.py` | 掃本機資料夾：影片↔節目資料對應，寫 `inventory.json` |
+| `build_inventory.py` | 掃本機資料夾寫 inventory；**合併不覆蓋**（`--replace` 才整份重寫）|
 | `add_episodes.py` | 補登 SFTP 抓來的集數（影片已刪，只剩檔名可查）|
 | `run_cues.sh` | 複製到本機 → 切 cue |
-| `rtf.py` | 讀 Big5 RTF 文稿（檔頭寫 cp1252，其實是 Big5） |
-| `align.py` | 把 OCR 訊號對回文稿（現已不供字，保留供比對用） |
-| `gap_sheets.py` | 只把「還沒讀過」的 cue 做成 contact sheet |
-| `rtf_sheets.py` | 只把「文稿供過字」的 cue 做成 contact sheet |
+| `gap_sheets.py` | 把全部 cue 做成 contact sheet（`.B.work`）|
 | `batches.py` | 列出一集還沒讀的 sheet，切成 24 張一批 |
 | `ingest.py` | 驗證 TSV（格式＋cue 編號歸屬）並匯入 |
-| `compare_rtf.py` | 文稿 vs 視覺逐字比對，`--apply` 改採視覺 |
 | `make_srt.py` | 單集組裝 SRT |
-| `make_all.py` | 全部組裝＋寫 `smkul.csv` |
-| `check_align.py` | 早期用手讀 TSV 量文稿對齊正確率 |
+| `make_all.py` | 全部組裝＋寫進度表工作版 |
+| `tracker.py` | `smkul.csv` 的欄位與單列組法，三方共用 |
 | `sftp.sh` | SFTP 包裝：密碼只以檔案存在，處理 BatchMode／askpass 兩個坑 |
 | `sftp-askpass.sh` | 給 OpenSSH 讀密碼檔的 hook（`SSH_ASKPASS`）|
 | `fetch_sftp.sh` | 逐集：下載 → 驗位元組 → 驗band → 切cue → **刪影片** |
@@ -347,7 +369,7 @@ sheet 讀了一遍，還多花了建兩次 contact sheet 的工。真正的價�
 | `resolve_slug.py` | 用 `ilrdf-corpus.csv` 把檔名對成 work dir／SRT 名稱 |
 | `paths.py` | 全部路徑的單一出處；`--var` 供 shell 取值 |
 | `migrate_kari.py` | 一次性：舊命名資料 → Kari-SRT（保留當對照文件）|
-| `publish.py` | 把讀完的集數的 `cues`／`from_rtf`／`inventory.json` 遷進 Kari-SRT |
+| `publish.py` | 整批把關→清 `pending`、遷 `cues`、定版 `smkul.csv` |
 | `rebuild.py` | 從 Kari-SRT 離線重建全部 SRT 並逐 byte 驗證 |
 | `Kari-SRT/vision/` | 第一輪視覺逐字稿 TSV（文稿沒蓋到的 cue）|
 | `Kari-SRT/vision-rtf/` | 第二輪視覺逐字稿 TSV（文稿蓋到的 cue）|
@@ -371,7 +393,8 @@ Kari-SRT 的資料重組全部 SRT 並逐 byte 比對，缺件即指名失敗。
 ## 換機器要帶什麼
 
 進 git 的（跟著 repo 走，不用管）：主 repo（程式 `scripts/`、測試
-`tests/`、`.claude/` 說明）＋ `Kari-SRT` submodule（上面那些資料正本）。
+`tests/`、`.claude/` 說明）＋ `Kari-SRT` submodule（上面那些資料正本，
+**含 `inventory.json`**——它已經不在主 repo 了，不必另外搬）。
 
 **不在 git、要自己搬或重建的**：
 

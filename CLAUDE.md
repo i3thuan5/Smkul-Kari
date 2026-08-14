@@ -59,3 +59,17 @@ Claude Code **毋准**執行下底ê git 指令（會影響 staged 檔案、comm
   ê資料離線重建全部交付SRT、逐byte比對。這條**無入CI**（Kari-SRT
   是私人repo，CI掠袂著submodule），所以本機這步是唯一ê把關。
 - 順紲走 `tox -e flake8` 佮 `tox -e subtitle`（單元測試）。
+- `tox` 若無佇 PATH（devcontainer 重建了後定定按呢），直接用 `.tox/` 內底
+  ê venv，效果相仝：
+
+  ```bash
+  .tox/subtitle-rebuild/bin/python -m scripts.news.rebuild --verify
+  .tox/subtitle/bin/python -m unittest discover -s tests/<pkg> -t .
+  .tox/flake8/bin/flake8 . --count
+  ```
+
+- 驗收愛用**推算**ê，莫記死數字：批次進行中ê集數會變。條件是
+  「`rebuild --verify` 過，而且伊講ê集數 ＝ store inventory 內底無標
+  `pending` ê筆數」，毋是「猶原是 N 集」。
+- 改著檔案了後若測試結果怪怪，先清 `__pycache__`：檔案大細相仝、mtime
+  仝一秒ê時，Python 會掠著舊ê bytecode。

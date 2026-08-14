@@ -15,12 +15,10 @@ import argparse
 import glob
 import json
 import os
-import subprocess
-import sys
 
 from scripts.news import paths
+from scripts.subs2srt import assemble
 
-PY = paths.VENV_PY
 WORK = paths.WORK
 
 
@@ -48,7 +46,8 @@ def main():
                     help="TSV directory; default Kari-SRT/vision/<srt_name> "
                          "looked up from the slug")
     ap.add_argument("--suffix", default=".B.work",
-                    help="work-dir suffix; .C.work is the 文稿 re-read pass")
+                    help="work-dir suffix; .B.work is where gap_sheets puts "
+                         "the contact sheets a reader works from")
     args = ap.parse_args()
 
     if not args.tsvdir:
@@ -99,14 +98,10 @@ def main():
     if missing:
         print("still unread: %d (e.g. %s)" % (len(missing), missing[:10]))
 
+    covered = total = 0
     for path in files:
-        out = subprocess.run(
-            [PY, "-m", "scripts.subs2srt.cli", "import", work,
-             "--from", path], capture_output=True, text=True, cwd=paths.ROOT)
-        if out.returncode != 0:
-            sys.stderr.write(out.stdout + out.stderr)
-            raise SystemExit("import failed for %s" % path)
-    print("imported")
+        _rows, covered, total = assemble.import_tsv(work, path)
+    print("imported; transcripts now cover %d/%d cues" % (covered, total))
 
 
 if __name__ == "__main__":

@@ -10,41 +10,35 @@ from scripts.news import paths
 from scripts.news import rebuild
 
 
-def record(index, start, end, ocr="", aligned=""):
-    return {"index": index, "start": start, "end": end,
-            "ocr": ocr, "aligned": aligned, "source": "",
-            "coverage": 0.0, "compactness": 0.0}
+def record(index, start, end, text=""):
+    return {"index": index, "start": start, "end": end, "text": text}
 
 
 class TestDropLeader(unittest.TestCase):
     def test_cue_opening_on_frame_zero_is_blanked(self):
         # broadcast masters open on bars and a slate whose white text sits in
         # the subtitle band; a cue starting at 0.0 cannot be dialogue
-        records = [record(1, 0.0, 14.0, ocr="x2同。"),
-                   record(2, 15.0, 18.0, ocr="真正的第一句")]
+        records = [record(1, 0.0, 14.0, text="x2同。"),
+                   record(2, 15.0, 18.0, text="真正的第一句")]
         got = make_srt.drop_leader(records)
-        self.assertEqual(got[0]["ocr"], "")
-        self.assertEqual(got[1]["ocr"], "真正的第一句")
+        self.assertEqual(got[0]["text"], "")
+        self.assertEqual(got[1]["text"], "真正的第一句")
 
     def test_nothing_after_half_a_second_is_touched(self):
-        records = [record(1, 5.8, 8.0, ocr="最早的真實字幕")]
+        records = [record(1, 5.8, 8.0, text="最早的真實字幕")]
         got = make_srt.drop_leader(records)
-        self.assertEqual(got[0]["ocr"], "最早的真實字幕")
+        self.assertEqual(got[0]["text"], "最早的真實字幕")
 
 
-class TestSourcePriority(unittest.TestCase):
-    RECORDS = [record(1, 0.0, 1.0, ocr="辨識的字", aligned="文稿的字"),
-               record(2, 1.0, 2.0, ocr="只有辨識"),
-               record(3, 2.0, 3.0)]
-
-    def test_best_prefers_aligned_and_falls_back_to_ocr(self):
-        got = make_srt.entries_from(self.RECORDS, "best")
-        self.assertEqual(got, [(0.0, 1.0, "文稿的字"),
-                               (1.0, 2.0, "只有辨識")])
-
-    def test_rtf_only_never_ships_recogniser_text(self):
-        got = make_srt.entries_from(self.RECORDS, "rtf")
-        self.assertEqual(got, [(0.0, 1.0, "文稿的字")])
+class TestEntriesFrom(unittest.TestCase):
+    def test_a_cue_with_no_text_is_left_out(self):
+        # Not every cue carries a subtitle: the segmenter opens one wherever
+        # the band holds ink, and a reader marks the blanks as blank.
+        records = [record(1, 0.0, 1.0, text="有字"),
+                   record(2, 1.0, 2.0),
+                   record(3, 2.0, 3.0, text="   ")]
+        self.assertEqual(make_srt.entries_from(records),
+                         [(0.0, 1.0, "有字")])
 
 
 class TestRebuildMissingInputs(unittest.TestCase):

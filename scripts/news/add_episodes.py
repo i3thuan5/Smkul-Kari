@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Put SFTP-fetched episodes into inventory.json.
+"""Register SFTP-fetched episodes in the store's inventory, as pending.
 
 `build_inventory.py` scans a local folder of .mxf masters, which is how the
 February batch arrived. Everything since comes over SFTP one file at a time
@@ -21,6 +21,12 @@ episode the inventory records as a truncated upload: two of the February
 masters were short and were skipped, and both have a complete .mp4 on the
 server, so a fresh source for one of those replaces the dead entry rather
 than being refused as a duplicate.
+
+Everything written here is marked `pending`. The inventory lives in the
+store, and the store's guarantee is that it can rebuild every episode it
+names -- which is not yet true of one that has only just been fetched.
+`publish` clears the flag once the whole batch is finished, and until then
+`rebuild --verify` skips those episodes and stays green.
 """
 import argparse
 import json
@@ -71,6 +77,12 @@ def entry_for(remote_path, catalogue):
         "族語別(中)": row["族語別(中)"],
         "文稿位置": transcript_of(row),
         "truncated": "",
+        # Registered, not delivered. Everything downstream needs this episode
+        # named before anyone can start on it, but the inventory lives in the
+        # store and the store's claim is that it can rebuild whatever it
+        # names -- and there is nothing to rebuild from yet. `publish` clears
+        # the flag once the whole batch is finished.
+        "pending": True,
     }, ""
 
 

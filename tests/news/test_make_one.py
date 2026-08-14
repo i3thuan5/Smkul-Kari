@@ -57,25 +57,24 @@ class TestMakeOne(unittest.TestCase):
         out = os.path.join(root, "srt")
         os.makedirs(out)
         with mock.patch.object(make_all, "WORK", root), \
-             mock.patch.object(make_all, "SRT_DIR", out), \
-             mock.patch.object(make_all, "RTF_DIR", out):
+             mock.patch.object(make_all, "SRT_DIR", out):
             return make_all.make_one(dict(ENTRY))
 
     def test_uncut_episode_says_so(self):
         self.assertIn("尚未切cue", self._status(cues=False))
 
     def test_cut_but_unread_episode_says_so(self):
-        self.assertIn("尚未辨識", self._status())
+        self.assertIn("尚未校讀完", self._status())
 
     def test_a_finished_vision_pass_is_not_reported_as_unread(self):
         # No tesseract draft anywhere -- which is the normal state for an
         # episode read by vision alone, and used to be enough to hide it.
         status = self._status(vision=True)
-        self.assertNotIn("尚未辨識", status)
+        self.assertNotIn("待處理", status)
 
     def test_vision_wins_over_a_tesseract_draft(self):
         status = self._status(tesseract=True, vision=True)
-        self.assertNotIn("尚未辨識", status)
+        self.assertNotIn("待處理", status)
 
 
 if __name__ == "__main__":

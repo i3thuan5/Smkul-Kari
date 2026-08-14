@@ -3,7 +3,7 @@ import unittest
 
 import numpy as np
 
-from scripts.subs2srt import cli as subs2srt
+from scripts.subs2srt import detect
 from scripts.subs2srt import cuelib
 
 
@@ -85,20 +85,20 @@ class TestRegionFromProfile(unittest.TestCase):
         return prof
 
     def test_box_covers_the_strongest_band(self):
-        region, _ = subs2srt.region_from_profile(
+        region, _ = detect.region_from_profile(
             self._profile(), self.TOP, self.WIDTH, self.HEIGHT)
         x, y, w, h = region
         self.assertEqual(y, self.TOP + 300 - 6)
         self.assertEqual(h, 50 + 2 * 6)
 
     def test_box_is_not_clamped_by_a_later_shorter_band(self):
-        region, _ = subs2srt.region_from_profile(
+        region, _ = detect.region_from_profile(
             self._profile(), self.TOP, self.WIDTH, self.HEIGHT)
         # the trailing band is 40px tall; a collapsed box would be <= that
         self.assertGreater(region[3], 40)
 
     def test_ranked_candidates_are_ordered_by_weight(self):
-        _, ranked = subs2srt.region_from_profile(
+        _, ranked = detect.region_from_profile(
             self._profile(), self.TOP, self.WIDTH, self.HEIGHT)
         self.assertEqual(len(ranked), 2)
         self.assertEqual(ranked[0]["y"], self.TOP + 300)
@@ -108,7 +108,7 @@ class TestRegionFromProfile(unittest.TestCase):
         prof = np.zeros((self.HEIGHT - self.TOP, self.WIDTH),
                         dtype=np.float64)
         prof[-40:, :] = 100.0 / self.WIDTH    # band flush with the bottom
-        region, _ = subs2srt.region_from_profile(
+        region, _ = detect.region_from_profile(
             prof, self.TOP, self.WIDTH, self.HEIGHT)
         self.assertLessEqual(region[1] + region[3], self.HEIGHT)
         self.assertLessEqual(region[0] + region[2], self.WIDTH)
@@ -117,8 +117,8 @@ class TestRegionFromProfile(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             # a frame height smaller than the band forces the collapse the
             # shadowing bug used to cause, and it must not pass silently
-            subs2srt.region_from_profile(self._profile(), self.TOP,
-                                         self.WIDTH, 40)
+            detect.region_from_profile(self._profile(), self.TOP,
+                                       self.WIDTH, 40)
 
     def test_width_comes_from_the_chosen_band_only(self):
         """Ink elsewhere in the frame must not set the horizontal extent.
@@ -131,7 +131,7 @@ class TestRegionFromProfile(unittest.TestCase):
                         dtype=np.float64)
         prof[300:350, 100:800] = 100.0 / 700     # chosen band: narrow, left
         prof[360:400, 1000:1900] = 50.0 / 900    # other band: wide, right
-        region, _ = subs2srt.region_from_profile(
+        region, _ = detect.region_from_profile(
             prof, self.TOP, self.WIDTH, self.HEIGHT)
         x, _, w, _ = region
         self.assertLess(x, 100)                  # starts near the band's ink

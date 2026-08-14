@@ -13,11 +13,19 @@ Both were settled by reading the language badge burned into the bottom left
 of the picture and checking it against the catalogue; all 24 files agree.
 The slot therefore comes from the Chinese word in the filename, not from the
 NL code, and the year comes from the catalogue.
+
+This scans a LOCAL FOLDER, which is how the February masters arrived. Every
+batch since came over SFTP and was deleted as soon as its cues were cut, so
+there is no folder left to scan and `add_episodes.py` registers those from
+the file name instead. Both write the same inventory -- the store's -- so a
+scan merges rather than replaces; see merge().
 """
+import argparse
 import csv
 import json
 import os
 import re
+import sys
 
 from scripts.news import paths
 
@@ -159,20 +167,80 @@ def build():
     return entries, warnings
 
 
-if __name__ == "__main__":
-    entries, warnings = build()
-    out = paths.INVENTORY
-    with open(out, "w", encoding="utf-8") as handle:
-        json.dump(entries, handle, ensure_ascii=False, indent=2)
+def merge(scanned, existing):
+    """Fold a scan into the inventory without dropping anyone else's work.
+
+    The inventory is the store's, and most of what is in it did not come from
+    scanning a local folder -- `add_episodes` puts SFTP-fetched episodes there
+    from the file name alone, because their videos are deleted the moment the
+    cues are cut. Writing a scan over the top would delete every one of them,
+    and the folder this scans (`CORPUS/2月`) does not even exist on machines
+    that only ever used SFTP.
+
+    So a scan may add episodes and may not remove any. An episode already
+    present is left exactly as it is: it may carry `partial`, a corrected
+    `文稿位置`, or a source recovered after being written off, none of which a
+    fresh scan of the original masters knows about.
+    """
+    known = set()
+    for entry in existing:
+        known.add(entry["slug"])
+    merged = list(existing)
+    added = []
+    for entry in scanned:
+        if entry["slug"] in known:
+            continue
+        merged.append(entry)
+        added.append(entry)
+    return merged, added
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--replace", action="store_true",
+                    help="discard the existing inventory and write only what "
+                         "this scan found. Destructive: everything registered "
+                         "by add_episodes is lost.")
+    ap.add_argument("-n", "--dry-run", action="store_true")
+    args = ap.parse_args(argv)
+
+    scanned, warnings = build()
+    existing = []
+    if os.path.exists(paths.INVENTORY):
+        with open(paths.INVENTORY, encoding="utf-8") as handle:
+            existing = json.load(handle)
+
+    if args.replace:
+        entries, added = scanned, scanned
+        dropped = len(existing) - len(scanned)
+        if dropped > 0:
+            print("WARNING: --replace drops %d episode(s) already in the "
+                  "inventory" % dropped)
+    else:
+        entries, added = merge(scanned, existing)
+
     usable = 0
-    for e in entries:
+    for e in scanned:
         if not e["truncated"]:
             usable += 1
         flag = "SKIP" if e["truncated"] else "ok  "
         print("%s %-34s -> %s.srt  文稿=%s"
               % (flag, e["file"], e["srt_name"], e["文稿位置"] or "(無)"))
-    print("\n%d files, %d usable, %d incomplete"
-          % (len(entries), usable, len(entries) - usable))
+    print("\nscanned %d files, %d usable, %d incomplete; %d new to the "
+          "inventory, which now holds %d"
+          % (len(scanned), usable, len(scanned) - usable,
+             len(added), len(entries)))
     for warning in warnings:
         print("WARN", warning)
-    print("wrote", out)
+
+    if args.dry_run:
+        print("(dry run, nothing written)")
+        return 0
+    with open(paths.INVENTORY, "w", encoding="utf-8") as handle:
+        json.dump(entries, handle, ensure_ascii=False, indent=2)
+    print("wrote", paths.INVENTORY)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

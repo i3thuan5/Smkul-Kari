@@ -38,20 +38,21 @@ Before committing to a whole month, run it with `--limit 2` and look at a
 contact sheet (`kithann/out/mxf/<slug>.work/sheets/sheet_001.png`) to confirm
 the strips show the dialogue line and nothing else.
 
-## 2. 文稿 alignment, then gap sheets
+## 2. Contact sheets
 
 ```bash
-python3 -m scripts.news.gap_sheets            # or --no-rtf for every cue
+python3 -m scripts.news.gap_sheets
 ```
 
-Only months with a matching 文稿 folder get script text; the rest is all gap.
+Every cue goes on a sheet. There was once a filter that left off the cues an
+episode's 文稿 could supply; measuring it settled the question the other way
+(7.7% of the script's lines differ from the picture, and the picture is right
+every time), so those cues had to be read anyway. The 文稿 path is gone —
+see `scripts/news/README.md` for the comparison and which commit still has
+the code.
+
 `gap_sheets.py` refuses to touch a work dir that already holds verified
 transcripts, so it is safe to re-run.
-
-Pass `--no-rtf` to put every cue on the sheets even where a 文稿 exists.
-Measured on February: 7.7% of the script's lines differ from the picture and
-the picture is right every time, so those cues get re-read anyway — reading
-them once here is cheaper than reading them twice.
 
 ## 3. Vision pass
 
@@ -63,10 +64,11 @@ Farm each batch to a subagent, 24 sheets each, writing a TSV straight to
 `Kari-SRT/vision/<集>/bNN.tsv`. Two things the prompt must say, both learned
 the hard way:
 
-- **Cue numbers on a gap sheet JUMP.** The 文稿-covered cues are not on the
-  sheets, so the reader must take the number printed in each strip's gutter
-  and never assume the next strip is +1. Getting this wrong lands whole
-  passages on the wrong subtitles and nothing reports an error.
+- **Cue numbers can JUMP.** When only part of an episode is being re-read the
+  sheets carry a discontinuous set, so the reader must take the number printed
+  in each strip's gutter and never assume the next strip is +1. Getting this
+  wrong lands whole passages on the wrong subtitles and nothing reports an
+  error.
 - **Write the file once.** Blank cues lose their trailing tab and that is
   fine — `ingest.py` restores it. Agents that try to fix it themselves burn
   two to three times the tokens.
@@ -83,10 +85,16 @@ sheets that reader was given.
 ## 4. Assemble
 
 ```bash
-python3 -m scripts.news.make_all       # writes SRTs + Kari-SRT/srt/smkul.csv
-python3 -m scripts.news.publish        # cues/from_rtf/inventory -> Kari-SRT
+python3 -m scripts.news.make_all       # SRTs; progress table -> kithann/out/
+python3 -m scripts.news.publish        # gate the batch, then cues + smkul.csv
 python3 -m scripts.news.rebuild --verify   # prove the store rebuilds them
 ```
+
+`publish` is all-or-nothing: it refuses while any episode registered by
+`add_episodes` is still unread, and clears their `pending` flags only once
+the whole batch is done. Until then the store keeps the previous batch's
+`smkul.csv` and `rebuild --verify` stays green — which is what makes it safe
+to keep running the verification while a batch is in progress.
 
 ## Scale — say this out loud before starting
 

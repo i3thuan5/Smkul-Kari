@@ -4,165 +4,96 @@
 Safe to re-run at any point: episodes still decoding are simply reported as
 待處理, so the tracker can be refreshed while the long pass is running.
 """
-import csv
 import json
 import os
-import subprocess
 import sys
 
+from scripts.news import make_srt
 from scripts.news import paths
+from scripts.news import tracker
 
-CORPUS = paths.CORPUS
 WORK = paths.WORK
 SRT_DIR = paths.SRT_DIR
-# 文稿-only variants are a regenerable working product, not a deliverable,
-# so they stay in the kithann workspace rather than Kari-SRT.
-RTF_DIR = os.path.join(paths.ROOT, "kithann", "out", "rtf-only")
-PY = paths.VENV_PY
-
-FIELDS = ["節目名稱", "年度", "集數", "播出日期", "播出時段",
-          "族語別(英)", "族語別(中)", "影片檔案位置", "文稿位置", "字幕srt狀態"]
-
-
-def relative(path):
-    """Paths in the tracker are relative to the corpus root, as in the
-    catalogue this corpus already ships."""
-    if path.startswith(CORPUS + "/"):
-        return "ilrdf-corpus/" + path[len(CORPUS) + 1:]
-    return path
 
 
 def vision_complete(work):
-    """True when every contact sheet of a plan-B dir has been read.
+    """True when every cue of a plan-B dir has actually been read.
 
     A part-finished vision pass is normal -- it is designed to be resumable --
     but only a finished one may replace the 文稿/tesseract output wholesale,
     so this insists on every cue being marked verified rather than merely on
     the directory existing.
+
+    It compares the two sets of cue numbers rather than their sizes. Counting
+    is not checking: rebuilding the contact sheets renumbers the cues, so a
+    verified.json can carry rows for numbers that no longer exist, reach the
+    total, and hide real cues that nobody has read. The episode would then be
+    assembled and published with subtitles simply missing from it.
     """
     cues = os.path.join(work, "cues.json")
     verified = os.path.join(work, "verified.json")
     if not (os.path.exists(cues) and os.path.exists(verified)):
         return False
     with open(cues, encoding="utf-8") as handle:
-        total = len(json.load(handle)["cues"])
+        wanted = set()
+        for cue in json.load(handle)["cues"]:
+            wanted.add(str(cue["index"]))
     with open(verified, encoding="utf-8") as handle:
         marked = json.load(handle)
-    done = 0
-    for value in marked.values():
-        if value:
-            done += 1
-    return total > 0 and done >= total
+    read = set()
+    for index in marked:
+        if marked[index]:
+            read.add(str(index))
+    return bool(wanted) and wanted <= read
 
 
 def make_one(entry):
-    """Build both SRTs for one episode; return its status line."""
+    """Build one episode's SRT; return its status line."""
     slug = entry["slug"]
     work = os.path.join(WORK, slug + ".work")
     if not os.path.exists(os.path.join(work, "cues.json")):
         return "待處理（尚未切cue）"
 
-    # A finished vision pass supersedes everything else: its text was read off
-    # the contact sheets rather than recognised, so it needs no 文稿 to correct
-    # it and must not be diluted by tesseract's version.
-    #
-    # It is therefore asked about FIRST. The February batch happened to have a
-    # tesseract draft in every .work dir, so a "have we recognised anything
-    # yet?" guard could sit above this and never fire wrongly. Episodes read
-    # by vision alone have no such draft, and that guard reported thirteen
-    # fully-read episodes as 尚未辨識 while their transcripts sat in .B.work.
+    # The vision pass is where the text comes from: read off the contact
+    # sheets by a human, cue by cue. An episode is only assembled once every
+    # one of its cues has been read -- a half-read pass is a normal state
+    # (the pass is designed to be resumable) but not a deliverable one.
     vision = os.path.join(WORK, slug + ".B.work")
-    if vision_complete(vision):
-        out = os.path.join(SRT_DIR, entry["srt_name"] + ".srt")
-        proc = subprocess.run(
-            [PY, "-m", "scripts.news.make_srt", vision, "-o", out],
-            capture_output=True, text=True, cwd=paths.ROOT)
-        if proc.returncode != 0:
-            lines = proc.stderr.strip().splitlines() or ["?"]
-            return "錯誤：%s" % lines[-1][:80]
-        qc = json.loads(proc.stdout.strip().splitlines()[-1])
-        return ("已產生 %d 行；Claude 視覺辨識，%d 個 cue 全數校讀"
-                % (qc["srt_lines"], qc["cues"]))
+    if not vision_complete(vision):
+        return "待處理（已切cue，尚未校讀完）"
 
-    # No finished vision pass, so fall back to the older sources -- which
-    # need a tesseract draft to exist at all.
-    if not os.path.exists(os.path.join(work, "transcripts.json")):
-        return "待處理（已切cue，尚未辨識）"
-
-    rtf = ""
-    if entry["文稿位置"]:
-        rtf = os.path.join(CORPUS, entry["文稿位置"])
-
-    name = entry["srt_name"]
-    out = os.path.join(SRT_DIR, name + ".srt")
-    wout = os.path.join(RTF_DIR, name + ".srt") if rtf else ""
-    cmd = [PY, "-m", "scripts.news.make_srt", work, "-o", out]
-    if rtf:
-        cmd += ["--rtf", rtf, "--rtf-out", wout]
-    proc = subprocess.run(cmd, capture_output=True, text=True, cwd=paths.ROOT)
-    if proc.returncode != 0:
-        return "錯誤：%s" % (proc.stderr.strip().splitlines() or ["?"])[-1][:80]
-
-    qc = json.loads(proc.stdout.strip().splitlines()[-1])
-    if not rtf:
-        return ("已產生 %d 行；無文稿可校對，全為 tesseract 辨識（品質低，"
-                "建議以視覺辨識重讀）" % qc["srt_lines"])
-    return ("已產生 %d 行；文稿對齊 %d 行（%.0f%%），其餘為 tesseract 辨識"
-            % (qc["srt_lines"], qc["cues_aligned"], qc["aligned_pct"]))
-
-
-def tracker_row(entry, status):
-    """One smkul.csv row. rebuild.py reuses this so that a rebuilt tracker
-    is byte-comparable with the delivered one."""
-    # An episode whose only surviving source is short still gets subtitled --
-    # a partial transcript beats none -- but the tracker has to say so, or the
-    # SRT reads as a complete episode that simply stops. The note is attached
-    # here rather than where the SRT is built so that make_all and rebuild
-    # cannot drift apart on it.
-    if entry.get("partial"):
-        status = "%s；來源不完整：%s" % (status, entry["partial"])
-    script = ""
-    if entry["文稿位置"]:
-        script = "ilrdf-corpus/" + entry["文稿位置"]
-    return {
-        "節目名稱": entry["節目名稱"],
-        "年度": entry["年度"],
-        "集數": entry["集數"],
-        "播出日期": entry["播出日期"],
-        "播出時段": entry["播出時段"],
-        "族語別(英)": entry["族語別(英)"],
-        "族語別(中)": entry["族語別(中)"],
-        "影片檔案位置": relative(entry["video"]),
-        "文稿位置": script,
-        "字幕srt狀態": status,
-    }
-
-
-def write_tracker(rows, path):
-    with open(path, "w", encoding="utf-8-sig", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=FIELDS)
-        writer.writeheader()
-        writer.writerows(rows)
+    out = os.path.join(SRT_DIR, entry["srt_name"] + ".srt")
+    qc = make_srt.run(vision, out)
+    return tracker.vision_status(qc["srt_lines"], qc["cues"])
 
 
 def main():
     entries = json.load(open(paths.INVENTORY,
                              encoding="utf-8"))
     os.makedirs(SRT_DIR, exist_ok=True)
-    os.makedirs(RTF_DIR, exist_ok=True)
+    os.makedirs(os.path.dirname(paths.TRACKER_CACHE), exist_ok=True)
 
+    # Every episode gets a row here, pending ones included -- that is the
+    # point of the working copy: it is where you look to see how far the
+    # batch has got. Do NOT reach for tracker.tracker_rows(), which drops
+    # pending episodes; that rule is for the delivered table, whose every
+    # row has to be rebuildable from the store.
     rows = []
     for entry in entries:
         if entry["truncated"]:
-            status = "略過：" + entry["truncated"]
+            status = tracker.skipped_status(entry["truncated"])
         else:
             status = make_one(entry)
-        rows.append(tracker_row(entry, status))
+        rows.append(tracker.tracker_row(entry, status))
         print("%-46s %s" % (entry["srt_name"], status))
 
-    path = os.path.join(SRT_DIR, "smkul.csv")
-    write_tracker(rows, path)
-    print("\nwrote", path)
+    # The working copy, not the deliverable. `publish` writes the one in
+    # Kari-SRT, and only once every episode in the batch is finished -- see
+    # paths.TRACKER_CACHE for why a mid-batch table cannot live in the store.
+    tracker.write_tracker(rows, paths.TRACKER_CACHE)
+    print("\nwrote", paths.TRACKER_CACHE)
+    print("(Kari-SRT/srt/smkul.csv is written by `publish`, once the whole "
+          "batch is done)")
 
 
 if __name__ == "__main__":

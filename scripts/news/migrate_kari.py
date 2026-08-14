@@ -1,10 +1,19 @@
 #!/usr/bin/env python3
-"""One-shot migration of the February batch's data into Kari-SRT.
+"""One-shot migration of the February batch's data into Kari-SRT. ALREADY RUN.
 
-This is the documented mapping from every historical name a piece of data
-carried to the one key Kari-SRT uses, `srt_name`. Runs read-only against the
-sources and COPIES everything -- the vision TSVs are untracked and have no
-git backup until Kari-SRT is committed, so nothing here moves or deletes.
+Kept as documentation, not as a step: it ran once, its output is committed in
+Kari-SRT, and its source directories (`ilrdf-srt/`) no longer exist. Nothing
+in the pipeline calls it. `publish.py` is the standing equivalent for every
+batch since.
+
+What makes it worth keeping is the table below -- it is the only record of
+which historical name each piece of data carried before everything was keyed
+on `srt_name`. If a TSV ever turns up under an old name, this says where it
+belongs.
+
+Runs read-only against the sources and COPIES everything -- the vision TSVs
+were untracked and had no git backup until Kari-SRT was committed, so nothing
+here moves or deletes.
 
 Sources and their naming vintages:
 
@@ -321,10 +330,11 @@ def main():
             shutil.copy2(os.path.join(srt_src, name),
                          os.path.join(paths.KARI, "report", name))
             copied += 1
-    shutil.copy2(paths.INVENTORY, os.path.join(paths.KARI, "inventory.json"))
+    # The inventory used to be copied in from the main repo here. It now
+    # lives in the store to begin with, so there is nothing to copy.
 
     print("wrote Kari-SRT: %d episodes of TSV/cues/from_rtf, %d srt-dir "
-          "files, inventory.json" % (len(eps), copied))
+          "files" % (len(eps), copied))
 
 
 if __name__ == "__main__":

@@ -1,29 +1,32 @@
 #!/usr/bin/env python3
-"""Assemble one episode's cues and text into an SRT.
+"""Assemble one episode's cues and checked text into an SRT.
 
-Text for a cue is taken from the best source available:
+The text comes from the episode's transcripts, which are what a human read
+off the contact sheets. Nothing else supplies text.
 
-  文稿   the episode's own news script, located by aligning the recogniser's
-         output against it. Exact wording, including the characters tesseract
-         gets wrong -- 苧麻 where it read 芋麻, 救災 where it read 名及.
-  ocr    tesseract, which on Chinese over moving footage is poor. Kept so the
-         cue is not silently dropped, never presented as checked.
+Two other sources were tried and dropped, both measured:
 
-Both the merged SRT and a 文稿-only variant are written. The second is the one
-fit to feed a corpus: every line in it is script-backed, so it is smaller but
-not corrupted. Which is the same trade the skill makes when it refuses to
-export unverified rows as training data.
+  tesseract  26% of lines right on this material, whole-line
+             (`去年底桃園復興巴陵的一場大火` came back as
+             `同/和)[人圖復興叫陜病一易大六`)
+  文稿       the episode's own news script, located by aligning a
+             recogniser's output against it. Of 4,344 cues it supplied,
+             336 (7.7%) disagreed with the picture and the picture was
+             right every time -- 58% because the script does not record
+             where the subtitler broke a narration paragraph, 40% because
+             the subtitler corrected the script as they typed. No amount
+             of alignment recovers either. Removed; see git history and
+             `Kari-SRT/report/rtf-vs-vision.*` for the comparison.
 """
 import argparse
 import json
 import os
 
-from scripts.news import align as aligner
-from scripts.subs2srt import cli as subs2srt
+from scripts.subs2srt import assemble
 from scripts.subs2srt import cuelib
 
 
-def load_ocr(work):
+def load_transcripts(work):
     path = os.path.join(work, "transcripts.json")
     if not os.path.exists(path):
         return {}
@@ -31,28 +34,23 @@ def load_ocr(work):
         return json.load(handle)
 
 
-def build(work, rtf, min_coverage, min_compactness):
-    """One record per cue: timing, OCR text, and 文稿 text where found."""
+def build(work):
+    """One record per cue: its timing and its text."""
     with open(os.path.join(work, "cues.json"), encoding="utf-8") as handle:
         manifest = json.load(handle)
-    cues = manifest["cues"]
 
-    if rtf and os.path.isdir(rtf):
-        records, refsize, filled = aligner.resolve(
-            work, rtf, min_coverage, min_compactness)
-        return manifest, records, refsize, filled
-
-    ocr = load_ocr(work)
+    texts = load_transcripts(work)
     records = []
-    for cue in cues:
-        got = ocr.get(str(cue["index"]))
+    for cue in manifest["cues"]:
+        got = texts.get(str(cue["index"]))
         text = got.get("han", "") if isinstance(got, dict) else ""
         records.append({
-            "index": cue["index"], "start": cue["start"], "end": cue["end"],
-            "ocr": text or "", "aligned": "", "source": "",
-            "coverage": 0.0, "compactness": 0.0,
+            "index": cue["index"],
+            "start": cue["start"],
+            "end": cue["end"],
+            "text": text or "",
         })
-    return manifest, records, 0, 0
+    return manifest, records
 
 
 def drop_leader(records):
@@ -73,19 +71,14 @@ def drop_leader(records):
     for rec in records:
         if rec["start"] > 0.5:
             break
-        rec["ocr"] = ""
-        rec["aligned"] = ""
+        rec["text"] = ""
     return records
 
 
-def entries_from(records, use):
+def entries_from(records):
     out = []
     for rec in records:
-        if use == "rtf":
-            text = rec["aligned"]
-        else:
-            text = rec["aligned"] or rec["ocr"]
-        text = (text or "").strip()
+        text = (rec["text"] or "").strip()
         if not text:
             continue
         out.append((rec["start"], rec["end"], text))
@@ -93,8 +86,8 @@ def entries_from(records, use):
 
 
 def write_srt(path, entries, merge_gap=1.0, min_gap=0.04):
-    entries = subs2srt.merge_repeats(entries, merge_gap)
-    entries = subs2srt.apply_gap_rules(entries, min_gap)
+    entries = assemble.merge_repeats(entries, merge_gap)
+    entries = assemble.apply_gap_rules(entries, min_gap)
     body = cuelib.render_srt(entries)
     with open(path, "w", encoding="utf-8") as handle:
         handle.write(body)
@@ -103,51 +96,41 @@ def write_srt(path, entries, merge_gap=1.0, min_gap=0.04):
     return body.count("-->")
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("work")
-    ap.add_argument("-o", "--out", required=True, help="merged SRT path")
-    ap.add_argument("--rtf", default="")
-    ap.add_argument("--rtf-out", default="", help="文稿-only SRT path")
-    ap.add_argument("--min-coverage", type=float, default=0.5)
-    ap.add_argument("--min-compactness", type=float, default=0.55)
-    args = ap.parse_args()
+def run(work, out):
+    """Write one episode's SRT; return the QC counts as a dict.
 
-    manifest, records, refsize, filled = build(
-        args.work, args.rtf, args.min_coverage, args.min_compactness)
+    This is the callable form, and it is what make_all and rebuild use. They
+    used to spawn this module as a subprocess and parse the last line of its
+    stdout as JSON -- a contract nothing declared and nothing checked, which
+    an extra print() at the end would have broken silently.
+    """
+    _manifest, records = build(work)
     records = drop_leader(records)
 
     with_text = 0
-    aligned = 0
     for rec in records:
-        if (rec["aligned"] or rec["ocr"]).strip():
+        if rec["text"].strip():
             with_text += 1
-        if rec["aligned"].strip():
-            aligned += 1
 
-    merged = write_srt(args.out, entries_from(records, "best"))
-    rtf_lines = 0
-    if args.rtf_out:
-        rtf_lines = write_srt(args.rtf_out,
-                              entries_from(records, "rtf"))
-
-    aligned_pct = 0.0
-    if with_text:
-        aligned_pct = round(100.0 * aligned / with_text, 1)
-    qc = {
+    return {
         "cues": len(records),
         "cues_with_text": with_text,
-        "cues_aligned": aligned,
-        "aligned_pct": aligned_pct,
-        "interpolated": filled,
-        "rtf_chars": refsize,
-        "srt_lines": merged,
-        "rtf_srt_lines": rtf_lines,
+        "srt_lines": write_srt(out, entries_from(records)),
     }
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("work")
+    ap.add_argument("-o", "--out", required=True, help="SRT path")
+    args = ap.parse_args(argv)
+
+    qc = run(args.work, args.out)
     with open(os.path.splitext(args.out)[0] + ".qc.json", "w",
               encoding="utf-8") as handle:
         json.dump(qc, handle, ensure_ascii=False, indent=2)
     print(json.dumps(qc, ensure_ascii=False))
+    return 0
 
 
 if __name__ == "__main__":
