@@ -16,22 +16,26 @@ from scripts.news import refine_cues
 class TestTransitionTime(unittest.TestCase):
     TIMES = [10.00, 10.04, 10.08, 10.12, 10.16, 10.20, 10.24]
 
-    def test_adjacent_switch_takes_the_first_right_frame(self):
+    def test_adjacent_switch_takes_the_frame_interval_midpoint(self):
+        # the true switch lies between the last L (10.08) and the first R
+        # (10.12); the midpoint centres the error instead of biasing late
         labels = ["L", "L", "L", "R", "R", "R", "R"]
         got = refine_cues.transition_time(self.TIMES, labels)
-        self.assertAlmostEqual(got, 10.12)
+        self.assertAlmostEqual(got, (10.08 + 10.12) / 2.0)
 
     def test_unknown_stretch_takes_its_midpoint(self):
-        # interlaced transition frames sit between the two runs
+        # interlaced transition frames sit between the two runs -- the same
+        # midpoint rule, just over a wider stretch
         labels = ["L", "L", "?", "?", "R", "R", "R"]
         got = refine_cues.transition_time(self.TIMES, labels)
         self.assertAlmostEqual(got, (10.04 + 10.16) / 2.0)
 
     def test_single_stray_frame_is_not_believed(self):
-        # one stray R amid L must not end the cue early (CONFIRM=2)
+        # one stray R amid L must not end the cue early (CONFIRM=2): the
+        # boundary comes from the confirmed runs, last L at 10.16
         labels = ["L", "L", "R", "L", "L", "R", "R"]
         got = refine_cues.transition_time(self.TIMES, labels)
-        self.assertAlmostEqual(got, 10.20)
+        self.assertAlmostEqual(got, (10.16 + 10.20) / 2.0)
 
     def test_window_not_opening_on_left_side_is_refused(self):
         labels = ["R", "R", "L", "L", "R", "R", "R"]

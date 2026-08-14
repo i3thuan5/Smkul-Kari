@@ -68,9 +68,16 @@ def transition_time(times, labels, confirm=CONFIRM):
 
     `labels` marks each frame 'L' (still the left side), 'R' (already the
     right side) or '?'. The window must open on a confirmed L run and close
-    on a confirmed R run; the boundary is the first frame of that R run, or
-    the midpoint of the unclassifiable stretch when frames sit between the
-    two runs (interlaced transition frames, per the spec).
+    on a confirmed R run; the boundary is the MIDPOINT between the last L
+    frame and the first R frame. One rule covers both shapes: with the runs
+    adjacent the true switch lies somewhere in that one frame interval and
+    the midpoint centres the error (+/-0.02s instead of 0-0.04s late);
+    with unclassifiable frames between them (interlaced transition frames)
+    it is the midpoint of that stretch, per the spec.
+
+    (The first delivery of the 35-episode back-refinement used the older
+    first-R-frame rule -- a systematic 0-0.04s late bias, still within the
+    0.05s budget. Not re-run; this rule applies from the next batch on.)
 
     Returns None when the window does not show that shape -- the caller
     keeps the coarse value.
@@ -92,8 +99,6 @@ def transition_time(times, labels, confirm=CONFIRM):
                 first_r = first
     if last_l is None or first_r is None:
         return None
-    if first_r == last_l + 1:
-        return times[first_r]
     return (times[last_l] + times[first_r]) / 2.0
 
 

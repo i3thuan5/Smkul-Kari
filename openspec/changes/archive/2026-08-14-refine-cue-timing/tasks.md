@@ -58,7 +58,11 @@ inventory 單一正本＋pending 機制）、working tree 乾淨。集數一律
       cue 資料層逐編號文字與 1.2 快照相同（零改動）；SRT 層的
       merge 翻轉差異列入 `timing-delta.txt` 人工審閱（design D8）；
       `rebuild --verify` 以新資料通過
-- [ ] 4.5 【使用者】Kari-SRT 一個 commit 同時換 `cues/` + `srt/`
+- [x] 4.4b 邊界規則修訂為中點制（spec／design／程式／測試同步）：
+      「最後左側幀」與「第一右側幀」的中點，緊鄰與不明區段同一條式。
+      35 集首批交付維持舊規則產物（偏晚 ≤0.04s，預算內），
+      **不重跑**，中點制自下批起生效——使用者定案
+- [x] 4.5 【使用者】Kari-SRT 一個 commit 同時換 `cues/` + `srt/`
       ＋ push；主 repo pointer bump
 
 ## 5. 新月份流程整合
@@ -67,7 +71,7 @@ inventory 單一正本＋pending 機制）、working tree 乾淨。集數一律
       （失敗不擋批次，保留粗切並記 log）
 - [x] 5.2 `.claude/commands/smkul-news.md` 與 `scripts/news/README.md`
       補精修步驟說明；README「還沒做的」移除已收掉的兩項
-- [ ] 5.3 【使用者】主 repo 最終 commit
+- [x] 5.3 【使用者】主 repo 最終 commit
 
 ## 6. 二月補集（已由外部完成，本 change 不再包含）
 
