@@ -74,7 +74,7 @@ git -C Kari-SRT log --oneline -1 && git -C Kari-SRT status --short
 - [x] 4.5 `gap_sheets.py` 移除 `--no-rtf` 旗標與 aligner 呼叫，改為一律把全部 cue 放上 sheet；`from_rtf.json` 仍寫出但恆為 `[]`
 - [x] 4.6 確認 `paths.py` 內 `KARI_FROM_RTF`／`KARI_VISION_RTF` 保留（rebuild 與歷史索引需要），只清掉真正無人使用的常數
 - [x] 4.7 驗收三條全綠——特別確認 `rebuild --verify` 仍逐 byte 相同（aligner 本就不參與重建，變紅代表刪過頭）
-- [ ] 4.8 建立刪除 commit（**待使用者執行**；文件已改指 `da2f0b3`，亦即最後一個「含」比較程式的 commit，所以不必等新 sha）
+- [x] 4.8 刪除 commit `4e12851`「程式重整理」；其 parent `da2f0b3` 即最後一個含比較程式的版本，文件已指向它
 
 ## 5. 拆 `cli.py`（嚴格純搬移）
 
