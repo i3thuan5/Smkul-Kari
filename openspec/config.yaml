@@ -1,32 +1,23 @@
+---
 schema: spec-driven
 
-# Project context (optional)
-# This is shown to AI when creating artifacts.
-# Add your tech stack, conventions, style guides, domain knowledge, etc.
-# Example:
-#   context: |
-#     Tech stack: TypeScript, React, Node.js
-#     We use conventional commits
-#     Domain: e-commerce platform
+# 這份設定跟著 repo 走（換電腦不會掉）。工作規範的正本：
+# - 全程規範（TDD 先紅後綠、for 在前、避免對岸用詞、git 分工）在 CLAUDE.md
+# - 這裡放「寫 openspec artifacts 時」才需要的規則
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+context: |
+  規劃階段（explore/propose）就要主動攤出完整檔案架構給使用者確認，
+  不要等到 apply 才出現新檔案：新增／修改哪些檔案、檔名、資料夾樹、
+  測試架構、資料檔的產出順序與輸出入對應。
 
-# Per-operation guidance (optional)
-# Add advisory guidance for how apply and archive work should be conducted.
-# This is separate from artifact rules above.
-# Example:
-#   operations:
-#     apply:
-#       guidance:
-#         - Keep test summaries concise
-#     archive:
-#       guidance:
-#         - Summarize the archive outcome before finishing
+rules:
+  proposal:
+    - 提案要列出會新增／修改的檔案與資料夾結構，給使用者確認後才定案
+  design:
+    - design 附完整檔案樹（含 tests/ 與資料目錄），標明每檔由哪支程式
+      產、吃什麼輸入
+    - 資料產出目錄用編號階段命名（如 1-words/、2-entries/），編號即
+      產出順序，另附 README 說明輸出入對應
+  tasks:
+    - 照 CLAUDE.md 的 TDD 規定排序：每個模組任務先寫測試（紅）再實作
+      （綠），測試不獨立成一個事後階段

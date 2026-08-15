@@ -63,6 +63,15 @@ Claude Code **毋准**執行下底ê git 指令（會影響 staged 檔案、comm
 
 - `for` khǹg 頭前（`for x in ...:`），毋准用 list comprehension 抑是 generator expression kā `for` khǹg tī 後壁（`[... for x in ...]`）。若欲，ài 有特殊理由，而且經過使用者同意。
 
+## TDD 規定
+
+寫程式一定ài先TDD：先寫測試、走hōo伊紅（fail），才寫實作hōo伊綠
+（pass），紲落去才重構。
+
+- 新模組：先開 `tests/` 內底ê對應測試檔，才准寫模組本身。
+- 修 bug：先寫一个會重現這粒 bug ê測試，才落手改。
+- 測試ài會使離線走（無phah網路、無讀大檔），資料用 fixture 合成。
+
 ## 程式修改了後ê驗收
 
 - 每擺程式修改完，ài佇本機走 `tox -e subtitle-rebuild`——對 Kari-SRT
