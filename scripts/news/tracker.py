@@ -14,13 +14,37 @@ second copy of this logic at any call site would drift and only show up as a
 mismatch nobody can explain.
 """
 import csv
+import os
 
 from scripts.news import paths
 
 CORPUS = paths.CORPUS
 
 FIELDS = ["節目名稱", "年度", "集數", "播出日期", "播出時段",
-          "族語別(英)", "族語別(中)", "影片檔案位置", "文稿位置", "字幕srt狀態"]
+          "族語別(英)", "族語別(中)", "影片檔案位置", "文稿位置",
+          "字幕srt狀態", "語音辨識狀態"]
+
+# The speech-side cell is derived from which stage files exist in the
+# store, highest stage wins. Never hand-written: a written status could
+# not survive `rebuild --verify`, which recomputes this table from the
+# store alone -- file existence is the only input both sides share.
+ASR_STAGES = [
+    ("6-srt-complete", ".srt", "正式版"),
+    ("4-srt-ai", ".srt", "審查版"),
+    ("3-srt-raw", ".srt", "對照版"),
+    ("2-entries", ".json", "投影"),
+    ("1-words", ".json", "逐詞辨識"),
+]
+
+
+def asr_status(srt_name, asr_dir=None):
+    """The speech-side progress cell for one episode."""
+    if asr_dir is None:
+        asr_dir = paths.ASR_DIR
+    for folder, ext, label in ASR_STAGES:
+        if os.path.exists(os.path.join(asr_dir, folder, srt_name + ext)):
+            return label
+    return ""
 
 
 def relative(path):
@@ -49,7 +73,7 @@ def skipped_status(reason):
     return "略過：" + reason
 
 
-def tracker_row(entry, status):
+def tracker_row(entry, status, asr_dir=None):
     """One smkul.csv row."""
     # An episode whose only surviving source is short still gets subtitled --
     # a partial transcript beats none -- but the tracker has to say so, or the
@@ -72,6 +96,7 @@ def tracker_row(entry, status):
         "影片檔案位置": relative(entry["video"]),
         "文稿位置": script,
         "字幕srt狀態": status,
+        "語音辨識狀態": asr_status(entry["srt_name"], asr_dir),
     }
 
 

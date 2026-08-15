@@ -4,14 +4,15 @@
     python3 -m scripts.news.publish            # every finished episode
     python3 -m scripts.news.publish --check    # report, write nothing
 
-`make_all.py` writes the deliverable SRTs straight into Kari-SRT/srt/, and
+`make_all.py` writes the deliverable SRTs straight into news/1-ocr/6-srt/, and
 the vision TSVs are written there by the readers themselves. What is left is
 the per-episode data that `rebuild.py` needs to put an SRT back together
 without touching a video: `cues/<srt_name>.json`, `from_rtf/<srt_name>.json`,
 and the inventory it walks. `migrate_kari.py` did this once for the February
 batch as part of a one-off move; this does it for every batch after.
 
-This is also where `srt/smkul.csv` is written. make_all keeps a working copy
+This is also where the store smkul.csv is written. make_all keeps a work
+copy
 in kithann/out/ that it can refresh as often as it likes; only the version
 written here is a deliverable. The reason is that a mid-batch row says which
 step an episode is stuck at, and that lives in the work dir -- which rebuild
@@ -113,7 +114,7 @@ def delivered_status(entry):
 
 def write_deliverable_tracker(entries):
     rows = tracker.tracker_rows(entries, delivered_status)
-    path = os.path.join(paths.SRT_DIR, "smkul.csv")
+    path = paths.TRACKER_STORE
     tracker.write_tracker(rows, path)
     return path
 

@@ -17,7 +17,7 @@ import json
 import os
 
 from scripts.news import paths
-from scripts.subs2srt import assemble
+from scripts.ocr import transcripts
 
 WORK = paths.WORK
 
@@ -43,7 +43,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("slug")
     ap.add_argument("tsvdir", nargs="?", default="",
-                    help="TSV directory; default Kari-SRT/vision/<srt_name> "
+                    help="TSV dir; default news/1-ocr/3-vision/<srt_name> "
                          "looked up from the slug")
     ap.add_argument("--suffix", default=".B.work",
                     help="work-dir suffix; .B.work is where gap_sheets puts "
@@ -100,7 +100,7 @@ def main():
 
     covered = total = 0
     for path in files:
-        _rows, covered, total = assemble.import_tsv(work, path)
+        _rows, covered, total = transcripts.import_tsv(work, path)
     print("imported; transcripts now cover %d/%d cues" % (covered, total))
 
 

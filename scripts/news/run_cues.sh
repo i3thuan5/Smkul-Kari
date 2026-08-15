@@ -63,7 +63,7 @@ for job in "${JOBS[@]}"; do
 
     (
         echo "$(date +%H:%M:%S) cues  $slug"
-        "$PY" -m scripts.subs2srt.cli cues "$local_copy" \
+        "$PY" -m scripts.ocr.cli cues "$local_copy" \
             -o "$WORK/$slug.work" --sheets \
             --presets "$PRESETS" --preset titv-news \
             > "$LOG/$slug.cues.log" 2>&1
@@ -73,7 +73,7 @@ for job in "${JOBS[@]}"; do
             echo "$(date +%H:%M:%S) WARN  $slug did not use the preset"
         fi
         if [ $rc -eq 0 ]; then
-            "$PY" -m scripts.subs2srt.cli ocr "$WORK/$slug.work" \
+            "$PY" -m scripts.ocr.cli ocr "$WORK/$slug.work" \
                 --engine tesseract \
                 > "$LOG/$slug.ocr.log" 2>&1
         fi

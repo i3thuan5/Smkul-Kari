@@ -59,6 +59,28 @@ Claude Code **毋准**執行下底ê git 指令（會影響 staged 檔案、comm
 
 憑證檔ài入 `.gitignore`（`.sftp-pass` 已經佇 178 逝）。
 
+## 外部服務佮套件ê採購規定
+
+正本是《採購安全說明書》（辦公廳資安人員維護）。彼份文件囥佇
+`kithann/`，是 gitignore ê，**換機器會無去**，所以佮開發相關ê條款
+記佇遮。beh引進**任何**新ê雲端服務、模型權重、抑是 Python 套件進前，
+ài先照下底稽核，結果寫入該 change ê design：
+
+1. **毋是中國製造、毋是中國企業維護**——這條上要緊。開源看團隊
+   國籍（有疑問ê時，以近期 Reviewer ê國籍為準）；模型權重看
+   **訓練語料佮 recipe ê出身**，毋是干焦看發布者。
+2. ISO 27701／27001 認證優先；若會接觸著個資閣無認證，揀有公告
+   隱私權條款ê。
+3. 雲端服務機房臺灣優先。
+4. 開源套件閣ài看：GitHub 維護頻率（三個月內有 commit）、有無
+   贊助商、Issue／PR 有咧處理、搜「<名稱> security issue」ê名聲。
+5. **裝愈少愈好**——會使用既有ê工具解決ê，就莫加新依賴。
+
+已經稽核過ê（`add-asr-bilingual-srt`）：`vosk`、`huggingface_hub`、
+ILRDF ê族語模型、ai-labs MT 服務、Claude 攏過；**vosk ê中文模型
+無過**（multi-cn recipe 佮 SpeechIO／THCHS／aishell 語料是中國出身），
+所以華語辨識改用借詞音節錨點，免中文 ASR。
+
 ## Python sir-tái-luh
 
 - `for` khǹg 頭前（`for x in ...:`），毋准用 list comprehension 抑是 generator expression kā `for` khǹg tī 後壁（`[... for x in ...]`）。若欲，ài 有特殊理由，而且經過使用者同意。
@@ -90,5 +112,9 @@ Claude Code **毋准**執行下底ê git 指令（會影響 staged 檔案、comm
 - 驗收愛用**推算**ê，莫記死數字：批次進行中ê集數會變。條件是
   「`rebuild --verify` 過，而且伊講ê集數 ＝ store inventory 內底無標
   `pending` ê筆數」，毋是「猶原是 N 集」。
+- README 等文件嘛仝款：**會綴批次變ê數字（集數、cue 數）莫寫死**，
+  指去正本（`smkul.csv`、`inventory.json`）就好。
+- 產出ê文件（README、報告）**莫記 design／task 編號**——彼是 change
+  規劃ê暫時座標，歸檔就無意義；文件ài家己讀有。
 - 改著檔案了後若測試結果怪怪，先清 `__pycache__`：檔案大細相仝、mtime
   仝一秒ê時，Python 會掠著舊ê bytecode。

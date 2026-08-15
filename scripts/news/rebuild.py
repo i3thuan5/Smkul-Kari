@@ -5,11 +5,11 @@
     python3 -m scripts.news.rebuild -o /some/dir      # keep the output
 
 This is the executable form of the srt-data-store spec's core guarantee:
-main repo (code) + Kari-SRT (cues/ + vision/ + vision-rtf/ + inventory.json)
-suffice to rebuild every delivered SRT and smkul.csv byte-identical to the
-committed deliverables in Kari-SRT/srt/ -- offline, no video, calling no
-model. If that holds, everything under kithann/ really is a regenerable
-cache.
+main repo (code) + Kari-SRT (news/1-ocr/ 1-cues + 3-vision + 4-vision-rtf,
+plus news/inventory.json) suffice to rebuild every delivered SRT and
+smkul.csv byte-identical to the committed deliverables in
+news/1-ocr/6-srt/ -- offline, no video, calling no model. If that
+holds, everything under kithann/ really is a regenerable cache.
 
 How it stays byte-identical: it does not reimplement assembly. For each
 episode it synthesises a work dir (cues.json copied from Kari-SRT, a
@@ -66,11 +66,11 @@ def check_inputs(entries):
             continue
         name = entry["srt_name"]
         if not os.path.exists(os.path.join(paths.KARI_CUES, name + ".json")):
-            problems.append("missing cues/%s.json" % name)
+            problems.append("missing 1-cues/%s.json" % name)
         if not episode_transcripts(name):
             problems.append("no vision TSVs for %s" % name)
         if not os.path.exists(os.path.join(paths.SRT_DIR, name + ".srt")):
-            problems.append("missing delivered srt/%s.srt to compare against"
+            problems.append("missing delivered 6-srt/%s.srt to compare against"
                             % name)
     return problems
 
@@ -94,7 +94,7 @@ def rebuild_one(entry, tmp):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--verify", action="store_true",
-                    help="byte-compare the rebuild against Kari-SRT/srt/")
+                    help="byte-compare the rebuild against news/1-ocr/6-srt/")
     ap.add_argument("-o", "--out", default="",
                     help="rebuild into this directory instead of a tempdir")
     args = ap.parse_args()
@@ -137,7 +137,7 @@ def main():
         if built != shipped:
             mismatched.append(name)
     built = open(os.path.join(tmp, "srt", "smkul.csv"), "rb").read()
-    shipped = open(os.path.join(paths.SRT_DIR, "smkul.csv"), "rb").read()
+    shipped = open(paths.TRACKER_STORE, "rb").read()
     if built != shipped:
         mismatched.append("smkul.csv")
 

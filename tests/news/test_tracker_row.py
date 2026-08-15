@@ -21,6 +21,7 @@ ENTRY = {
     "video": "ilrdf-corpus/族語新聞/110.1-110.10/7月/21NL003_41午間族語新聞.mp4",
     "文稿位置": "",
     "truncated": "",
+    "srt_name": "20210210_041_午間_Cou_鄒",
 }
 DONE = "已產生 170 行；Claude 視覺辨識，237 個 cue 全數校讀"
 

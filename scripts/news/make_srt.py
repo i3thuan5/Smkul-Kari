@@ -22,8 +22,8 @@ import argparse
 import json
 import os
 
-from scripts.subs2srt import assemble
-from scripts.subs2srt import cuelib
+from scripts.srtlib import assemble
+from scripts.srtlib import srt
 
 
 def load_transcripts(work):
@@ -86,12 +86,15 @@ def entries_from(records):
 
 
 def write_srt(path, entries, merge_gap=1.0, min_gap=0.04, duration=None):
-    entries = assemble.merge_repeats(entries, merge_gap)
-    entries = assemble.apply_gap_rules(entries, min_gap)
-    # Padding is last on purpose: it may leave pairs touching at a gap's
-    # midpoint, which apply_gap_rules would pull apart again.
-    entries = assemble.pad_edges(entries, duration=duration)
-    body = cuelib.render_srt(entries)
+    # One chain for both sides of the pipeline: the bilingual SRTs render
+    # from the very same rows, which is what keeps them coaxial with the
+    # delivered subtitles byte for byte.
+    rows = assemble.chain_with_spans(entries, merge_gap, min_gap,
+                                     duration=duration)
+    rendered = []
+    for row in rows:
+        rendered.append((row["srt_start"], row["srt_end"], row["text"]))
+    body = srt.render_srt(rendered)
     with open(path, "w", encoding="utf-8") as handle:
         handle.write(body)
         if body and not body.endswith("\n"):

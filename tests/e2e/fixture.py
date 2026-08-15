@@ -11,8 +11,8 @@ import subprocess
 
 import numpy as np
 
-from scripts.subs2srt import cli as subs2srt
-from scripts.subs2srt import cuelib
+from scripts.ocr import cli as subs2srt
+from scripts.srtlib import srt
 
 CJK_FONT = "Noto Sans CJK TC"
 
@@ -39,7 +39,7 @@ GROUND_TRUTH_HAN = [
 
 def write_srt(entries, path):
     with open(path, "w", encoding="utf-8") as handle:
-        handle.write(cuelib.render_srt(entries))
+        handle.write(srt.render_srt(entries))
         handle.write("\n")
 
 
@@ -168,7 +168,7 @@ def run_end_to_end(tmpdir, band, entries, lang, label, fps=5.0):
     print("  exact text matches: %d/%d" % (exact, len(pairs)))
 
     with open(srt_out, encoding="utf-8") as handle:
-        reparsed = cuelib.parse_srt(handle.read())
+        reparsed = srt.parse_srt(handle.read())
     print("  final SRT parses back to %d entries" % len(reparsed))
 
     return {
@@ -197,6 +197,7 @@ def check_odd_region(video, fps=5.0):
     """
     region = (101, 845, 1043, 107)
     seen = 0
+    from scripts.ocr import cuelib
     for _, frame in cuelib.stream_region(video, region, fps, start=0.0,
                                          duration=6.0):
         if frame.shape != (107, 1043, 3):

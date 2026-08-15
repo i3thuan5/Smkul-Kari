@@ -31,15 +31,24 @@ LOGS = os.path.join(ROOT, "kithann", "out", "mxf-logs")
 # a mid-batch table in the store could never be rebuilt byte-for-byte.
 TRACKER_CACHE = os.path.join(ROOT, "kithann", "out", "smkul.csv")
 
-# Kari-SRT is the submodule holding the canonical data: delivered SRTs,
-# per-episode timing, and the vision transcripts. kithann/ holds only
-# sources and regenerable caches.
+# Kari-SRT is the submodule holding the canonical data, layered
+# corpus -> technique -> numbered stage (the numbers are the production
+# order): news/1-ocr/ is the picture side, news/2-asr/ the speech side.
+# kithann/ holds only sources and regenerable caches.
 KARI = os.path.join(ROOT, "Kari-SRT")
-SRT_DIR = os.path.join(KARI, "srt")
-KARI_CUES = os.path.join(KARI, "cues")
-KARI_FROM_RTF = os.path.join(KARI, "from_rtf")
-KARI_VISION = os.path.join(KARI, "vision")
-KARI_VISION_RTF = os.path.join(KARI, "vision-rtf")
+NEWS_STORE = os.path.join(KARI, "news")
+OCR_STORE = os.path.join(NEWS_STORE, "1-ocr")
+ASR_DIR = os.path.join(NEWS_STORE, "2-asr")
+KARI_CUES = os.path.join(OCR_STORE, "1-cues")
+KARI_FROM_RTF = os.path.join(OCR_STORE, "2-from_rtf")
+KARI_VISION = os.path.join(OCR_STORE, "3-vision")
+KARI_VISION_RTF = os.path.join(OCR_STORE, "4-vision-rtf")
+KARI_REPORT = os.path.join(OCR_STORE, "5-report")
+SRT_DIR = os.path.join(OCR_STORE, "6-srt")
+
+# The delivered progress table sits at the corpus level: it lists both
+# techniques' per-episode state, so it belongs to neither directory.
+TRACKER_STORE = os.path.join(NEWS_STORE, "smkul.csv")
 
 # presets.json is corpus knowledge -- which programme is laid out how -- so it
 # is part of the code and lives beside it. inventory.json is derived data (the
@@ -49,7 +58,7 @@ KARI_VISION_RTF = os.path.join(KARI, "vision-rtf")
 # with the other; two copies of the same truth is a synchronisation problem
 # nobody asked for.
 ENGINE_PRESETS = os.path.join(HERE, "presets.json")
-INVENTORY = os.path.join(KARI, "inventory.json")
+INVENTORY = os.path.join(NEWS_STORE, "inventory.json")
 CATALOGUE = os.path.join(ROOT, "kithann", "tongan", "ilrdf-corpus.csv")
 
 VENV_PY = os.path.expanduser("~/.venvs/subs2srt/bin/python")

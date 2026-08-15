@@ -6,8 +6,8 @@ description: Use when asked to pull burned-in (hardcoded) subtitles out of a vid
 # Extracting burned-in subtitles as SRT
 
 > **程式碼已遷出這個目錄。** 引擎是主 repo 的正式 package：
-> `scripts/subs2srt/`（`cli.py`＋`cuelib.py`），從 repo 根目錄以
-> `python -m scripts.subs2srt.cli` 執行。corpus 專屬的編排、preset 與
+> `scripts/ocr/`（`cli.py`＋`cuelib.py`；SRT 格式與組裝鏈在共用的 `scripts/srtlib/`），從 repo 根目錄以
+> `python -m scripts.ocr.cli` 執行。corpus 專屬的編排、preset 與
 > 路徑設定在 `scripts/news/`（見其 `README.md`）。這份 SKILL.md 只是
 > 說明書；程式已全部遷出，測試在 `tests/`（單元）與 `tests/e2e/`（round trip）。
 
@@ -39,7 +39,7 @@ use, so a tesseract run can still serve as a rough draft or a fallback — see
 "When tesseract is the right call".
 
 ```bash
-SUBS="$HOME/.venvs/subs2srt/bin/python -m scripts.subs2srt.cli"   # 從 repo 根目錄執行
+SUBS="$HOME/.venvs/subs2srt/bin/python -m scripts.ocr.cli"   # 從 repo 根目錄執行
 V=path/to/video.mp4
 W=out/myvideo.work
 
@@ -227,16 +227,16 @@ every frame, dedupe the strings afterwards) is far slower and produces worse
 timings, because OCR noise makes two frames of the *same* subtitle look
 different.
 
-So: `scripts/subs2srt/cli.py` cuts the video into cues by differencing the text
+So: `scripts/ocr/cli.py` cuts the video into cues by differencing the text
 mask, exports one image strip per cue, and only then recognises text.
 
 ```bash
-python3 -m scripts.subs2srt.cli detect VIDEO --preview /tmp/band.png
-python3 -m scripts.subs2srt.cli cues   VIDEO -o work/
-python3 -m scripts.subs2srt.cli ocr    work/ --engine tesseract
-python3 -m scripts.subs2srt.cli srt    work/ -o out.srt
+python3 -m scripts.ocr.cli detect VIDEO --preview /tmp/band.png
+python3 -m scripts.ocr.cli cues   VIDEO -o work/
+python3 -m scripts.ocr.cli ocr    work/ --engine tesseract
+python3 -m scripts.ocr.cli srt    work/ -o out.srt
 # or all at once:
-python3 -m scripts.subs2srt.cli auto   VIDEO -o out.srt
+python3 -m scripts.ocr.cli auto   VIDEO -o out.srt
 ```
 
 Decode runs at roughly 11× realtime, so a 50-minute 1080p video takes about
@@ -252,7 +252,7 @@ sudo apt-get install -y ffmpeg tesseract-ocr tesseract-ocr-chi-tra python3-venv
 
 python3 -m venv ~/.venvs/subs2srt
 ~/.venvs/subs2srt/bin/pip install numpy Pillow
-~/.venvs/subs2srt/bin/python -m scripts.subs2srt.cli --help
+~/.venvs/subs2srt/bin/python -m scripts.ocr.cli --help
 ```
 
 **A venv is not optional here.** Ubuntu 24.04 ships PEP 668, so a plain
@@ -472,8 +472,8 @@ model reads them without downscaling. Roughly 4 bilingual cues fit per sheet.
 ```
 
 ```bash
-python3 -m scripts.subs2srt.cli import work/ --from vision.tsv
-python3 -m scripts.subs2srt.cli srt    work/ -o out.srt
+python3 -m scripts.ocr.cli import work/ --from vision.tsv
+python3 -m scripts.ocr.cli srt    work/ -o out.srt
 ```
 
 `import` merges over whatever is already in `transcripts.json` and refuses
@@ -494,7 +494,7 @@ The cue strips are already what tesstrain wants — single text lines about
 with checked text:
 
 ```bash
-python3 -m scripts.subs2srt.cli export-gt work/ -o gt/ --line ami
+python3 -m scripts.ocr.cli export-gt work/ -o gt/ --line ami
 # gt/sub_00042_ami.png  +  gt/sub_00042_ami.gt.txt
 ```
 

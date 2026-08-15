@@ -92,7 +92,7 @@ def main():
     # paths.TRACKER_CACHE for why a mid-batch table cannot live in the store.
     tracker.write_tracker(rows, paths.TRACKER_CACHE)
     print("\nwrote", paths.TRACKER_CACHE)
-    print("(Kari-SRT/srt/smkul.csv is written by `publish`, once the whole "
+    print("(Kari-SRT/news/smkul.csv is written by `publish`, once the whole "
           "batch is done)")
 
 

@@ -147,7 +147,7 @@ while IFS=$'\t' read -r size name <&3; do
     fi
 
     echo "$(date +%H:%M:%S) cues  $slug"
-    if "$PY" -m scripts.subs2srt.cli cues "$local_file" -o "$dst" \
+    if "$PY" -m scripts.ocr.cli cues "$local_file" -o "$dst" \
          --presets "$PRESETS" --preset "$PRESET" --sheets \
          > "$LOG/$slug.cues.log" 2>&1; then
         # Refine the boundaries while the video is still on disk (design

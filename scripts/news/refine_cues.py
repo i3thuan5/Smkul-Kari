@@ -31,7 +31,7 @@ import os
 import subprocess
 import sys
 
-from scripts.subs2srt import cuelib
+from scripts.ocr import cuelib
 
 FPS = 25.0
 WINDOW = 0.24

@@ -82,7 +82,9 @@ class Fixture(unittest.TestCase):
 
     @property
     def store_tracker(self):
-        return os.path.join(self.srt_dir, "smkul.csv")
+        # the delivered table sits at the corpus level of the store, beside
+        # inventory.json -- not inside the SRT stage directory
+        return os.path.join(self.store, "smkul.csv")
 
 
 class TestMakeAllWritesTheScratchCopy(Fixture):
@@ -122,6 +124,8 @@ class TestPublishWritesTheDeliverable(Fixture):
              mock.patch.object(paths, "KARI_FROM_RTF",
                                self._dir("store/from_rtf")), \
              mock.patch.object(paths, "KARI", self.store), \
+             mock.patch.object(paths, "TRACKER_STORE",
+                               self.store_tracker), \
              mock.patch.object(publish, "WORK", self.work):
             return publish.main([])
 

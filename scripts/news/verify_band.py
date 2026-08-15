@@ -93,7 +93,7 @@ import json
 import numpy as np
 
 from scripts.news import paths
-from scripts.subs2srt import cuelib
+from scripts.ocr import cuelib
 
 # Rows to average over when separating broad features from thin ones: about
 # the height of a subtitle glyph, so a line of text survives and a two-pixel

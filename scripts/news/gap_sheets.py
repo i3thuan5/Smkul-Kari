@@ -19,7 +19,7 @@ import json
 import os
 
 from scripts.news import paths
-from scripts.subs2srt import sheets
+from scripts.ocr import sheets
 
 WORK = paths.WORK
 
