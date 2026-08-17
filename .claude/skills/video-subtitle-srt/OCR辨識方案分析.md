@@ -1,12 +1,4 @@
-# 字幕辨識方案分析
-
-**問題**：`A.work/strips/` 的圖片本身很清楚，但 `068-阿美語-秀姑巒-雙語字幕.srt`
-的文字正確率只有 5 成左右。
-
-**結論先講**：問題不在切圖，也不是調參數能解決的。tesseract 對這批素材有
-**模型層級的結構性限制**。以下是量測數據與替代方案。
-
----
+# 字幕辨識OCR方案分析
 
 ## 一、現在的做法
 
@@ -214,6 +206,55 @@ cue 編號只對「某一份特定的 `cues.json`」有意義。重跑 `cues` �
 - ✅ 繁中準確度高
 - ❌ 付費、資料外流、阿美語（非常見語言）品質未知
 - **適用**：只想處理中文行、且已核可雲端服務時
+
+### 附錄：套件採購合規稽核
+
+依《採購安全說明書 v2.0》查核（查核日期 2026-07-29）。
+
+**採用套件**
+
+| 套件 | 版本 | 用途 | 授權 | 維護團隊 | 判定 |
+|---|---|---|---|---|---|
+| ffmpeg / ffprobe | 6.1.1（Ubuntu 套件庫） | 解碼影片、裁切字幕區 | LGPL-2.1+／GPL-2+ | FFmpeg 專案（國際，起源法國） | ✅ 非中國 |
+| numpy | 2.5.1（PyPI） | 遮罩運算、cue 切分 | BSD-3-Clause | NumFOCUS（美國） | ✅ 非中國 |
+| Pillow | 12.3.0（PyPI） | 讀寫 PNG、contact sheet | MIT-CMU | python-pillow 團隊（美／歐） | ✅ 非中國 |
+| tesseract-ocr | 5.3.4（Ubuntu 套件庫） | 離線文字辨識 | Apache-2.0 | 見下 | ✅ 非中國 |
+| tesseract chi_tra / eng | 同上 | 繁中／拉丁字模型 | Apache-2.0 | 同上 | ✅ 非中國 |
+| Claude（Anthropic） | claude-opus-5 | 視覺辨識（阿美語準確度） | 商用服務 | Anthropic（美國） | ✅ 非中國 |
+
+安裝來源都是有審查機制的空間（Ubuntu 官方套件庫、PyPI），符合《說明書》§3-1。
+
+**排除選項**
+
+| 套件 | 排除理由 |
+|---|---|
+| PaddleOCR／PP-OCR 系列 | **百度（Baidu，中國企業）**開發維護，違反 §1-1。已查核確認。 |
+| RapidOCR 等包裝 PaddleOCR 模型的套件 | 模型來源同上，繼承同款問題。 |
+
+（EasyOCR 等其他選項本次未逐項查核，若要採用請照 §3 重新走一遍流程。）
+
+**tesseract 查核細節**（照 §3-2 開源軟體審查）
+
+1. **團隊國籍**：起源 HP 實驗室（美國，1985–1994），2005 開源，2006–2017 由 Google 維護。目前 lead developer 是 Stefan Weil（德國），maintainer 是 Zdenko Podobny，Windows build 由曼海姆大學圖書館（UB Mannheim，德國）發布。非中國團隊。
+2. 「tesseract security issue」搜尋結果：
+   - `CVE-2026-26832`（CVSS 9.8，OS command injection）——這是 **npm 的 `node-tesseract-ocr` 包裝器**的問題，**不是 tesseract 本身**。原因是它把檔案路徑串成 shell 字串傳給 `child_process.exec()`。本專案**未使用**該 npm 套件；是用 Python `subprocess.run()` 傳 **list 形式**參數，不經過 shell，所以沒有這類注入風險。
+   - `CVE-2021-36081`（use-after-free）——tesseract 本身的舊問題，新版已修正。本機用 5.3.4，Ubuntu 24.04 LTS 有安全更新支援。
+3. **維護狀況**：tesseract 5.x 系列持續發布，GitHub 有定期處理 issue／PR。
+
+**資料外流考量**（§2-2、§1-2）
+
+本流程預設全部在本機執行，影片檔不上傳任何雲端服務：`cues`、`ocr --engine tesseract`、`srt` 三個階段都是本機運算，影片原檔（1.2 GB／2.0 GB）自始至終不離開本機。
+
+唯一會送資料出去的情形是 `ocr --engine claude-api`：會把每條字幕的**圖片條**（只有字幕那幾十 px 高的裁切，不是整支影片）送去 Anthropic（美國）的 API。Anthropic 機房在美國，不是台灣（§1-3 偏好台灣機房優先，這點不符合），採購前請確認該影片的資料分級是否可用雲端服務。
+
+**參考來源**
+
+- [PaddleOCR（Baidu）](https://baike.baidu.com/en/item/PaddleOCR/3278967)
+- [tesseract-ocr/tesseract GitHub](https://github.com/tesseract-ocr/tesseract)
+- [Tesseract (software) – Wikipedia](https://en.wikipedia.org/wiki/Tesseract_(software))
+- [UB Mannheim tesseract](https://github.com/UB-Mannheim/tesseract)
+- [CVE-2026-26832（node-tesseract-ocr）GitHub Advisory](https://github.com/advisories/GHSA-8j44-735h-w4w2)
+- [CVE-2021-36081](https://vulert.com/vuln-db/debian-11-tesseract-163646)
 
 ---
 
