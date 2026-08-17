@@ -26,6 +26,15 @@
 #                     saved 21% and deinterlacing 9%.
 #   -c:a flac         lossless, ~33% of PCM. The corpus exists to train
 #                     acoustic models, so the audio must not be re-quantised.
+#                     FLAC only holds integer PCM, though: a source that
+#                     already decodes to float (AAC does, e.g. the mp4
+#                     masters fetched later than the Feb mxf batch) would
+#                     need a float->int rounding step to reach FLAC, and
+#                     that step is a real, reproducible quantisation --
+#                     caught by 2021-02-09 晚間 雅美 failing the bit-exact
+#                     check below (fltp source, 25% of decoded PCM bytes
+#                     differed). For that case the only lossless move is
+#                     to not touch the audio at all: -c:a copy.
 #   one audio track   the two PCM tracks on these masters are bit-identical
 #                     (checked per file below, not assumed).
 #
@@ -64,9 +73,22 @@ if [ "$tracks" -ge 2 ] && [ "$keep_second" -eq 1 ]; then
   maps+=(-map 0:a:1)
 fi
 
+# FLAC is lossless only when the source is already integer PCM. A source
+# that decodes to float (AAC, the codec on the mp4-sourced episodes) would
+# be silently rounded on the way into FLAC's integer samples -- not
+# audible, but not bit-exact, and this pipeline's whole audio contract is
+# bit-exact. Stream-copy instead: zero re-encoding, so nothing to round.
+audio_codec=$(ffprobe -v error -select_streams a:0 \
+                      -show_entries stream=codec_name \
+                      -of csv=p=0 "$SRC")
+case "$audio_codec" in
+  pcm_*) audio_args=(-c:a flac -compression_level 8) ;;
+  *)     audio_args=(-c:a copy) ;;
+esac
+
 ffmpeg -v error -stats -i "$SRC" "${maps[@]}" \
        -c:v libx264 -preset medium -pix_fmt "$PIX" -crf "$CRF" \
-       -c:a flac -compression_level 8 \
+       "${audio_args[@]}" \
        "$DST"
 
 before=$(stat -c%s "$SRC")
@@ -79,10 +101,21 @@ awk -v d="$DST" -v b="$before" -v a="$after" 'BEGIN {
 }'
 
 # The audio is the part that must survive bit-exact, so prove it did rather
-# than trusting that -c:a flac means what it says.
-echo "verifying the audio is bit-identical ..."
-a=$(ffmpeg -v error -i "$SRC" -map 0:a:0 -f md5 -)
-b=$(ffmpeg -v error -i "$DST" -map 0:a:0 -f md5 -)
+# than trusting that -c:a flac (or copy) means what it says. Verify through
+# the same codec path the encode took: for flac that means decoded PCM
+# (what the corpus actually trains on); for copy it must mean the encoded
+# packets, not decoded PCM -- Matroska doesn't carry AAC's skip_samples
+# priming-delay side data the way mp4's edit list does, so decoding a
+# stream-copied AAC track picks up an extra encoder-priming frame at the
+# front and every sample after it reads as "different" even though the
+# copied bytes are identical. "-c:a copy -f md5" hashes the passthrough
+# packets pre-decode, sidestepping that entirely.
+case "$audio_codec" in
+  pcm_*) verify_args=() ;;              # decode both sides, compare PCM
+  *)     verify_args=(-c:a copy) ;;     # compare the encoded packets
+esac
+a=$(ffmpeg -v error -i "$SRC" -map 0:a:0 "${verify_args[@]}" -f md5 -)
+b=$(ffmpeg -v error -i "$DST" -map 0:a:0 "${verify_args[@]}" -f md5 -)
 if [ "$a" = "$b" ]; then
   echo "  ok: $a"
 else

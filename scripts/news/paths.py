@@ -24,6 +24,15 @@ CORPUS = os.environ.get("ILRDF_CORPUS", "/home/vscode/ilrdf-corpus")
 WORK = os.path.join(ROOT, "kithann", "out", "mxf")
 LOGS = os.path.join(ROOT, "kithann", "out", "mxf-logs")
 
+# Shared download staging area (fetch_sftp.sh / refine_fetch.sh convention):
+# big disk, survives restarts, a file with the right byte count is reused
+# rather than re-fetched.
+STAGE = os.path.join(ROOT, "kithann", "out", "stage")
+
+# Archival mkv copies (scripts/transcode/encode_master.sh output), one per
+# episode -- see .claude/skills/video-subtitle-srt/壓縮率分析.md for the spec.
+MKV_ARCHIVE = os.path.join(ROOT, "kithann", "out", "mkv")
+
 # Working copy of the progress table, refreshed by make_all as often as you
 # like. The delivered one lives in Kari-SRT and is written only by publish,
 # once a whole batch is done: mid-batch a row says which step an episode is
