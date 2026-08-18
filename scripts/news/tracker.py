@@ -22,28 +22,28 @@ CORPUS = paths.CORPUS
 
 FIELDS = ["節目名稱", "年度", "集數", "播出日期", "播出時段",
           "族語別(英)", "族語別(中)", "影片檔案位置", "文稿位置",
-          "字幕srt狀態", "語音辨識狀態"]
+          "字幕srt狀態", "語音辨識模型"]
 
-# The speech-side cell is derived from which stage files exist in the
-# store, highest stage wins. Never hand-written: a written status could
-# not survive `rebuild --verify`, which recomputes this table from the
-# store alone -- file existence is the only input both sides share.
-ASR_STAGES = [
-    ("6-srt-complete", ".srt", "正式版"),
-    ("4-srt-ai", ".srt", "審查版"),
-    ("3-srt-raw", ".srt", "對照版"),
-    ("2-entries", ".json", "投影"),
-    ("1-words", ".json", "逐詞辨識"),
-]
+# The speech-side cell names the recogniser, not a revision: delivery stops
+# at 3-srt-raw, so that file existing is what says the audio was recognised.
+# The align extension above it (4-srt-ai, 6-srt-complete) was a pilot whose
+# semantic merge did not work out and is not produced for later episodes, so
+# it no longer counts as a higher version of the same thing.
+#
+# Derived from the store rather than hand-written: a written value could not
+# survive `rebuild --verify`, which recomputes this table from the store
+# alone -- file existence is the only input both sides share.
+ASR_SRT = ("3-srt-raw", ".srt")
+ASR_MODEL = "Kaldi"
 
 
-def asr_status(srt_name, asr_dir=None):
-    """The speech-side progress cell for one episode."""
+def asr_model(srt_name, asr_dir=None):
+    """Which recogniser produced this episode's speech side, if any."""
     if asr_dir is None:
         asr_dir = paths.ASR_DIR
-    for folder, ext, label in ASR_STAGES:
-        if os.path.exists(os.path.join(asr_dir, folder, srt_name + ext)):
-            return label
+    folder, ext = ASR_SRT
+    if os.path.exists(os.path.join(asr_dir, folder, srt_name + ext)):
+        return ASR_MODEL
     return ""
 
 
@@ -95,7 +95,7 @@ def tracker_row(entry, status, asr_dir=None):
         "影片檔案位置": relative(entry["video"]),
         "文稿位置": script,
         "字幕srt狀態": status,
-        "語音辨識狀態": asr_status(entry["srt_name"], asr_dir),
+        "語音辨識模型": asr_model(entry["srt_name"], asr_dir),
     }
 
 

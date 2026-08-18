@@ -112,9 +112,13 @@ Kari-SRT 內。
 
 `smkul.csv` SHALL 位於 `news/smkul.csv`（語料層，兩技術共用），列出
 inventory 內全部非 pending 的集數，且 SHALL 併記語音側（`2-asr/`）
-逐集進度。語音側進度欄 SHALL 僅由 store 內 `news/2-asr/` 各階段檔案
-的存在與否推導，SHALL NOT 手填狀態字串——任何時點重算皆得相同內容，
-逐 byte 重建保證不因增欄而破壞。逐集產出流程（影像側與語音側皆同）
+用哪個模型辨識。該欄 SHALL 僅由 store 內 `news/2-asr/3-srt-raw/`
+是否已有該集的檔推導：有就是辨識器名稱、無就留白，SHALL NOT 手填
+——任何時點重算皆得相同內容，逐 byte 重建保證不因增欄而破壞。
+`3-srt-raw/` 之前的中間檔（`1-words/`、`2-entries/`）SHALL NOT 使該
+欄有值；其上的 align 延伸產物（`4-srt-ai/`、`6-srt-complete/`）亦
+SHALL NOT 改寫該欄——語意整併版試點效果不佳、後續集數不產，交付
+一律止於 `3-srt-raw/`，故它不是同一件事的更高一版。逐集產出流程（影像側與語音側皆同）
 SHALL NOT 直接寫入 store 內的 `smkul.csv`；它 SHALL 把進度表寫進
 工作區作為可隨時刷新的快取，且該快取版本 SHALL 併同列出 pending
 集數與其進度，供人查看批次做到哪。store 內那一份 SHALL 由整批把關
@@ -123,6 +127,8 @@ SHALL NOT 直接寫入 store 內的 `smkul.csv`；它 SHALL 把進度表寫進
 理由：mid-batch 的「卡在哪一步」只存在於工作目錄，而重建流程沒有
 工作目錄，重建不出那些狀態字串。把它留在快取版本，store 那份就只含
 可重建的內容——語音側欄改用「檔案存在與否」推導，同樣只依賴 store。
+欄位記模型而非版本階段：交付只有一版，讀表的人要知道的是這條族語
+文字是哪個辨識器產的，中間階段對他無從據以行動。
 
 #### Scenario: 批次進行中仍可查進度
 
@@ -135,9 +141,14 @@ SHALL NOT 直接寫入 store 內的 `smkul.csv`；它 SHALL 把進度表寫進
 - **WHEN** 整批完成並定版後執行重建驗證
 - **THEN** 重建出的 `smkul.csv` 與 store 內已 commit 的版本逐 byte 相同
 
-#### Scenario: 語音側進度欄由 store 推導
+#### Scenario: 語音辨識模型欄由 store 推導
 
-- **WHEN** 某集 `2-asr/3-srt-raw/` 已有檔而 `2-asr/5-srt-complete/`
-  尚無，重算進度表
-- **THEN** 該集語音側欄顯示對應的階段值，且重建流程僅讀 store 即
+- **WHEN** 某集 `2-asr/3-srt-raw/` 已有檔，重算進度表
+- **THEN** 該集語音側欄顯示辨識器名稱，且重建流程僅讀 store 即
   推導出逐 byte 相同的欄值
+
+#### Scenario: 只做到中間階段的集數留白
+
+- **WHEN** 某集只有 `2-asr/1-words/`、`2-asr/2-entries/`，`3-srt-raw/`
+  尚無，重算進度表
+- **THEN** 該集語音側欄為空字串
