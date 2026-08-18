@@ -88,7 +88,7 @@ def rebuild_one(entry, tmp):
 
     out = os.path.join(tmp, "srt", name + ".srt")
     qc = make_srt.run(work, out)
-    return tracker.vision_status(qc["srt_lines"], qc["cues"])
+    return tracker.vision_status(qc["srt_lines"])
 
 
 def main():

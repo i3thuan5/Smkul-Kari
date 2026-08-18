@@ -82,7 +82,7 @@ class TestRebuildSkipsPending(unittest.TestCase):
         # Otherwise the store's smkul.csv would gain a row for an episode
         # with no status anyone can derive from the store.
         def status(_entry):
-            return tracker.vision_status(1, 1)
+            return tracker.vision_status(1)
 
         rows = tracker.tracker_rows(
             [entry("done"), entry("new", pending=True)], status)

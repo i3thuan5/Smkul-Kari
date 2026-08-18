@@ -135,7 +135,7 @@ class TestPublishWritesTheDeliverable(Fixture):
         self.assertEqual(self._run(), 0)
         rows = self._rows(self.store_tracker)
         self.assertEqual(len(rows), 1)
-        self.assertIn("Claude 視覺辨識", rows[0]["字幕srt狀態"])
+        self.assertIn("Claude Vision OCR", rows[0]["字幕srt狀態"])
 
     def test_clears_the_pending_flag_once_published(self):
         self._json(self.inventory, [dict(ENTRY, pending=True)])

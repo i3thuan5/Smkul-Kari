@@ -97,8 +97,8 @@ def delivered_status(entry):
     """The tracker status for an episode that is already in the store.
 
     Read back off the store rather than carried over from make_all, and
-    without re-running the assembly: `rebuild` derives the same two numbers
-    from the same two files, so a row built here is the row it will rebuild.
+    without re-running the assembly: `rebuild` counts the same lines out of
+    the same file, so a row built here is the row it will rebuild.
     """
     if entry["truncated"]:
         return tracker.skipped_status(entry["truncated"])
@@ -106,10 +106,7 @@ def delivered_status(entry):
     with open(os.path.join(paths.SRT_DIR, name + ".srt"),
               encoding="utf-8") as handle:
         srt_lines = handle.read().count("-->")
-    with open(os.path.join(paths.KARI_CUES, name + ".json"),
-              encoding="utf-8") as handle:
-        cues = len(json.load(handle)["cues"])
-    return tracker.vision_status(srt_lines, cues)
+    return tracker.vision_status(srt_lines)
 
 
 def write_deliverable_tracker(entries):

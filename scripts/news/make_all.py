@@ -64,7 +64,7 @@ def make_one(entry):
 
     out = os.path.join(SRT_DIR, entry["srt_name"] + ".srt")
     qc = make_srt.run(vision, out)
-    return tracker.vision_status(qc["srt_lines"], qc["cues"])
+    return tracker.vision_status(qc["srt_lines"])
 
 
 def main():

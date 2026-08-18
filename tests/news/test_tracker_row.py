@@ -23,7 +23,15 @@ ENTRY = {
     "truncated": "",
     "srt_name": "20210210_041_午間_Cou_鄒",
 }
-DONE = "已產生 170 行；Claude 視覺辨識，237 個 cue 全數校讀"
+DONE = "Claude Vision OCR 已產生 170 行字幕"
+
+
+class TestVisionStatus(unittest.TestCase):
+    def test_the_status_names_the_reader_and_the_delivered_line_count(self):
+        # The cue count used to be here too, and was read as a second,
+        # smaller line count; it is an internal segmentation number, not
+        # anything a reader of the table can act on.
+        self.assertEqual(tracker.vision_status(170), DONE)
 
 
 class TestTrackerRow(unittest.TestCase):

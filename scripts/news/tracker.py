@@ -62,10 +62,9 @@ def relative(path):
 # `rebuild --verify` reports a mismatch with no visible cause.
 
 
-def vision_status(srt_lines, cues):
+def vision_status(srt_lines):
     """A delivered episode: read off the contact sheets, every cue checked."""
-    return ("已產生 %d 行；Claude 視覺辨識，%d 個 cue 全數校讀"
-            % (srt_lines, cues))
+    return "Claude Vision OCR 已產生 %d 行字幕" % srt_lines
 
 
 def skipped_status(reason):
