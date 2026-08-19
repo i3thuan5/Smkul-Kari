@@ -86,6 +86,10 @@ case "$audio_codec" in
   *)     audio_args=(-c:a copy) ;;
 esac
 
+# A batch of these runs for hours in the background; nice/ionice it down
+# so it does not steal CPU/disk from whatever else is running on the box
+# (使用者裁定 -- CPU 影響到其他工作).
+nice -n 15 ionice -c 3 \
 ffmpeg -v error -stats -i "$SRC" "${maps[@]}" \
        -c:v libx264 -preset medium -pix_fmt "$PIX" -crf "$CRF" \
        "${audio_args[@]}" \
