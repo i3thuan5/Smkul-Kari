@@ -213,6 +213,24 @@ class TestLoadInventory(unittest.TestCase):
         self.assertEqual(got[0]["partial"], "來源只有前半")
         self.assertEqual(got[0]["file"], "20NL003_32午間族語新聞.mxf")
 
+    def test_an_undeclared_field_stops_rather_than_vanishing(self):
+        # 條目是逐欄位重建的，沒宣告的欄位會在 publish 寫回 store 時
+        # 消失。與其靜默掉資料，不如中止、要求先去宣告。
+        entry = self._entry()
+        entry["新欄位"] = "x"
+        with self.assertRaisesRegex(SystemExit, "新欄位"):
+            paths.load_inventory(self._write([entry]))
+
+    def test_field_order_follows_the_store_not_the_input(self):
+        # publish／add_episodes 會把這些條目寫回 inventory.json；重建的
+        # 順序若跟正本不同，一次寫回就是整份檔案的 diff。
+        entry = self._entry(file="20NL003_32午間族語新聞.mxf",
+                            partial="來源只有前半")
+        got = paths.load_inventory(self._write([entry]))[0]
+        self.assertEqual(list(got)[:4],
+                         ["file", "video", "slug", "srt_name"])
+        self.assertEqual(list(got)[-2:], ["truncated", "partial"])
+
     def test_every_entry_is_checked_not_just_the_first(self):
         path = self._write([self._entry(),
                             self._entry(slug="a/b")])
