@@ -112,7 +112,7 @@ def build_blocks(sents, entries):
     return blocks
 
 
-def merge_groups(doc, entries, dp_floor=0.2, near=10.0, max_span=20.0):
+def merge_groups(doc, entries, dp_floor=0.2, max_span=20.0):
     """Merge units for the deliverable: sentence blocks, unioned by
     interleaving evidence (使用者裁定：交錯的句子合併，不移時間).
 
@@ -141,38 +141,58 @@ def merge_groups(doc, entries, dp_floor=0.2, near=10.0, max_span=20.0):
     for block in span:
         parent[block] = block
 
-    def find(node):
-        while parent[node] != node:
-            parent[node] = parent[parent[node]]
-            node = parent[node]
-        return node
+    edges = _dp_edges(doc, entries, block_of, dp_floor)
+    edges += _offset_edges(doc, entries, block_of, span)
+    edges.sort(key=lambda edge: -edge[0])
+    for _, lo_block, hi_block in edges:
+        _range_union(parent, span, lo_block, hi_block, max_span)
 
-    def range_union(lo_block, hi_block):
-        """Union every block in [lo..hi] unless the span would blow the
-        cap; covering the whole range keeps entries time-contiguous."""
-        members = []
-        for block in span:
-            if lo_block <= block <= hi_block:
-                members.append(block)
-        lo = span[members[0]][0]
-        hi = span[members[0]][1]
-        for block in members:
-            lo = min(lo, span[block][0])
-            hi = max(hi, span[block][1])
-        # the union may drag in blocks already grouped beyond the range
-        for block in list(members):
-            root = find(block)
-            for other in span:
-                if find(other) == root and other not in members:
-                    members.append(other)
-                    lo = min(lo, span[other][0])
-                    hi = max(hi, span[other][1])
-        if hi - lo > max_span:
-            return
-        first = members[0]
-        for block in members[1:]:
-            parent[find(block)] = find(first)
+    out = {}
+    for row in entries:
+        out[row["index"]] = _find(parent, block_of[row["index"]])
+    return out
 
+
+def _find(parent, node):
+    while parent[node] != node:
+        parent[node] = parent[parent[node]]
+        node = parent[node]
+    return node
+
+
+def _range_members(parent, span, lo_block, hi_block):
+    """Every block in [lo..hi], plus whatever their groups already hold
+    -- the union may drag in blocks already grouped beyond the range."""
+    members = []
+    for block in span:
+        if lo_block <= block <= hi_block:
+            members.append(block)
+    for block in list(members):
+        root = _find(parent, block)
+        for other in span:
+            if _find(parent, other) == root and other not in members:
+                members.append(other)
+    return members
+
+
+def _range_union(parent, span, lo_block, hi_block, max_span):
+    """Union every block in [lo..hi] unless the span would blow the
+    cap; covering the whole range keeps entries time-contiguous."""
+    members = _range_members(parent, span, lo_block, hi_block)
+    lo = span[members[0]][0]
+    hi = span[members[0]][1]
+    for block in members:
+        lo = min(lo, span[block][0])
+        hi = max(hi, span[block][1])
+    if hi - lo > max_span:
+        return
+    first = members[0]
+    for block in members[1:]:
+        parent[_find(parent, block)] = _find(parent, first)
+
+
+def _dp_edges(doc, entries, block_of, dp_floor):
+    """Union evidence: DP pairings that span more than one block."""
     edges = []
     for match in doc.get("matched_entries", []):
         if match["score"] < dp_floor:
@@ -180,16 +200,24 @@ def merge_groups(doc, entries, dp_floor=0.2, near=10.0, max_span=20.0):
         touched = set()
         for side in ("a", "b"):
             lo, hi = match[side]
-            for position in range(lo, hi):
+            # the record is our own output, but clamp anyway: a stale or
+            # hand-edited file must not index outside the entry list
+            for position in range(max(0, lo), min(hi, len(entries))):
                 touched.add(block_of[entries[position]["index"]])
         if len(touched) > 1:
             edges.append((match["score"], min(touched), max(touched)))
+    return edges
 
+
+def _offset_edges(doc, entries, block_of, span):
+    """Union evidence: offset entries whose shifted window lands in a
+    neighbouring block."""
     deltas = {}
     classes = {}
     for record in doc["entries"]:
         deltas[record["index"]] = record.get("best_delta", 0.0)
         classes[record["index"]] = record.get("class", "ok")
+    edges = []
     for row in entries:
         index = row["index"]
         if classes.get(index) != "offset" or not deltas.get(index):
@@ -202,15 +230,7 @@ def merge_groups(doc, entries, dp_floor=0.2, near=10.0, max_span=20.0):
                 continue
             if min(hi, b_hi) - max(lo, b_lo) > 0:
                 edges.append((0.0, min(home, block), max(home, block)))
-
-    edges.sort(key=lambda edge: -edge[0])
-    for _, lo_block, hi_block in edges:
-        range_union(lo_block, hi_block)
-
-    out = {}
-    for row in entries:
-        out[row["index"]] = find(block_of[row["index"]])
-    return out
+    return edges
 
 
 # ------------------------------------------------------------------ time
@@ -293,6 +313,18 @@ def find_numbers(text):
     return values
 
 
+def _window_words(words, lo, hi):
+    """The word stream cut to a time window (就近定位); None = no bound."""
+    out = []
+    for item in words:
+        if lo is not None and item["start"] < lo:
+            continue
+        if hi is not None and item["start"] >= hi:
+            continue
+        out.append(item)
+    return out
+
+
 def match_anchors(values, words, numerals, lo=None, hi=None):
     """Numeral anchors located in the word stream, no translation.
 
@@ -302,11 +334,7 @@ def match_anchors(values, words, numerals, lo=None, hi=None):
     hits = []
     for value in values:
         forms = numerals.get(str(value), [])
-        for item in words:
-            if lo is not None and item["start"] < lo:
-                continue
-            if hi is not None and item["start"] >= hi:
-                continue
+        for item in _window_words(words, lo, hi):
             if item["w"].lower() in forms:
                 hits.append({"value": value, "time": item["start"],
                              "word": item["w"]})
@@ -326,25 +354,23 @@ def _edit_distance(a, b):
     return previous[len(b)]
 
 
+def _loanword_matches(forms, item):
+    for form in forms:
+        if _edit_distance(item["w"].lower(), form) <= 1:
+            return True
+    return False
+
+
 def match_loanwords(subtitle, words, table, lo=None, hi=None):
     """Loanword proper-name anchors, matched within one edit."""
     hits = []
     for name, forms in table.items():
         if name not in subtitle:
             continue
-        for item in words:
-            if lo is not None and item["start"] < lo:
-                continue
-            if hi is not None and item["start"] >= hi:
-                continue
-            done = False
-            for form in forms:
-                if _edit_distance(item["w"].lower(), form) <= 1:
-                    hits.append({"name": name, "time": item["start"],
-                                 "word": item["w"]})
-                    done = True
-                    break
-            if done:
+        for item in _window_words(words, lo, hi):
+            if _loanword_matches(forms, item):
+                hits.append({"name": name, "time": item["start"],
+                             "word": item["w"]})
                 break
     return hits
 
@@ -389,6 +415,97 @@ def recover_pairs(entries, band_seconds=10.0):
 # ------------------------------------------------------------- document
 
 
+def _block_texts(blocks, entries):
+    """Concatenated subtitle and MT text per block."""
+    out = []
+    for block in blocks:
+        subtitle = []
+        zh = {}
+        for engine in ENGINES:
+            zh[engine] = []
+        for j in block["entries"]:
+            subtitle.append(entries[j].get("subtitle", ""))
+            for engine in ENGINES:
+                zh[engine].append(entries[j].get("zh", {}).get(engine, ""))
+        joined = {"subtitle": "".join(subtitle)}
+        for engine in ENGINES:
+            joined[engine] = "".join(zh[engine])
+        out.append(joined)
+    return out
+
+
+def _content_scores(row, block):
+    """Block-level and entry-level bigram F1 per engine."""
+    block_score = {}
+    entry_score = {}
+    for engine in ENGINES:
+        block_score[engine] = char_bigram_f1(block[engine],
+                                             block["subtitle"])
+        entry_score[engine] = char_bigram_f1(
+            row.get("zh", {}).get(engine, ""),
+            row.get("subtitle", ""))
+    return block_score, entry_score
+
+
+def _avg_conf(row, words):
+    confs = []
+    for index in row.get("word_i", []):
+        confs.append(words[index].get("conf", 0.0))
+    if not confs:
+        return 0.0
+    return sum(confs) / len(confs)
+
+
+def _time_recovery(row, words):
+    """Best delta and the score it recovers, from the longest back-MT."""
+    target = ""
+    for engine in ENGINES:
+        candidate = row.get("formosan_from_zh", {}).get(engine, "")
+        if len(candidate) > len(target):
+            target = candidate
+    if not target or not row.get("word_i"):
+        return 0.0, 0.0
+    best_delta, curve = delta_scan(row, target, words)
+    recovered = 0.0
+    for delta, score in curve:
+        if delta == best_delta:
+            recovered = score
+    return best_delta, recovered
+
+
+def _recovered_pairs(records, entries):
+    """The DP pairing, run only when some entry needs recovering."""
+    low = []
+    for record in records:
+        if record["class"] in ("mismatch", "asr-doubt", "offset"):
+            low.append(record["index"])
+    if not low:
+        return []
+    matched = recover_pairs(entries)
+    for match in matched:
+        match["a"] = list(match["a"])
+        match["b"] = list(match["b"])
+    return matched
+
+
+def _entry_anchors(row, index, words, numerals, loanwords,
+                   numbers_by_entry, anchor_near):
+    subtitle = row.get("subtitle", "")
+    lo = row["true_start"] - anchor_near
+    hi = row["true_end"] + anchor_near
+    if numbers_by_entry is not None:
+        values = numbers_by_entry.get(index, [])
+    else:
+        values = find_numbers(subtitle)
+    found = []
+    if numerals is not None:
+        found.extend(match_anchors(values, words, numerals, lo=lo, hi=hi))
+    if loanwords is not None:
+        found.extend(match_loanwords(subtitle, words, loanwords,
+                                     lo=lo, hi=hi))
+    return found
+
+
 def diagnose(srt_name, entries, words, sents, thresholds=None,
              numerals=None, loanwords=None, numbers_by_entry=None,
              anchor_near=10.0):
@@ -406,63 +523,22 @@ def diagnose(srt_name, entries, words, sents, thresholds=None,
     for pos, block in enumerate(blocks):
         for j in block["entries"]:
             block_of[j] = pos
-
-    block_text = []
-    for block in blocks:
-        subtitle = []
-        zh = {}
-        for engine in ENGINES:
-            zh[engine] = []
-        for j in block["entries"]:
-            subtitle.append(entries[j].get("subtitle", ""))
-            for engine in ENGINES:
-                zh[engine].append(entries[j].get("zh", {}).get(engine, ""))
-        joined = {"subtitle": "".join(subtitle)}
-        for engine in ENGINES:
-            joined[engine] = "".join(zh[engine])
-        block_text.append(joined)
+    block_text = _block_texts(blocks, entries)
 
     records = []
     deltas = []
     for j, row in enumerate(entries):
-        block = block_text[block_of[j]]
-        block_score = {}
-        entry_score = {}
-        for engine in ENGINES:
-            block_score[engine] = char_bigram_f1(block[engine],
-                                                 block["subtitle"])
-            entry_score[engine] = char_bigram_f1(
-                row.get("zh", {}).get(engine, ""),
-                row.get("subtitle", ""))
+        block_score, entry_score = _content_scores(
+            row, block_text[block_of[j]])
         agreement = char_bigram_f1(row.get("zh", {}).get("ailabs", ""),
                                    row.get("zh", {}).get("claude", ""))
-
-        confs = []
-        for index in row.get("word_i", []):
-            confs.append(words[index].get("conf", 0.0))
-        avg_conf = 0.0
-        if confs:
-            avg_conf = sum(confs) / len(confs)
-
-        target = ""
-        for engine in ENGINES:
-            candidate = row.get("formosan_from_zh", {}).get(engine, "")
-            if len(candidate) > len(target):
-                target = candidate
-        best_delta = 0.0
-        recovered = 0.0
-        if target and row.get("word_i"):
-            best_delta, curve = delta_scan(row, target, words)
-            for delta, score in curve:
-                if delta == best_delta:
-                    recovered = score
+        best_delta, recovered = _time_recovery(row, words)
         deltas.append(best_delta)
-
         record = {
             "index": row.get("index", j + 1),
             "block": block_of[j],
             "word_i": row.get("word_i", []),
-            "avg_conf": round(avg_conf, 3),
+            "avg_conf": round(_avg_conf(row, words), 3),
             "block_score": block_score,
             "entry_score": entry_score,
             "engine_agreement": round(agreement, 3),
@@ -472,36 +548,12 @@ def diagnose(srt_name, entries, words, sents, thresholds=None,
         record["class"] = classify(record, thresholds)
         records.append(record)
 
-    curve = rolling_median(deltas)
-    low = []
-    for record in records:
-        if record["class"] in ("mismatch", "asr-doubt", "offset"):
-            low.append(record["index"])
-    matched = []
-    if low:
-        matched = recover_pairs(entries)
-        for match in matched:
-            match["a"] = list(match["a"])
-            match["b"] = list(match["b"])
-
     anchors = []
     if numerals is not None or loanwords is not None:
         for j, row in enumerate(entries):
-            subtitle = row.get("subtitle", "")
-            lo = row["true_start"] - anchor_near
-            hi = row["true_end"] + anchor_near
             index = row.get("index", j + 1)
-            if numbers_by_entry is not None:
-                values = numbers_by_entry.get(index, [])
-            else:
-                values = find_numbers(subtitle)
-            found = []
-            if numerals is not None:
-                found.extend(match_anchors(values, words, numerals,
-                                           lo=lo, hi=hi))
-            if loanwords is not None:
-                found.extend(match_loanwords(subtitle, words, loanwords,
-                                             lo=lo, hi=hi))
+            found = _entry_anchors(row, index, words, numerals, loanwords,
+                                   numbers_by_entry, anchor_near)
             if found:
                 anchors.append({"index": index, "hits": found})
 
@@ -510,8 +562,8 @@ def diagnose(srt_name, entries, words, sents, thresholds=None,
         "calibrated": False,
         "thresholds": thresholds,
         "entries": records,
-        "offset_curve": curve,
-        "matched_entries": matched,
+        "offset_curve": rolling_median(deltas),
+        "matched_entries": _recovered_pairs(records, entries),
         "anchors": anchors,
     }
 

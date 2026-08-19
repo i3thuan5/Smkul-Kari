@@ -59,6 +59,7 @@ def main():
     ap.add_argument("--size", type=int, default=24)
     ap.add_argument("--limit", type=int, default=0)
     args = ap.parse_args()
+    paths.check_name(args.slug, "slug")
 
     work = os.path.join(WORK, args.slug + ".B.work")
     tag = srt_name_of(args.slug)

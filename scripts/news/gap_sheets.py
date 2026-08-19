@@ -22,6 +22,8 @@ from scripts.news import paths
 from scripts.ocr import sheets
 
 WORK = paths.WORK
+WORK_EXT = ".work"
+CUES = "cues.json"
 
 
 def already_read(dst):
@@ -39,22 +41,23 @@ def already_read(dst):
 
 
 def prepare(slug):
-    src = os.path.join(WORK, slug + ".work")
+    paths.check_name(slug, "slug")
+    src = os.path.join(WORK, slug + WORK_EXT)
     dst = os.path.join(WORK, slug + ".B.work")
     if already_read(dst):
         raise SystemExit("%s already holds verified transcripts; refusing to "
                          "overwrite" % dst)
     os.makedirs(dst, exist_ok=True)
 
-    with open(os.path.join(src, "cues.json"), encoding="utf-8") as handle:
+    with open(os.path.join(src, CUES), encoding="utf-8") as handle:
         manifest = json.load(handle)
 
     # Point at the original strips rather than copying gigabytes of PNG.
     link = os.path.join(dst, "strips")
     if not os.path.islink(link):
-        os.symlink(os.path.join("..", slug + ".work", "strips"), link)
+        os.symlink(os.path.join("..", slug + WORK_EXT, "strips"), link)
 
-    with open(os.path.join(dst, "cues.json"), "w", encoding="utf-8") as handle:
+    with open(os.path.join(dst, CUES), "w", encoding="utf-8") as handle:
         json.dump(manifest, handle, ensure_ascii=False)
     made = sheets.build_sheets(dst, manifest)
 
@@ -78,7 +81,7 @@ def main(argv=None):
         slug = entry["slug"]
         if args.slugs and slug not in args.slugs:
             continue
-        if not os.path.exists(os.path.join(WORK, slug + ".work", "cues.json")):
+        if not os.path.exists(os.path.join(WORK, slug + WORK_EXT, CUES)):
             print("skip %s (not decoded)" % slug)
             continue
         dst = os.path.join(WORK, slug + ".B.work")

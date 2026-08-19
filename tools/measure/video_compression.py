@@ -34,7 +34,7 @@ import subprocess
 import sys
 
 from scripts.news import paths
-from scripts.subs2srt import assemble
+from scripts.srtlib import assemble
 
 #: One rung per setting worth knowing about. `args` goes straight to ffmpeg
 #: between the input and the output file.
@@ -91,6 +91,7 @@ START = 2100.0
 DURATION = 300.0
 
 PRESET = "amis-titv-news"
+CUES = "cues.json"
 
 
 def two_pass_rung(rate):
@@ -142,7 +143,7 @@ def cmd_encode(args):
 
 
 def cues_of(video, workdir, region=None, start=None, duration=None):
-    cmd = [paths.VENV_PY, "-m", "scripts.subs2srt.cli", "cues", video,
+    cmd = [paths.VENV_PY, "-m", "scripts.ocr.cli", "cues", video,
            "-o", workdir, "--presets", paths.ENGINE_PRESETS,
            "--preset", PRESET, "--sheets"]
     if region:
@@ -159,12 +160,12 @@ def cmd_cues(args):
     work = os.path.join(args.out, "work")
     os.makedirs(work, exist_ok=True)
     ref = os.path.join(work, "ref")
-    if not os.path.exists(os.path.join(ref, "cues.json")):
+    if not os.path.exists(os.path.join(ref, CUES)):
         print("ref")
         cues_of(args.video, ref, start=args.start, duration=args.duration)
     for name, _ in rungs(args.two_pass):
         dst = os.path.join(work, name)
-        if os.path.exists(os.path.join(dst, "cues.json")):
+        if os.path.exists(os.path.join(dst, CUES)):
             continue
         src = os.path.join(args.out, name + ".mp4")
         if not os.path.exists(src):
@@ -193,45 +194,54 @@ def cmd_timing(args):
     same. What they cost is contact sheets, and so vision-reading effort.
     """
     work = os.path.join(args.out, "work")
-    ref = load_cues(os.path.join(work, "ref", "cues.json"), 0.0)
+    ref = load_cues(os.path.join(work, "ref", CUES), 0.0)
     rows = []
     for name, _ in rungs(args.two_pass):
-        path = os.path.join(work, name, "cues.json")
+        path = os.path.join(work, name, CUES)
         if not os.path.exists(path):
             continue
-        var = load_cues(path, args.start)
-        pairs = []
-        extra = 0
-        for cue in var:
-            best = pick(cue, ref)
-            if best is None:
-                extra += 1
-                continue
-            if pick(best, var) == cue:
-                pairs.append((best, cue))
-            else:
-                extra += 1
-        edges = []
-        for one, other in pairs:
-            edges.append(abs(one[0] - other[0]))
-            edges.append(abs(one[1] - other[1]))
-        edges.sort()
-        count = max(len(edges), 1)
-        exact = 0
-        for value in edges:
-            if value == 0:
-                exact += 1
-        rows.append({
-            "rung": name,
-            "ref_cues": len(ref),
-            "var_cues": len(var),
-            "extra_cues": extra,
-            "edges_exact_pct": round(100.0 * exact / count, 1),
-            "edge_mean_s": round(sum(edges) / count, 3),
-            "edge_max_s": round(edges[-1] if edges else 0.0, 3),
-        })
+        rows.append(_timing_row(name, ref, load_cues(path, args.start)))
         print(json.dumps(rows[-1], ensure_ascii=False))
     write_json(os.path.join(args.out, "timing.json"), rows)
+
+
+def _timing_pairs(var, ref):
+    """(mutually-picked pairs, extra cue count)."""
+    pairs = []
+    extra = 0
+    for cue in var:
+        best = pick(cue, ref)
+        if best is None:
+            extra += 1
+            continue
+        if pick(best, var) == cue:
+            pairs.append((best, cue))
+        else:
+            extra += 1
+    return pairs, extra
+
+
+def _timing_row(name, ref, var):
+    pairs, extra = _timing_pairs(var, ref)
+    edges = []
+    for one, other in pairs:
+        edges.append(abs(one[0] - other[0]))
+        edges.append(abs(one[1] - other[1]))
+    edges.sort()
+    count = max(len(edges), 1)
+    exact = 0
+    for value in edges:
+        if value == 0:
+            exact += 1
+    return {
+        "rung": name,
+        "ref_cues": len(ref),
+        "var_cues": len(var),
+        "extra_cues": extra,
+        "edges_exact_pct": round(100.0 * exact / count, 1),
+        "edge_mean_s": round(sum(edges) / count, 3),
+        "edge_max_s": round(edges[-1] if edges else 0.0, 3),
+    }
 
 
 def pick(cue, pool):
@@ -264,7 +274,7 @@ def cmd_vision_batches(args):
 
 def merged(workdir, tsv_paths, offset):
     """(start, end, text) for what the SRT would actually ship."""
-    manifest = json.load(open(os.path.join(workdir, "cues.json"),
+    manifest = json.load(open(os.path.join(workdir, CUES),
                               encoding="utf-8"))
     text = {}
     for path in tsv_paths:
@@ -320,7 +330,7 @@ def entry_drift(ref, var):
 
 
 def sequence(workdir, tsv_paths, offset):
-    manifest = json.load(open(os.path.join(workdir, "cues.json"),
+    manifest = json.load(open(os.path.join(workdir, CUES),
                               encoding="utf-8"))
     text = {}
     for path in tsv_paths:
@@ -381,16 +391,21 @@ def edit_distance(a, b):
     return prev[-1]
 
 
+def _rung_tsvs(tsv_dir, name):
+    found = []
+    for entry in sorted(os.listdir(tsv_dir)):
+        if entry.startswith(name + "_b") and entry.endswith(".tsv"):
+            found.append(os.path.join(tsv_dir, entry))
+    return found
+
+
 def cmd_score(args):
     want = delivered_sequence(args.srt, args.start, args.start + args.duration)
     tsv_dir = os.path.join(args.out, "tsv")
     rows = []
     ref_merged = None
     for name, _ in [("ref", None)] + rungs(args.two_pass):
-        found = []
-        for entry in sorted(os.listdir(tsv_dir)):
-            if entry.startswith(name + "_b") and entry.endswith(".tsv"):
-                found.append(os.path.join(tsv_dir, entry))
+        found = _rung_tsvs(tsv_dir, name)
         if not found:
             continue
         offset = 0.0 if name == "ref" else args.start

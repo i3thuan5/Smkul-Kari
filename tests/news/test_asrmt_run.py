@@ -92,3 +92,11 @@ class TestMp3Resolution(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestNameGuardWiring(unittest.TestCase):
+    def test_path_escaping_srt_name_dies_before_touching_anything(self):
+        # 帶路徑成分的參數要在格式驗證就擋下，
+        # 不是走到 inventory 查無此集才失敗
+        with self.assertRaisesRegex(SystemExit, "格式"):
+            asrmt_run.main(["../../home/somebody/.sftp-pass"])

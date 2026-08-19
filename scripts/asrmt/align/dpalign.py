@@ -53,30 +53,58 @@ def align(a_units, b_units, sim, band_seconds=10.0, skip_penalty=0.3,
 
     for i in range(n + 1):
         for j in range(m + 1):
-            here = score[i][j]
-            if here == neg:
+            if score[i][j] == neg:
                 continue
-            if i < n and here - skip_penalty > score[i + 1][j]:
-                score[i + 1][j] = here - skip_penalty
-                back[i + 1][j] = (i, j, None)
-            if j < m and here - skip_penalty > score[i][j + 1]:
-                score[i][j + 1] = here - skip_penalty
-                back[i][j + 1] = (i, j, None)
-            for di, dj in MATCH_MOVES:
-                if i + di > n or j + dj > m:
-                    continue
-                gap = _mid(a_units, i, i + di) - _mid(b_units, j, j + dj)
-                if abs(gap) > band_seconds:
-                    continue
-                got = sim(_texts(a_units, i, i + di),
-                          _texts(b_units, j, j + dj))
-                gain = got * (di + dj) / 2.0
-                if bonus is not None:
-                    gain += bonus((i, i + di), (j, j + dj))
-                if here + gain > score[i + di][j + dj]:
-                    score[i + di][j + dj] = here + gain
-                    back[i + di][j + dj] = (i, j, got)
+            _relax_skips(score, back, i, j, skip_penalty)
+            _relax_matches(score, back, i, j, a_units, b_units, sim,
+                           band_seconds, bonus)
 
+    return _backtrack(back, n, m)
+
+
+def _relax_skips(score, back, i, j, skip_penalty):
+    """Skipping a unit on either side, at a penalty."""
+    n = len(score) - 1
+    m = len(score[0]) - 1
+    here = score[i][j]
+    if i < n and here - skip_penalty > score[i + 1][j]:
+        score[i + 1][j] = here - skip_penalty
+        back[i + 1][j] = (i, j, None)
+    if j < m and here - skip_penalty > score[i][j + 1]:
+        score[i][j + 1] = here - skip_penalty
+        back[i][j + 1] = (i, j, None)
+
+
+def _step_gain(a_units, b_units, i, j, di, dj, sim, band_seconds, bonus):
+    """(gain, raw sim) of one match step, or None outside the band."""
+    gap = _mid(a_units, i, i + di) - _mid(b_units, j, j + dj)
+    if abs(gap) > band_seconds:
+        return None
+    got = sim(_texts(a_units, i, i + di), _texts(b_units, j, j + dj))
+    gain = got * (di + dj) / 2.0
+    if bonus is not None:
+        gain += bonus((i, i + di), (j, j + dj))
+    return gain, got
+
+
+def _relax_matches(score, back, i, j, a_units, b_units, sim,
+                   band_seconds, bonus):
+    """The 1-1/1-2/2-1/2-2 match steps out of one cell."""
+    here = score[i][j]
+    for di, dj in MATCH_MOVES:
+        if i + di > len(a_units) or j + dj > len(b_units):
+            continue
+        step = _step_gain(a_units, b_units, i, j, di, dj, sim,
+                          band_seconds, bonus)
+        if step is None:
+            continue
+        gain, got = step
+        if here + gain > score[i + di][j + dj]:
+            score[i + di][j + dj] = here + gain
+            back[i + di][j + dj] = (i, j, got)
+
+
+def _backtrack(back, n, m):
     matches = []
     i = n
     j = m

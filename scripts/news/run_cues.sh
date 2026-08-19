@@ -41,13 +41,13 @@ echo "$(date +%H:%M:%S) ${#JOBS[@]} episodes to process"
 for job in "${JOBS[@]}"; do
     slug=${job%%$'\t'*}
     video=${job#*$'\t'}
-    if [ -f "$WORK/$slug.work/cues.json" ]; then
+    if [[ -f "$WORK/$slug.work/cues.json" ]]; then
         echo "$(date +%H:%M:%S) skip  $slug (done)"
         continue
     fi
 
     # Bound both the number of decodes and the staged bytes on disk.
-    while [ "$(jobs -rp | wc -l)" -ge "$DECODERS" ]; do wait -n; done
+    while [[ "$(jobs -rp | wc -l)" -ge "$DECODERS" ]]; do wait -n; done
 
     # Keep the original basename: the preset is chosen by matching `NL00`
     # against the file name, so renaming the copy would silently drop the
@@ -72,7 +72,7 @@ for job in "${JOBS[@]}"; do
         if ! grep -q "using preset 'titv-news'" "$LOG/$slug.cues.log"; then
             echo "$(date +%H:%M:%S) WARN  $slug did not use the preset"
         fi
-        if [ $rc -eq 0 ]; then
+        if [[ $rc -eq 0 ]]; then
             "$PY" -m scripts.ocr.cli ocr "$WORK/$slug.work" \
                 --engine tesseract \
                 > "$LOG/$slug.ocr.log" 2>&1

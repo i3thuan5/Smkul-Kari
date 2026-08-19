@@ -13,12 +13,11 @@ import os
 import sys
 
 
-def write_batches(items, direction, lang, folder, size=100):
+def write_batches(items, direction, folder, size=100):
     """Write numbered request files; returns their paths.
 
     `items` is [(key, text)] -- keys are entry indexes. Empty texts are
-    not sent for translation (the spec's no-speech rule); `lang` is part
-    of the filename's job downstream, not of the file body.
+    not sent for translation (the spec's no-speech rule).
     """
     todo = []
     for key, text in items:

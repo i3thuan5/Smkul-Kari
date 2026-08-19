@@ -32,7 +32,7 @@ LIMIT=0
 ONLY=
 REMOTE_DIR="${1:-}"
 shift || true
-while [ $# -gt 0 ]; do
+while [[ $# -gt 0 ]]; do
     case "$1" in
         --preset) PRESET="$2"; shift 2 ;;
         --limit)  LIMIT="$2";  shift 2 ;;
@@ -40,7 +40,7 @@ while [ $# -gt 0 ]; do
         *) echo "unknown option: $1" >&2; exit 2 ;;
     esac
 done
-if [ -z "$REMOTE_DIR" ]; then
+if [[ -z "$REMOTE_DIR" ]]; then
     echo "usage: $0 '族語新聞/110.1-110.10/1月'" \
          "[--preset NAME] [--limit N] [--only REGEX]" >&2
     exit 2
@@ -79,7 +79,7 @@ for line in sys.stdin:
 # matched against the file name. Filling gaps in the coverage means fetching
 # a scattered handful out of a folder that holds hundreds of files and a
 # couple of hundred GB, which is not a --limit.
-if [ -n "$ONLY" ]; then
+if [[ -n "$ONLY" ]]; then
     filtered=$(mktemp)
     awk -F'\t' -v re="$ONLY" '$2 ~ re' "$listing" > "$filtered"
     mv "$filtered" "$listing"
@@ -87,7 +87,7 @@ fi
 
 total=$(wc -l < "$listing")
 echo "$(date +%H:%M:%S) $REMOTE_DIR: $total video file(s), preset=$PRESET"
-[ "$total" -gt 0 ] || { echo "nothing to do"; exit 1; }
+[[ "$total" -gt 0 ]] || { echo "nothing to do"; exit 1; }
 
 verified_band=0
 done_count=0
@@ -97,8 +97,8 @@ done_count=0
 # remaining episode and reported "finished: 1 episode(s) cut" as if the batch
 # were done. Never noticed before because every earlier run used --limit.
 while IFS=$'\t' read -r size name <&3; do
-    [ -n "$name" ] || continue
-    if [ "$LIMIT" -gt 0 ] && [ "$done_count" -ge "$LIMIT" ]; then
+    [[ -n "$name" ]] || continue
+    if [[ "$LIMIT" -gt 0 ]] && [[ "$done_count" -ge "$LIMIT" ]]; then
         echo "$(date +%H:%M:%S) stopping at --limit $LIMIT"
         break
     fi
@@ -108,14 +108,14 @@ while IFS=$'\t' read -r size name <&3; do
     # back to the file's own stem.
     slug=$("$PY" -m scripts.news.resolve_slug "$REMOTE_DIR/$name")
     dst="$WORK/$slug.work"
-    if [ -f "$dst/cues.json" ]; then
+    if [[ -f "$dst/cues.json" ]]; then
         echo "$(date +%H:%M:%S) skip  $slug (already cut)"
         continue
     fi
 
     local_file="$STAGE/$name"
     have=$(stat -c %s "$local_file" 2>/dev/null || echo 0)
-    if [ "$have" = "$size" ]; then
+    if [[ "$have" = "$size" ]]; then
         echo "$(date +%H:%M:%S) reuse $slug (already staged)"
     else
         echo "$(date +%H:%M:%S) get   $slug  ($(( size / 1000000 )) MB)"
@@ -128,14 +128,14 @@ while IFS=$'\t' read -r size name <&3; do
         # truncated uploads whose headers still claimed the full duration --
         # ffprobe could not tell, only the byte count could.
         got=$(stat -c %s "$local_file" 2>/dev/null || echo 0)
-        if [ "$got" != "$size" ]; then
+        if [[ "$got" != "$size" ]]; then
             echo "$(date +%H:%M:%S) FAIL  $slug incomplete: $got of $size bytes"
             rm -f "$local_file"; continue
         fi
     fi
 
     # Check the band once per folder, on the first file that gets this far.
-    if [ "$verified_band" -eq 0 ]; then
+    if [[ "$verified_band" -eq 0 ]]; then
         if "$PY" -m scripts.news.verify_band "$local_file" --preset "$PRESET" --quiet; then
             verified_band=1
         else
@@ -159,7 +159,7 @@ while IFS=$'\t' read -r size name <&3; do
             echo "$(date +%H:%M:%S) WARN  refine $slug failed, keeping" \
                  "coarse timings -- see $LOG/$slug.refine.log"
         fi
-        if [ ! -f "$local_file.keep" ]; then
+        if [[ ! -f "$local_file.keep" ]]; then
             rm -f "$local_file"      # the video is not needed past this point
         fi
         done_count=$((done_count + 1))

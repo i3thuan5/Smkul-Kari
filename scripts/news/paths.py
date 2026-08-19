@@ -15,9 +15,36 @@ Shell scripts read values through the CLI:
 """
 import argparse
 import os
+import re
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
+
+
+def check_name(name, kind="name"):
+    """Refuse a name-like CLI argument that carries path components.
+
+    Work dirs and store files are all built as base folder + name; a name
+    holding a separator or ".." escapes the base and turns a mistyped (or
+    injected) argument into an arbitrary read or write. Validate at the
+    entry point, before the name reaches any os.path.join.
+    """
+    ok = bool(name) and name != "."
+    for bad in ("/", "\\", ".."):
+        if bad in (name or ""):
+            ok = False
+    if not ok:
+        raise SystemExit("%s %r 帶路徑成分，拒絕" % (kind, name))
+    return name
+
+
+def check_srt_name(name):
+    """A valid episode key: <YYYYMMDD>_<NNN>_… and no path components."""
+    if not re.fullmatch(r"[0-9]{8}_[0-9]{3}_.+", name or ""):
+        raise SystemExit(
+            "srt_name %r 不符「<日期8碼>_<集數3碼>_…」格式" % name)
+    return check_name(name, "srt_name")
+
 
 CORPUS = os.environ.get("ILRDF_CORPUS", "/home/vscode/ilrdf-corpus")
 

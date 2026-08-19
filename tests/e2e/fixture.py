@@ -238,4 +238,4 @@ def require_fixture_tools():
             "end-to-end 測試缺少系統相依：\n  - %s\n"
             "安裝：sudo apt-get install ffmpeg tesseract-ocr "
             "tesseract-ocr-chi-tra fonts-noto-cjk\n"
-            "（只跑單元測試：tox -e subtitle）" % "\n  - ".join(missing))
+            "（只跑單元測試：tox -e unittest）" % "\n  - ".join(missing))

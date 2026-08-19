@@ -35,8 +35,7 @@ class TestWriteBatches(unittest.TestCase):
             items = []
             for i in range(5):
                 items.append((i + 1, "kamu %d" % i))
-            paths = claude_mt.write_batches(items, "f2z", "ami_Xiug",
-                                            tmp, size=2)
+            paths = claude_mt.write_batches(items, "f2z", tmp, size=2)
         names = []
         for path in paths:
             names.append(os.path.basename(path))
@@ -46,7 +45,7 @@ class TestWriteBatches(unittest.TestCase):
     def test_empty_texts_are_not_sent_for_translation(self):
         with tempfile.TemporaryDirectory() as tmp:
             paths = claude_mt.write_batches([(1, "kako"), (2, "")],
-                                            "f2z", "ami_Xiug", tmp)
+                                            "f2z", tmp)
             with open(paths[0], encoding="utf-8") as handle:
                 body = handle.read()
         self.assertIn("1\tkako", body)

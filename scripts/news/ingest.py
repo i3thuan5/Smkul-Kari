@@ -39,6 +39,41 @@ def normalise(path):
     return rows
 
 
+def _tsvdir_of(slug):
+    """Default TSV dir: news/1-ocr/3-vision/<srt_name>, from the slug."""
+    for entry in json.load(open(paths.INVENTORY, encoding="utf-8")):
+        if entry["slug"] == slug:
+            return os.path.join(paths.KARI_VISION, entry["srt_name"])
+    raise SystemExit("slug %r not in inventory; pass a TSV dir "
+                     "explicitly" % slug)
+
+
+def _audit_row(path, row, on_sheets, seen, problems):
+    """One TSV row: indexed, on a sheet somebody read, claimed once."""
+    index = row.split("\t")[0]
+    if not index.isdigit():
+        problems.append("%s: bad index %r" % (path, index))
+        return
+    index = int(index)
+    if index not in on_sheets:
+        problems.append("%s: cue %d was not on any sheet given to a "
+                        "reader" % (path, index))
+    if index in seen and seen[index] != path:
+        problems.append("cue %d appears in both %s and %s"
+                        % (index, os.path.basename(seen[index]),
+                           os.path.basename(path)))
+    seen[index] = path
+
+
+def _audit_rows(files, on_sheets):
+    seen = {}
+    problems = []
+    for path in files:
+        for row in normalise(path):
+            _audit_row(path, row, on_sheets, seen, problems)
+    return seen, problems
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("slug")
@@ -49,17 +84,10 @@ def main():
                     help="work-dir suffix; .B.work is where gap_sheets puts "
                          "the contact sheets a reader works from")
     args = ap.parse_args()
+    paths.check_name(args.slug, "slug")
 
     if not args.tsvdir:
-        srt_name = None
-        for entry in json.load(open(paths.INVENTORY, encoding="utf-8")):
-            if entry["slug"] == args.slug:
-                srt_name = entry["srt_name"]
-                break
-        if srt_name is None:
-            raise SystemExit("slug %r not in inventory; pass a TSV dir "
-                             "explicitly" % args.slug)
-        args.tsvdir = os.path.join(paths.KARI_VISION, srt_name)
+        args.tsvdir = _tsvdir_of(args.slug)
 
     work = os.path.join(WORK, args.slug + args.suffix)
     with open(os.path.join(work, "sheets.json"), encoding="utf-8") as handle:
@@ -69,23 +97,7 @@ def main():
         on_sheets.update(cues)
 
     files = sorted(glob.glob(os.path.join(args.tsvdir, "*.tsv")))
-    seen = {}
-    problems = []
-    for path in files:
-        for row in normalise(path):
-            index = row.split("\t")[0]
-            if not index.isdigit():
-                problems.append("%s: bad index %r" % (path, index))
-                continue
-            index = int(index)
-            if index not in on_sheets:
-                problems.append("%s: cue %d was not on any sheet given to a "
-                                "reader" % (path, index))
-            if index in seen and seen[index] != path:
-                problems.append("cue %d appears in both %s and %s"
-                                % (index, os.path.basename(seen[index]),
-                                   os.path.basename(path)))
-            seen[index] = path
+    seen, problems = _audit_rows(files, on_sheets)
 
     if problems:
         for line in problems[:20]:

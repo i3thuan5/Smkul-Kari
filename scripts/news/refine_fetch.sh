@@ -27,7 +27,7 @@ REMOTE_ROOT=/docker/ilrdf-corpus
 DELTA="$ROOT/openspec/changes/refine-cue-timing/timing-delta.jsonl"
 
 LIMIT=0
-while [ $# -gt 0 ]; do
+while [[ $# -gt 0 ]]; do
     case "$1" in
         --limit) LIMIT="$2"; shift 2 ;;
         *) echo "unknown option: $1" >&2; exit 2 ;;
@@ -37,7 +37,7 @@ done
 mkdir -p "$STAGE" "$LOG"
 
 # --- single fetch loop at a time ------------------------------------------
-if [ -f "$STAGE/stage.lock" ]; then
+if [[ -f "$STAGE/stage.lock" ]]; then
     other=$(cat "$STAGE/stage.lock")
     if kill -0 "$other" 2>/dev/null; then
         echo "another fetch loop (pid $other) owns $STAGE; refusing" >&2
@@ -81,29 +81,29 @@ EOF
 
 total=$(printf '%s\n' "$jobs" | grep -c . || true)
 echo "$(date +%H:%M:%S) $total episode(s) still unrefined"
-[ "$total" -gt 0 ] || { echo "nothing to do"; exit 0; }
+[[ "$total" -gt 0 ]] || { echo "nothing to do"; exit 0; }
 
 done_count=0
 failed=0
 # Read the job list on fd 3: sftp (and anything else in the loop body that
 # touches stdin) would otherwise eat lines of the list mid-loop.
 while IFS=$'\t' read -r -u 3 srt_name remote name; do
-    [ -n "$srt_name" ] || continue
-    if [ "$LIMIT" -gt 0 ] && [ "$done_count" -ge "$LIMIT" ]; then
+    [[ -n "$srt_name" ]] || continue
+    if [[ "$LIMIT" -gt 0 ]] && [[ "$done_count" -ge "$LIMIT" ]]; then
         echo "$(date +%H:%M:%S) stopping at --limit $LIMIT"
         break
     fi
 
     size=$("$HERE/sftp.sh" "ls -l \"$REMOTE_ROOT/$remote\"" 2>/dev/null \
         | awk '/^-/{print $5; exit}')
-    if [ -z "$size" ]; then
+    if [[ -z "$size" ]]; then
         echo "$(date +%H:%M:%S) FAIL  $srt_name: not found on SFTP"
         failed=$((failed + 1)); continue
     fi
 
     local_file="$STAGE/$name"
     have=$(stat -c %s "$local_file" 2>/dev/null || echo 0)
-    if [ "$have" = "$size" ]; then
+    if [[ "$have" = "$size" ]]; then
         echo "$(date +%H:%M:%S) reuse $srt_name (already staged)"
     else
         echo "$(date +%H:%M:%S) get   $srt_name  ($(( size / 1000000 )) MB)"
@@ -113,7 +113,7 @@ while IFS=$'\t' read -r -u 3 srt_name remote name; do
             rm -f "$local_file"; failed=$((failed + 1)); continue
         fi
         got=$(stat -c %s "$local_file" 2>/dev/null || echo 0)
-        if [ "$got" != "$size" ]; then
+        if [[ "$got" != "$size" ]]; then
             echo "$(date +%H:%M:%S) FAIL  $srt_name incomplete:" \
                  "$got of $size bytes"
             rm -f "$local_file"; failed=$((failed + 1)); continue
@@ -133,11 +133,11 @@ while IFS=$'\t' read -r -u 3 srt_name remote name; do
              "see $LOG/$srt_name.refine.log"
         failed=$((failed + 1))
     fi
-    if [ ! -f "$local_file.keep" ]; then
+    if [[ ! -f "$local_file.keep" ]]; then
         rm -f "$local_file"
     fi
 done 3<<< "$jobs"
 
 echo "$(date +%H:%M:%S) finished: $done_count refined, $failed failed"
 echo "next: make_all + publish, then rebuild --verify (design D8)"
-[ "$failed" -eq 0 ]
+[[ "$failed" -eq 0 ]]

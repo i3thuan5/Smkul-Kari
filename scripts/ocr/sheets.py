@@ -30,25 +30,8 @@ def ink_bbox(rgb, spec, pad=6):
     return (x0, x1)
 
 
-def build_sheets(workdir, manifest, megapixels=1.10):
-    """Tile cue strips into a few big images for a vision model to read.
-
-    Reading 800 separate crops costs 800 round trips; reading 40 sheets costs
-    40. The budget is expressed in megapixels because that is what actually
-    limits a vision model -- overshoot it and the page gets downscaled and the
-    glyphs stop being legible, which defeats the point.
-    """
-    sheets_dir = os.path.join(workdir, "sheets")
-    os.makedirs(sheets_dir, exist_ok=True)
-    spec = cuelib.MaskSpec.from_dict(manifest.get("mask", {}))
-    gutter = 108
-    gap = 10
-    try:
-        font = ImageFont.truetype(LABEL_FONT, 34)
-    except OSError:
-        font = ImageFont.load_default()
-
-    index_map = {}
+def _cue_blocks(workdir, manifest, spec):
+    """(index, clock, tiles) per cue that has at least one strip."""
     blocks = []
     for cue in manifest["cues"]:
         tiles = []
@@ -69,12 +52,38 @@ def build_sheets(workdir, manifest, megapixels=1.10):
             clock = "%d:%02d" % (int(cue["start"]) // 60,
                                  int(cue["start"]) % 60)
             blocks.append((cue["index"], clock, tiles))
+    return blocks
 
+
+def _sheet_width(blocks, gutter):
     max_tile = 0
     for _, _, tiles in blocks:
         for tile in tiles:
             max_tile = max(max_tile, tile.width)
-    sheet_w = gutter + max_tile + 16
+    return gutter + max_tile + 16
+
+
+def build_sheets(workdir, manifest, megapixels=1.10):
+    """Tile cue strips into a few big images for a vision model to read.
+
+    Reading 800 separate crops costs 800 round trips; reading 40 sheets costs
+    40. The budget is expressed in megapixels because that is what actually
+    limits a vision model -- overshoot it and the page gets downscaled and the
+    glyphs stop being legible, which defeats the point.
+    """
+    sheets_dir = os.path.join(workdir, "sheets")
+    os.makedirs(sheets_dir, exist_ok=True)
+    spec = cuelib.MaskSpec.from_dict(manifest.get("mask", {}))
+    gutter = 108
+    gap = 10
+    try:
+        font = ImageFont.truetype(LABEL_FONT, 34)
+    except OSError:
+        font = ImageFont.load_default()
+
+    index_map = {}
+    blocks = _cue_blocks(workdir, manifest, spec)
+    sheet_w = _sheet_width(blocks, gutter)
     budget_h = int(megapixels * 1000000 / max(sheet_w, 1))
 
     made = 0

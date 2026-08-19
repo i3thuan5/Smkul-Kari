@@ -63,3 +63,31 @@ class TestCorpusOverride(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestNameGuards(unittest.TestCase):
+    """名字類 CLI 參數不得帶路徑成分逃出基底資料夾。
+
+    工作目錄、store 檔案都是「基底資料夾＋名字」組出來的；名字帶
+    分隔符或 .. 就會變成任意讀寫（agent 打錯或被誘導的參數）。
+    """
+
+    def test_good_names_pass_through(self):
+        self.assertEqual(paths.check_name("abc.B", "slug"), "abc.B")
+        name = "20210201_032_晚間_Amis_阿美"
+        self.assertEqual(paths.check_srt_name(name), name)
+
+    def test_hlaalua_apostrophe_is_a_legal_name_character(self):
+        name = "20210304_063_晚間_Hla'alua_拉阿魯哇"
+        self.assertEqual(paths.check_srt_name(name), name)
+
+    def test_separators_and_dots_are_refused(self):
+        for bad in ("a/b", "a\\b", "..", "x/../y", "", "."):
+            with self.assertRaises(SystemExit):
+                paths.check_name(bad, "slug")
+
+    def test_srt_name_needs_the_date_episode_prefix(self):
+        for bad in ("evil", "2021_032_晚間", "20210201_32_晚間",
+                    "20210201_032_晚間/../x", "/etc/passwd"):
+            with self.assertRaises(SystemExit):
+                paths.check_srt_name(bad)

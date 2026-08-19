@@ -13,6 +13,25 @@ def _overlap(a_start, a_end, b_start, b_end):
     return max(0.0, min(a_end, b_end) - max(a_start, b_start))
 
 
+def _best_entry(item, rows):
+    """(position of the max-overlap entry, how many windows it touched)."""
+    best = -1
+    best_overlap = 0.0
+    touched = 0
+    for pos, row in enumerate(rows):
+        got = _overlap(item["start"], item["end"],
+                       row["true_start"], row["true_end"])
+        if got <= 0.0:
+            continue
+        touched += 1
+        # strictly-greater with a float tolerance: an exact tie (up to
+        # arithmetic noise) stays with the earlier entry
+        if got > best_overlap + 1e-9:
+            best = pos
+            best_overlap = got
+    return best, touched
+
+
 def project(words, entries):
     """Return (entries_out, unassigned_word_indexes).
 
@@ -30,20 +49,7 @@ def project(words, entries):
 
     unassigned = []
     for index, item in enumerate(words):
-        best = -1
-        best_overlap = 0.0
-        touched = 0
-        for pos, row in enumerate(out):
-            got = _overlap(item["start"], item["end"],
-                           row["true_start"], row["true_end"])
-            if got <= 0.0:
-                continue
-            touched += 1
-            # strictly-greater with a float tolerance: an exact tie (up to
-            # arithmetic noise) stays with the earlier entry
-            if got > best_overlap + 1e-9:
-                best = pos
-                best_overlap = got
+        best, touched = _best_entry(item, out)
         if best < 0:
             unassigned.append(index)
             continue

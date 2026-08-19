@@ -46,10 +46,10 @@ def merge_repeats(entries, max_gap=1.0):
     """
     merged = []
     for start, end, text in entries:
-        if merged and merged[-1][2] == text:
-            if start - merged[-1][1] <= max_gap:
-                merged[-1] = [merged[-1][0], max(end, merged[-1][1]), text]
-                continue
+        if (merged and merged[-1][2] == text
+                and start - merged[-1][1] <= max_gap):
+            merged[-1] = [merged[-1][0], max(end, merged[-1][1]), text]
+            continue
         merged.append([start, end, text])
     out = []
     for start, end, text in merged:

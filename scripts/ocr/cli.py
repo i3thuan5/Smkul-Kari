@@ -78,6 +78,68 @@ def write_preview(video_path, region, lines, path, count=6):
         Image.fromarray(np.vstack(tiles)).save(path)
 
 
+def _region_spec_lines(video, args, key, preset):
+    """The crop region: --region beats the preset beats detection."""
+    spec = cuelib.MaskSpec()
+    region = None
+    lines = None
+    if args.region:
+        region = []
+        for part in args.region.split(","):
+            region.append(int(part))
+    elif preset is not None and not args.autodetect:
+        region = list(preset["region"])
+        spec = cuelib.MaskSpec.from_dict(preset.get("mask", {}))
+        lines = preset.get("lines")
+        print("using preset '%s'" % key)
+    if region is None:
+        print("detecting subtitle band ...")
+        found = detector.detect_band(video, samples=args.samples, spec=spec)
+        region = found["region"]
+        print("detected region: %d,%d,%d,%d" % tuple(region))
+    return region, spec, lines
+
+
+def _split_region_lines(video, region, spec, lang):
+    """Line boxes inside the band, one OCR language each."""
+    found_lines, _ = detector.split_lines(video, region, spec)
+    lines = []
+    if len(found_lines) <= 1:
+        # One line: the region is already tight around it, so splitting
+        # again would only risk shaving the glyphs.
+        lines.append({"name": "line0", "y": 0, "h": region[3],
+                      "lang": lang})
+        return lines
+    for index, (lo, hi) in enumerate(found_lines):
+        lines.append({
+            "name": "line%d" % index,
+            "y": lo,
+            "h": hi - lo,
+            "lang": lang,
+        })
+    return lines
+
+
+def _feed_frames(video, region, spec, seg, args, total):
+    """Stream the band through the segmenter; returns (last_ts, seen)."""
+    last_ts = args.start
+    seen = 0
+    for ts, frame in cuelib.stream_region(video, region, args.fps,
+                                          start=args.start,
+                                          duration=args.duration):
+        seg.feed(ts, frame, cuelib.text_mask(frame, spec))
+        last_ts = ts
+        seen += 1
+        if args.progress and seen % (int(args.fps) * 120) == 0:
+            done = ts - args.start
+            sys.stderr.write("\r  %.0f/%.0fs  cues=%d"
+                             % (done, total, len(seg.cues)))
+            sys.stderr.flush()
+    if args.progress:
+        sys.stderr.write("\r%-48s\r" % "")
+    return last_ts, seen
+
+
 def stage_cues(args):
     video = args.video
     # Read plainly, not through getattr(..., None). A caller that fails to
@@ -101,24 +163,7 @@ def stage_cues(args):
                              % (args.preset, ", ".join(sorted(presets))))
         key, preset = args.preset, presets[args.preset]
 
-    spec = cuelib.MaskSpec()
-    region = None
-    lines = None
-
-    if args.region:
-        parts = args.region.split(",")
-        region = [int(p) for p in parts]
-    elif preset is not None and not args.autodetect:
-        region = list(preset["region"])
-        spec = cuelib.MaskSpec.from_dict(preset.get("mask", {}))
-        lines = preset.get("lines")
-        print("using preset '%s'" % key)
-
-    if region is None:
-        print("detecting subtitle band ...")
-        found = detector.detect_band(video, samples=args.samples, spec=spec)
-        region = found["region"]
-        print("detected region: %d,%d,%d,%d" % tuple(region))
+    region, spec, lines = _region_spec_lines(video, args, key, preset)
 
     info = detector.probe_or_die(video)
     fixed = cuelib.normalize_region(region, info["width"], info["height"])
@@ -128,21 +173,7 @@ def stage_cues(args):
     region = fixed
 
     if lines is None:
-        found_lines, _ = detector.split_lines(video, region, spec)
-        lines = []
-        if len(found_lines) <= 1:
-            # One line: the region is already tight around it, so splitting
-            # again would only risk shaving the glyphs.
-            lines.append({"name": "line0", "y": 0, "h": region[3],
-                          "lang": args.lang})
-        else:
-            for index, (lo, hi) in enumerate(found_lines):
-                lines.append({
-                    "name": "line%d" % index,
-                    "y": lo,
-                    "h": hi - lo,
-                    "lang": args.lang,
-                })
+        lines = _split_region_lines(video, region, spec, args.lang)
     if not lines:
         lines = [{"name": "line0", "y": 0, "h": region[3],
                   "lang": args.lang}]
@@ -179,21 +210,7 @@ def stage_cues(args):
     total = info["duration"]
     if args.duration is not None:
         total = min(total, args.duration)
-    last_ts = args.start
-    seen = 0
-    for ts, frame in cuelib.stream_region(video, region, args.fps,
-                                          start=args.start,
-                                          duration=args.duration):
-        seg.feed(ts, frame, cuelib.text_mask(frame, spec))
-        last_ts = ts
-        seen += 1
-        if args.progress and seen % (int(args.fps) * 120) == 0:
-            done = ts - args.start
-            sys.stderr.write("\r  %.0f/%.0fs  cues=%d"
-                             % (done, total, len(seg.cues)))
-            sys.stderr.flush()
-    if args.progress:
-        sys.stderr.write("\r%-48s\r" % "")
+    last_ts, seen = _feed_frames(video, region, spec, seg, args, total)
 
     cues = seg.finish(last_ts + frame_dt)
     print("frames sampled: %d   cues found: %d" % (seen, len(cues)))
@@ -248,20 +265,8 @@ def stage_ocr(args):
 # ------------------------------------------------------------------- srt
 
 
-def stage_srt(args):
-    workdir = args.work
-    manifest = transcripts.read_manifest(workdir)
-    texts = transcripts.load_transcripts(workdir)
-
-    order = []
-    for line in manifest["lines"]:
-        order.append(line["name"])
-    if args.only:
-        wanted = args.only.split(",")
-        order = []
-        for name in wanted:
-            order.append(name.strip())
-
+def _srt_entries(manifest, texts, order):
+    """(start, end, joined text) per cue that has any text at all."""
     entries = []
     for cue in manifest["cues"]:
         got = texts.get(str(cue["index"]), {})
@@ -270,9 +275,18 @@ def stage_srt(args):
             value = (got.get(name) or "").strip()
             if value:
                 parts.append(value)
-        if not parts:
-            continue
-        entries.append((cue["start"], cue["end"], "\n".join(parts)))
+        if parts:
+            entries.append((cue["start"], cue["end"], "\n".join(parts)))
+    return entries
+
+
+def stage_srt(args):
+    workdir = args.work
+    manifest = transcripts.read_manifest(workdir)
+    texts = transcripts.load_transcripts(workdir)
+
+    order = _line_names(manifest, args.only)
+    entries = _srt_entries(manifest, texts, order)
 
     if args.merge_repeats:
         before = len(entries)
@@ -318,44 +332,69 @@ def stage_export_gt(args):
 
     wanted = None
     if args.line:
-        wanted = set()
-        for name in args.line.split(","):
-            wanted.add(name.strip())
+        wanted = set(_line_names(None, args.line))
 
     os.makedirs(args.out, exist_ok=True)
     written = 0
     skipped_blank = 0
     skipped_unverified = 0
-    for cue in manifest["cues"]:
+    for cue, name, rel in _line_jobs(manifest, wanted):
         key = str(cue["index"])
-        got = texts.get(key, {})
+        text = (texts.get(key, {}).get(name) or "").strip()
+        if not text:
+            # tesstrain rejects an empty .gt.txt outright
+            skipped_blank += 1
+            continue
+        if (not args.include_unverified
+                and not verified.get(key, {}).get(name)):
+            skipped_unverified += 1
+            continue
+        _write_gt_pair(workdir, args.out, spec, args.prefix, cue, name,
+                       rel, text)
+        written += 1
+    _report_gt(args, written, skipped_blank, skipped_unverified)
+
+
+def _line_names(manifest, line_arg):
+    """The line names to consider: --line beats the manifest's list."""
+    names = []
+    if line_arg:
+        for name in line_arg.split(","):
+            names.append(name.strip())
+        return names
+    for line in manifest["lines"]:
+        names.append(line["name"])
+    return names
+
+
+def _line_jobs(manifest, wanted):
+    """(cue, line name, image path) for every strip that exists."""
+    jobs = []
+    for cue in manifest["cues"]:
         for line in manifest["lines"]:
             name = line["name"]
             if wanted is not None and name not in wanted:
                 continue
-            text = (got.get(name) or "").strip()
             rel = cue["images"].get(name)
-            if not rel:
-                continue
-            if not text:
-                # tesstrain rejects an empty .gt.txt outright
-                skipped_blank += 1
-                continue
-            if not args.include_unverified:
-                if not verified.get(key, {}).get(name):
-                    skipped_unverified += 1
-                    continue
-            img = Image.open(os.path.join(workdir, rel)).convert("RGB")
-            box = contact.ink_bbox(np.asarray(img), spec, pad=8)
-            if box is not None:
-                img = img.crop((box[0], 0, box[1], img.height))
-            stem = "%s_%05d_%s" % (args.prefix, cue["index"], name)
-            img.save(os.path.join(args.out, stem + ".png"))
-            path = os.path.join(args.out, stem + ".gt.txt")
-            with open(path, "w", encoding="utf-8") as handle:
-                handle.write(text + "\n")
-            written += 1
+            if rel:
+                jobs.append((cue, name, rel))
+    return jobs
 
+
+def _write_gt_pair(workdir, out, spec, prefix, cue, name, rel, text):
+    """One strip image + its .gt.txt label, margins trimmed."""
+    img = Image.open(os.path.join(workdir, rel)).convert("RGB")
+    box = contact.ink_bbox(np.asarray(img), spec, pad=8)
+    if box is not None:
+        img = img.crop((box[0], 0, box[1], img.height))
+    stem = "%s_%05d_%s" % (prefix, cue["index"], name)
+    img.save(os.path.join(out, stem + ".png"))
+    path = os.path.join(out, stem + ".gt.txt")
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(text + "\n")
+
+
+def _report_gt(args, written, skipped_blank, skipped_unverified):
     print("wrote %d line/label pairs to %s" % (written, args.out))
     print("skipped %d strip(s) with no text" % skipped_blank)
     if skipped_unverified:
@@ -370,7 +409,6 @@ def stage_export_gt(args):
     if 0 < written < 50:
         print("NOTE: tesstrain checkpoints every 100 iterations; 50-100 "
               "lines is the practical floor for a fine-tune.")
-    return 0
 
 
 def stage_pending(args):
@@ -393,24 +431,12 @@ def stage_pending(args):
     with open(path, "r", encoding="utf-8") as handle:
         sheet_map = json.load(handle)
 
-    names = []
-    for line in manifest["lines"]:
-        names.append(line["name"])
-    if args.line:
-        names = []
-        for name in args.line.split(","):
-            names.append(name.strip())
+    names = _line_names(manifest, args.line)
 
     done = 0
     todo = []
     for sheet in sorted(sheet_map):
-        missing = []
-        for index in sheet_map[sheet]:
-            got = verified.get(str(index), {})
-            for name in names:
-                if not got.get(name):
-                    missing.append(index)
-                    break
+        missing = _sheet_missing(sheet_map[sheet], verified, names)
         if missing:
             todo.append((sheet, missing))
         else:
@@ -421,7 +447,7 @@ def stage_pending(args):
           % (done, len(todo), total))
     if not todo:
         print("all sheets verified for line(s): %s" % ", ".join(names))
-        return 0
+        return
 
     shown = todo
     if args.limit:
@@ -429,7 +455,40 @@ def stage_pending(args):
     print("next batch (%d shown):" % len(shown))
     for sheet, missing in shown:
         print("  sheets/%s  cues %s" % (sheet, missing))
-    return 0
+
+
+def _sheet_missing(cues, verified, names):
+    """Cues on one sheet still lacking a confirmed row for some line."""
+    missing = []
+    for index in cues:
+        got = verified.get(str(index), {})
+        for name in names:
+            if not got.get(name):
+                missing.append(index)
+                break
+    return missing
+
+
+def _add_tokens(value, counts):
+    for token in transcripts.glossary_tokens(value):
+        counts[token] = counts.get(token, 0) + 1
+
+
+def _glossary_counts(manifest, texts, verified, wanted, verified_only):
+    counts = {}
+    for cue in manifest["cues"]:
+        key = str(cue["index"])
+        row = texts.get(key, {})
+        for line in manifest["lines"]:
+            name = line["name"]
+            if wanted is not None and name not in wanted:
+                continue
+            if verified_only and not verified.get(key, {}).get(name):
+                continue
+            value = (row.get(name) or "").strip()
+            if value:
+                _add_tokens(value, counts)
+    return counts
 
 
 def stage_glossary(args):
@@ -448,25 +507,10 @@ def stage_glossary(args):
 
     wanted = None
     if args.line:
-        wanted = set()
-        for name in args.line.split(","):
-            wanted.add(name.strip())
+        wanted = set(_line_names(None, args.line))
 
-    counts = {}
-    for cue in manifest["cues"]:
-        key = str(cue["index"])
-        row = texts.get(key, {})
-        for line in manifest["lines"]:
-            name = line["name"]
-            if wanted is not None and name not in wanted:
-                continue
-            if args.verified_only and not verified.get(key, {}).get(name):
-                continue
-            value = (row.get(name) or "").strip()
-            if not value:
-                continue
-            for token in transcripts.glossary_tokens(value):
-                counts[token] = counts.get(token, 0) + 1
+    counts = _glossary_counts(manifest, texts, verified, wanted,
+                              args.verified_only)
 
     ranked = []
     for token in counts:
@@ -476,7 +520,7 @@ def stage_glossary(args):
 
     if not ranked:
         print("no recurring special-mark or proper-noun spellings found")
-        return 0
+        return
 
     print("# 既定寫法（出現 >= %d 次）-- 貼進後續批次的 prompt"
           % args.min_count)
@@ -487,7 +531,6 @@ def stage_glossary(args):
         print("  %s   (%d 次)" % (token, count))
     if len(ranked) > len(shown):
         print("  ... 另有 %d 個未列出" % (len(ranked) - len(shown)))
-    return 0
 
 
 def stage_for(args, **overrides):

@@ -60,7 +60,7 @@ class TestMerge(unittest.TestCase):
         path = self._inventory(existing)
         with mock.patch.object(add_episodes.paths, "INVENTORY", path), \
              mock.patch.object(add_episodes.resolve_slug, "load",
-                               lambda: CATALOGUE):
+                               return_value=CATALOGUE):
             return add_episodes.add([REMOTE])
 
     def test_new_episode_is_appended(self):

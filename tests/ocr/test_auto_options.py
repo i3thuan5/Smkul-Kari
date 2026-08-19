@@ -58,8 +58,8 @@ class TestAutoPassesThemOn(unittest.TestCase):
             return 0
 
         with mock.patch.object(cli, "stage_cues", record), \
-             mock.patch.object(cli, "stage_ocr", lambda a: 0), \
-             mock.patch.object(cli, "stage_srt", lambda a: 0):
+             mock.patch.object(cli, "stage_ocr", return_value=0), \
+             mock.patch.object(cli, "stage_srt", return_value=0):
             cli.stage_auto(args)
         return seen
 

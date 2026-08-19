@@ -114,11 +114,11 @@ class TestRegionFromProfile(unittest.TestCase):
         self.assertLessEqual(region[0] + region[2], self.WIDTH)
 
     def test_collapsed_box_is_refused_rather_than_returned(self):
+        # a frame height smaller than the band forces the collapse the
+        # shadowing bug used to cause, and it must not pass silently
+        prof = self._profile()
         with self.assertRaises(RuntimeError):
-            # a frame height smaller than the band forces the collapse the
-            # shadowing bug used to cause, and it must not pass silently
-            detect.region_from_profile(self._profile(), self.TOP,
-                                       self.WIDTH, 40)
+            detect.region_from_profile(prof, self.TOP, self.WIDTH, 40)
 
     def test_width_comes_from_the_chosen_band_only(self):
         """Ink elsewhere in the frame must not set the horizontal extent.

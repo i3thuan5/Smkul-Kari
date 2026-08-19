@@ -53,7 +53,6 @@
 | `gap_sheets.py`／`batches.py`／`ingest.py` | 視覺辨識批次的出題與收卷 |
 | `make_srt.py`／`make_all.py`／`publish.py`／`tracker.py`／`rebuild.py` | 組裝、定版、進度表、離線重建驗證 |
 | `presets.json` | 版型知識（哪個節目哪種帶位） |
-| `migrate_kari.py` | 一次性遷移（保留當對照文件） |
 
 ## aiyalaeho/、transcode/
 

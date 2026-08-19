@@ -15,15 +15,15 @@ tests/
 │   └── align/    test_mtclient  test_claude_mt  test_dpalign  test_render
 │                 test_detect_blocks  test_detect_scores  test_detect_classify
 ├── news/         編排層測試（asrmt_run、smkul、inventory、tracker、refine…）
-└── e2e/          fixture.py  test_roundtrip（合成影片端對端，tox -e subtitle-e2e）
+└── e2e/          fixture.py  test_roundtrip（合成影片端對端，tox -e e2etest）
 ```
 
 分組與跑法：
 
 ```bash
-.tox/subtitle/bin/python -m unittest discover -s tests/<組> -t .
+.tox/unittest/bin/python -m unittest discover -s tests/<組> -t .
 # 組：ocr（影像側引擎）srtlib（共用組裝）asrmt（語音側引擎）
-#     news（編排）e2e（端對端，另走 tox -e subtitle-e2e）
+#     news（編排）e2e（端對端，另走 tox -e e2etest）
 ```
 
 ## 影像側引擎（tests/ocr/ ↔ scripts/ocr/）
@@ -80,4 +80,4 @@ tests/
 
 | spec | scenario | 測試檔 |
 |---|---|---|
-| 全鏈 | 合成影片燒入已知 SRT → 跑真實 pipeline 抽回 → 逐 cue 比對時間與文字（時間數學唯一的外部對照；需 ffmpeg＋tesseract，`tox -e subtitle-e2e`） | `e2e/test_roundtrip.py`＋`e2e/fixture.py` |
+| 全鏈 | 合成影片燒入已知 SRT → 跑真實 pipeline 抽回 → 逐 cue 比對時間與文字（時間數學唯一的外部對照；需 ffmpeg＋tesseract，`tox -e e2etest`） | `e2e/test_roundtrip.py`＋`e2e/fixture.py` |

@@ -29,6 +29,9 @@ import sys
 
 from scripts.news import paths
 
+ETH_EN = "族語別(英)"
+ETH_ZH = "族語別(中)"
+
 CORPUS = paths.CORPUS
 VIDEO_DIR = os.path.join(CORPUS, "2月")
 CATALOGUE = paths.CATALOGUE
@@ -105,8 +108,8 @@ def srt_name(row, episode):
         row["播出日期"].replace("-", ""),
         "%03d" % int(episode),
         row["播出時段"],
-        row["族語別(英)"],
-        row["族語別(中)"],
+        row[ETH_EN],
+        row[ETH_ZH],
     ])
 
 
@@ -123,8 +126,8 @@ def slugify(row, episode):
         "%03d" % int(episode),
         row["播出日期"],
         row["播出時段"],
-        row["族語別(英)"],
-        row["族語別(中)"],
+        row[ETH_EN],
+        row[ETH_ZH],
     ])
 
 
@@ -146,7 +149,7 @@ def build():
         date_key = "110%02d%02d" % tuple(
             int(p) for p in row["播出日期"].split("-")[1:])
         transcript, warning = find_transcript(
-            date_key, slot, row["族語別(中)"])
+            date_key, slot, row[ETH_ZH])
         if warning:
             warnings.append(warning)
         entries.append({
@@ -159,8 +162,8 @@ def build():
             "集數": episode,
             "播出日期": row["播出日期"],
             "播出時段": slot,
-            "族語別(英)": row["族語別(英)"],
-            "族語別(中)": row["族語別(中)"],
+            ETH_EN: row[ETH_EN],
+            ETH_ZH: row[ETH_ZH],
             "文稿位置": transcript,
             "truncated": TRUNCATED.get(name, ""),
         })
@@ -235,11 +238,10 @@ def main(argv=None):
 
     if args.dry_run:
         print("(dry run, nothing written)")
-        return 0
+        return
     with open(paths.INVENTORY, "w", encoding="utf-8") as handle:
         json.dump(entries, handle, ensure_ascii=False, indent=2)
     print("wrote", paths.INVENTORY)
-    return 0
 
 
 if __name__ == "__main__":

@@ -26,7 +26,7 @@ SFTP_HOST="${SFTP_HOST:-ilrdf-corpus@192.168.35.10}"
 
 batch=$(mktemp)
 trap 'rm -f "$batch"' EXIT
-if [ "${1:-}" = "-" ]; then
+if [[ "${1:-}" = "-" ]]; then
     cat > "$batch"
 else
     printf '%s\n' "$@" > "$batch"

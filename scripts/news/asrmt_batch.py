@@ -43,6 +43,34 @@ def _fetch(remote, local):
         raise SystemExit("sftp fetch failed: %s" % remote)
 
 
+def _todo(entries, worker, total, raw_dir):
+    """This worker's episodes still without a raw SRT, inventory order."""
+    todo = []
+    for position, entry in enumerate(entries):
+        name = paths.check_srt_name(entry["srt_name"])
+        if not shard_ok(position, worker, total):
+            continue
+        if entry.get("pending") or entry.get("truncated"):
+            continue
+        if os.path.exists(os.path.join(raw_dir, name + ".srt")):
+            continue
+        todo.append(entry)
+    return todo
+
+
+def _run_episode(entry, catalogue):
+    """Fetch -> decode -> project -> raw -> delete audio, one episode."""
+    name = entry["srt_name"]
+    audio = os.path.join(asrmt_run._workdir(name), "audio.mp3")
+    if not os.path.exists(audio):
+        _fetch(asrmt_run.mp3_remote(name, catalogue), audio)
+    asrmt_run.step_words(name, entry["族語別(英)"])
+    asrmt_run.step_entries(name)
+    asrmt_run.step_raw(name)
+    if os.path.exists(audio):
+        os.remove(audio)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--limit", type=int, default=0,
@@ -58,28 +86,17 @@ def main(argv=None):
         catalogue = list(csv.DictReader(handle))
 
     raw_dir = os.path.join(paths.ASR_DIR, "3-srt-raw")
+    todo = _todo(entries, worker, total, raw_dir)
+    if args.limit:
+        todo = todo[:args.limit]
+
     done = []
     failed = []
-    for position, entry in enumerate(entries):
+    for entry in todo:
         name = entry["srt_name"]
-        if not shard_ok(position, worker, total):
-            continue
-        if entry.get("pending") or entry.get("truncated"):
-            continue
-        if os.path.exists(os.path.join(raw_dir, name + ".srt")):
-            continue
-        if args.limit and len(done) + len(failed) >= args.limit:
-            break
         print("==", name, flush=True)
-        audio = os.path.join(asrmt_run._workdir(name), "audio.mp3")
         try:
-            if not os.path.exists(audio):
-                _fetch(asrmt_run.mp3_remote(name, catalogue), audio)
-            asrmt_run.step_words(name, entry["族語別(英)"])
-            asrmt_run.step_entries(name)
-            asrmt_run.step_raw(name)
-            if os.path.exists(audio):
-                os.remove(audio)
+            _run_episode(entry, catalogue)
             done.append(name)
         except SystemExit as error:
             failed.append((name, str(error)))

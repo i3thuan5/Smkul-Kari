@@ -34,6 +34,18 @@ from scripts.news import make_srt
 from scripts.news import paths
 from scripts.news import tracker
 
+SMKUL = "smkul.csv"
+
+
+def _tsv_lines(path):
+    rows = []
+    with open(path, encoding="utf-8") as handle:
+        for line in handle:
+            line = line.rstrip("\n")
+            if line.strip():
+                rows.append(line)
+    return rows
+
 
 def episode_transcripts(srt_name):
     """transcripts.json content, rebuilt from the episode's vision TSVs."""
@@ -43,14 +55,10 @@ def episode_transcripts(srt_name):
         if not os.path.isdir(folder):
             continue
         for path in sorted(glob.glob(os.path.join(folder, "*.tsv"))):
-            with open(path, encoding="utf-8") as handle:
-                for line in handle:
-                    line = line.rstrip("\n")
-                    if not line.strip():
-                        continue
-                    parts = line.split("\t")
-                    text = parts[2] if len(parts) > 2 else ""
-                    resolved[parts[0]] = {"han": text}
+            for line in _tsv_lines(path):
+                parts = line.split("\t")
+                text = parts[2] if len(parts) > 2 else ""
+                resolved[parts[0]] = {"han": text}
     return resolved
 
 
@@ -64,7 +72,7 @@ def check_inputs(entries):
         # that claim is what the rest of this function checks.
         if entry["truncated"] or tracker.is_pending(entry):
             continue
-        name = entry["srt_name"]
+        name = paths.check_name(entry["srt_name"], "srt_name")
         if not os.path.exists(os.path.join(paths.KARI_CUES, name + ".json")):
             problems.append("missing 1-cues/%s.json" % name)
         if not episode_transcripts(name):
@@ -89,6 +97,32 @@ def rebuild_one(entry, tmp):
     out = os.path.join(tmp, "srt", name + ".srt")
     qc = make_srt.run(work, out)
     return tracker.vision_status(qc["srt_lines"])
+
+
+def _mismatches(tmp, entries):
+    """Deliverables whose rebuilt bytes differ from the shipped ones."""
+    mismatched = []
+    for entry in entries:
+        if entry["truncated"] or tracker.is_pending(entry):
+            continue
+        name = entry["srt_name"] + ".srt"
+        built = open(os.path.join(tmp, "srt", name), "rb").read()
+        shipped = open(os.path.join(paths.SRT_DIR, name), "rb").read()
+        if built != shipped:
+            mismatched.append(name)
+    built = open(os.path.join(tmp, "srt", SMKUL), "rb").read()
+    shipped = open(paths.TRACKER_STORE, "rb").read()
+    if built != shipped:
+        mismatched.append(SMKUL)
+    return mismatched
+
+
+def _delivered_count(entries):
+    count = 0
+    for entry in entries:
+        if not entry["truncated"] and not tracker.is_pending(entry):
+            count += 1
+    return count
 
 
 def main():
@@ -121,39 +155,21 @@ def main():
         if tracker.is_pending(entry):
             print("%-46s %s" % (entry["srt_name"], "略過：本批尚未完成"))
     rows = tracker.tracker_rows(entries, status_of)
-    tracker.write_tracker(rows, os.path.join(tmp, "srt", "smkul.csv"))
+    tracker.write_tracker(rows, os.path.join(tmp, "srt", SMKUL))
 
     if not args.verify:
         print("\nrebuilt into", tmp)
-        return 0
+        return
 
-    mismatched = []
-    for entry in entries:
-        if entry["truncated"] or tracker.is_pending(entry):
-            continue
-        name = entry["srt_name"] + ".srt"
-        built = open(os.path.join(tmp, "srt", name), "rb").read()
-        shipped = open(os.path.join(paths.SRT_DIR, name), "rb").read()
-        if built != shipped:
-            mismatched.append(name)
-    built = open(os.path.join(tmp, "srt", "smkul.csv"), "rb").read()
-    shipped = open(paths.TRACKER_STORE, "rb").read()
-    if built != shipped:
-        mismatched.append("smkul.csv")
-
+    mismatched = _mismatches(tmp, entries)
     if not args.out:
         shutil.rmtree(tmp)
     if mismatched:
         for name in mismatched:
             print("DIFFERS:", name)
         raise SystemExit(1)
-    built_count = 0
-    for entry in entries:
-        if not entry["truncated"] and not tracker.is_pending(entry):
-            built_count += 1
     print("\nOK: %d SRTs + smkul.csv rebuilt byte-identical from Kari-SRT"
-          % built_count)
-    return 0
+          % _delivered_count(entries))
 
 
 if __name__ == "__main__":

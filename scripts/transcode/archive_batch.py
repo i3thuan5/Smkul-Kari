@@ -35,31 +35,37 @@ ENCODE_SCRIPT = os.path.join(HERE, "encode_master.sh")
 SFTP_SCRIPT = os.path.join(paths.ROOT, "scripts", "news", "sftp.sh")
 
 
+def _cell_path(cell, slot):
+    """One catalogue cell -> the path naming this slot, or None.
+
+    Defensive: the master catalogue sometimes packs several paths into
+    one cell separated by ";" (see asrmt_run.mp3_remote).
+    """
+    candidates = []
+    for part in cell.split(";"):
+        if part.strip():
+            candidates.append(part.strip())
+    if not candidates:
+        return None
+    for part in candidates:
+        if slot in part:
+            return part
+    return candidates[0]
+
+
 def video_remote(srt_name, rows):
     """The episode's master path on the SFTP host, from smkul.csv."""
     date = "%s-%s-%s" % (srt_name[0:4], srt_name[4:6], srt_name[6:8])
     slot = srt_name.split("_")[2]
     for row in rows:
-        if row["播出日期"] == date and row["播出時段"] == slot:
-            cell = row["影片檔案位置"].strip()
-            if not cell:
-                continue
-            # defensive: the master catalogue sometimes packs several
-            # paths into one cell separated by ";" (see asrmt_run.mp3_remote)
-            candidates = []
-            for part in cell.split(";"):
-                if part.strip():
-                    candidates.append(part.strip())
-            if not candidates:
-                continue
-            chosen = candidates[0]
-            for part in candidates:
-                if slot in part:
-                    chosen = part
-                    break
-            if chosen.startswith(FEB_MXF_SHORTHAND):
-                chosen = FEB_MXF_REAL_DIR + chosen[len(FEB_MXF_SHORTHAND):]
-            return REMOTE_ROOT + "/" + chosen
+        if row["播出日期"] != date or row["播出時段"] != slot:
+            continue
+        chosen = _cell_path(row["影片檔案位置"].strip(), slot)
+        if chosen is None:
+            continue
+        if chosen.startswith(FEB_MXF_SHORTHAND):
+            chosen = FEB_MXF_REAL_DIR + chosen[len(FEB_MXF_SHORTHAND):]
+        return REMOTE_ROOT + "/" + chosen
     raise SystemExit("no video in smkul.csv for %s" % srt_name)
 
 

@@ -371,7 +371,6 @@ sheet 讀了一遍，還多花了建兩次 contact sheet 的工。真正的價�
 | `verify_band.py` | 量列剖面，確認字幕帶真的在 preset 說的位置 |
 | `resolve_slug.py` | 用 `ilrdf-corpus.csv` 把檔名對成 work dir／SRT 名稱 |
 | `paths.py` | 全部路徑的單一出處；`--var` 供 shell 取值 |
-| `migrate_kari.py` | 一次性：舊命名資料 → Kari-SRT（保留當對照文件）|
 | `publish.py` | 整批把關→清 `pending`、遷 `cues`、定版 `smkul.csv` |
 | `rebuild.py` | 從 Kari-SRT 離線重建全部 SRT 並逐 byte 驗證 |
 | `Kari-SRT/vision/` | 第一輪視覺逐字稿 TSV（文稿沒蓋到的 cue）|

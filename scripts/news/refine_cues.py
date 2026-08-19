@@ -118,52 +118,57 @@ def label_frames(frames, kind, spec, min_ink, change):
         mask = cuelib.text_mask(rgb, spec)
         masks.append(mask)
         inks.append(int(mask.sum()))
-    labels = []
 
     if kind == "start":
-        ref = masks[-1]
         if inks[-1] < min_ink:
             return None              # right edge should show the cue
-        for i in range(len(masks)):
-            if inks[i] < min_ink:
-                labels.append("L")
-            elif cuelib.mask_distance(masks[i], ref) <= change:
-                labels.append("R")
-            else:
-                labels.append("?")
-        return labels
-
+        return _label_one_sided(masks, inks, masks[-1], min_ink, change,
+                                blank="L", cue="R")
     if kind == "end":
-        ref = masks[0]
         if inks[0] < min_ink:
             return None              # left edge should show the cue
-        for i in range(len(masks)):
-            if inks[i] < min_ink:
-                labels.append("R")
-            elif cuelib.mask_distance(masks[i], ref) <= change:
-                labels.append("L")
-            else:
-                labels.append("?")
-        return labels
+        return _label_one_sided(masks, inks, masks[0], min_ink, change,
+                                blank="R", cue="L")
+    return _label_joint(masks, inks, min_ink, change)
 
+
+def _label_one_sided(masks, inks, ref, min_ink, change, blank, cue):
+    """Labels when one side is blank ('start' and 'end' windows)."""
+    labels = []
+    for i in range(len(masks)):
+        if inks[i] < min_ink:
+            labels.append(blank)
+        elif cuelib.mask_distance(masks[i], ref) <= change:
+            labels.append(cue)
+        else:
+            labels.append("?")
+    return labels
+
+
+def _nearer_side(mask, ref_l, ref_r, change):
+    d_l = cuelib.mask_distance(mask, ref_l)
+    d_r = cuelib.mask_distance(mask, ref_r)
+    if d_l <= change and d_l < d_r:
+        return "L"
+    if d_r <= change and d_r < d_l:
+        return "R"
+    return "?"
+
+
+def _label_joint(masks, inks, min_ink, change):
+    """Labels for a shared edge: cue A on the left, cue B on the right."""
     ref_l = masks[0]
     ref_r = masks[-1]
     if inks[0] < min_ink or inks[-1] < min_ink:
         return None                  # both edges should show text
     if cuelib.mask_distance(ref_l, ref_r) <= change:
         return None                  # sides indistinguishable: keep coarse
+    labels = []
     for i in range(len(masks)):
         if inks[i] < min_ink:
             labels.append("?")
         else:
-            d_l = cuelib.mask_distance(masks[i], ref_l)
-            d_r = cuelib.mask_distance(masks[i], ref_r)
-            if d_l <= change and d_l < d_r:
-                labels.append("L")
-            elif d_r <= change and d_r < d_l:
-                labels.append("R")
-            else:
-                labels.append("?")
+            labels.append(_nearer_side(masks[i], ref_l, ref_r, change))
     return labels
 
 
@@ -209,21 +214,18 @@ def boundaries_of(cues):
     return out
 
 
-def refine_episode(video, cues_path, dry_run=False):
-    with open(cues_path, encoding="utf-8") as handle:
-        manifest = json.load(handle)
+def _refine_boundaries(video, manifest, duration):
+    """Refine every boundary; returns the new times and the tallies."""
     cues = manifest["cues"]
     region = manifest["region"]
     spec = cuelib.MaskSpec.from_dict(manifest.get("mask", {}))
     seg = manifest.get("segmenter", {})
     min_ink = seg.get("min_ink", 120)
     change = seg.get("change", 0.35)
-    duration = probe_duration(video)
 
     new_start = {}
     new_end = {}
     kept = 0
-    refined = 0
     shifts = []
     problems = []
     for positions, kind, t0 in boundaries_of(cues):
@@ -237,7 +239,6 @@ def refine_episode(video, cues_path, dry_run=False):
                             % (cues[positions[0]]["index"], kind,
                                t - t0, MAX_SHIFT))
             continue
-        refined += 1
         shifts.append(t - t0)
         if kind == "start":
             new_start[positions[0]] = t
@@ -246,13 +247,11 @@ def refine_episode(video, cues_path, dry_run=False):
         else:
             new_end[positions[0]] = t
             new_start[positions[1]] = t
+    return new_start, new_end, kept, shifts, problems
 
-    result = []
-    for i, cue in enumerate(cues):
-        start = new_start.get(i, cue["start"])
-        end = new_end.get(i, cue["end"])
-        result.append((round(start, 3), round(end, 3)))
 
+def _check_result(result, cues, problems):
+    """Atomicity gate: starts before ends, no overlap, or nothing moves."""
     for i, (start, end) in enumerate(result):
         if start >= end:
             problems.append("cue %s: start %.3f >= end %.3f"
@@ -260,6 +259,24 @@ def refine_episode(video, cues_path, dry_run=False):
         if i and result[i - 1][1] > start + 1e-9:
             problems.append("cue %s overlaps its predecessor"
                             % cues[i]["index"])
+
+
+def refine_episode(video, cues_path, dry_run=False):
+    with open(cues_path, encoding="utf-8") as handle:
+        manifest = json.load(handle)
+    cues = manifest["cues"]
+    duration = probe_duration(video)
+
+    new_start, new_end, kept, shifts, problems = _refine_boundaries(
+        video, manifest, duration)
+    refined = len(shifts)
+
+    result = []
+    for i, cue in enumerate(cues):
+        start = new_start.get(i, cue["start"])
+        end = new_end.get(i, cue["end"])
+        result.append((round(start, 3), round(end, 3)))
+    _check_result(result, cues, problems)
 
     stats = {
         "episode": os.path.basename(cues_path)[:-5],
@@ -297,7 +314,6 @@ def main():
     args = ap.parse_args()
     stats = refine_episode(args.video, args.cues, dry_run=args.dry_run)
     print(json.dumps(stats, ensure_ascii=False))
-    return 0
 
 
 if __name__ == "__main__":

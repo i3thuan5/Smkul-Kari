@@ -43,6 +43,7 @@ from scripts.news import paths
 from scripts.news import rebuild
 from scripts.srtlib import assemble
 
+JSON = ".json"
 MT_URL = "https://ai-labs.ilrdf.org.tw/kari-seejiq-tnpusu-ai-hmjil"
 MODEL_ID = "ILRDF/kaldi_formosan_250514_%s"
 
@@ -62,28 +63,33 @@ def model_id_of(ethnicity):
     return MODEL_ID % fixed
 
 
+def _mp3_cell_path(cell, slot):
+    """One catalogue cell -> the path naming this slot, or None.
+
+    The catalogue sometimes packs several paths into one cell separated
+    by ";" -- pick the one naming this slot.
+    """
+    candidates = []
+    for part in cell.split(";"):
+        if part.strip():
+            candidates.append(part.strip())
+    if not candidates:
+        return None
+    for part in candidates:
+        if slot in part:
+            return part
+    return candidates[0]
+
+
 def mp3_remote(srt_name, rows):
     """The episode's mp3 path on the SFTP host, from the catalogue."""
     date = "%s-%s-%s" % (srt_name[0:4], srt_name[4:6], srt_name[6:8])
     slot = srt_name.split("_")[2]
     for row in rows:
-        if row["播出日期"] == date and row["播出時段"] == slot:
-            cell = row["音檔位置(mp3)"].strip()
-            if not cell:
-                continue
-            # the catalogue sometimes packs several paths into one cell
-            # separated by ";" -- pick the one naming this slot
-            candidates = []
-            for part in cell.split(";"):
-                if part.strip():
-                    candidates.append(part.strip())
-            if not candidates:
-                continue
-            chosen = candidates[0]
-            for part in candidates:
-                if slot in part:
-                    chosen = part
-                    break
+        if row["播出日期"] != date or row["播出時段"] != slot:
+            continue
+        chosen = _mp3_cell_path(row["音檔位置(mp3)"].strip(), slot)
+        if chosen is not None:
             return "/docker/" + chosen
     raise SystemExit("no mp3 in the catalogue for %s" % srt_name)
 
@@ -136,7 +142,7 @@ def _probe_duration(path):
 
 
 def _cues_duration(srt_name):
-    with open(os.path.join(paths.KARI_CUES, srt_name + ".json"),
+    with open(os.path.join(paths.KARI_CUES, srt_name + JSON),
               encoding="utf-8") as handle:
         manifest = json.load(handle)
     if manifest.get("duration"):
@@ -170,7 +176,7 @@ def _save(doc, path):
 
 
 def step_words(srt_name, ethnicity_en):
-    out = os.path.join(_stage("1-words"), srt_name + ".json")
+    out = os.path.join(_stage("1-words"), srt_name + JSON)
     if not step_needed(out):
         print("1-words 已存在，跳過")
         return
@@ -190,7 +196,7 @@ def _chain_rows(srt_name):
     """The delivered SRT's chain rows, synthesised rebuild-style."""
     work = tempfile.mkdtemp(prefix="asrmt-entries-")
     try:
-        shutil.copy2(os.path.join(paths.KARI_CUES, srt_name + ".json"),
+        shutil.copy2(os.path.join(paths.KARI_CUES, srt_name + JSON),
                      os.path.join(work, "cues.json"))
         _save(rebuild.episode_transcripts(srt_name),
               os.path.join(work, "transcripts.json"))
@@ -204,11 +210,11 @@ def _chain_rows(srt_name):
 
 
 def step_entries(srt_name):
-    out = os.path.join(_stage("2-entries"), srt_name + ".json")
+    out = os.path.join(_stage("2-entries"), srt_name + JSON)
     if not step_needed(out):
         print("2-entries 已存在，跳過")
         return
-    words_doc = _load(os.path.join(_stage("1-words"), srt_name + ".json"))
+    words_doc = _load(os.path.join(_stage("1-words"), srt_name + JSON))
     rows = _chain_rows(srt_name)
     for row in rows:
         row["subtitle"] = row.pop("text")
@@ -224,7 +230,7 @@ def step_entries(srt_name):
 
 
 def _entries_path(srt_name):
-    return os.path.join(_stage("2-entries"), srt_name + ".json")
+    return os.path.join(_stage("2-entries"), srt_name + JSON)
 
 
 def _client_cache():
@@ -333,8 +339,8 @@ def step_claude_batches(srt_name):
     for row in doc["entries"]:
         f2z.append((row["index"], row["formosan"]))
         z2f.append((row["index"], row["subtitle"]))
-    wrote = claude_mt.write_batches(f2z, "f2z", doc["src_lang"], folder)
-    wrote += claude_mt.write_batches(z2f, "z2f", doc["src_lang"], folder)
+    wrote = claude_mt.write_batches(f2z, "f2z", folder)
+    wrote += claude_mt.write_batches(z2f, "z2f", folder)
     print("批次檔：", len(wrote), "個，在", folder)
     print("回覆檔名：bNN.<dir>.reply.tsv，一檔一次寫成")
 
@@ -409,7 +415,7 @@ def step_seg_ingest(srt_name):
 def step_srt(srt_name):
     doc = _load(_entries_path(srt_name))
     classes = {}
-    align_path = os.path.join(_stage("5-align"), srt_name + ".json")
+    align_path = os.path.join(_stage("5-align"), srt_name + JSON)
     if os.path.exists(align_path):
         for record in _load(align_path)["entries"]:
             classes[record["index"]] = record["class"]
@@ -420,7 +426,7 @@ def step_srt(srt_name):
 
 def step_detect(srt_name):
     doc = _load(_entries_path(srt_name))
-    words_doc = _load(os.path.join(_stage("1-words"), srt_name + ".json"))
+    words_doc = _load(os.path.join(_stage("1-words"), srt_name + JSON))
     sents = []
     for sent in words_doc["sents"]:
         text = []
@@ -441,7 +447,7 @@ def step_detect(srt_name):
                              numbers_by_entry=numbers)
     report["anchor_numbers"] = source
     folder = _stage("5-align")
-    _save(report, os.path.join(folder, srt_name + ".json"))
+    _save(report, os.path.join(folder, srt_name + JSON))
     with open(os.path.join(folder, srt_name + ".md"), "w",
               encoding="utf-8") as handle:
         handle.write(detect.summary_md(report, doc["entries"]))
@@ -450,7 +456,7 @@ def step_detect(srt_name):
 
 def step_complete(srt_name):
     doc = _load(_entries_path(srt_name))
-    align_path = os.path.join(_stage("5-align"), srt_name + ".json")
+    align_path = os.path.join(_stage("5-align"), srt_name + JSON)
     if not os.path.exists(align_path):
         raise SystemExit("run --step detect first -- the complete render "
                          "merges by its verdicts and blocks")
@@ -498,8 +504,8 @@ def _ckip_numbers(srt_name, entries):
             if arabic:
                 values.append(int(arabic.group(1).replace(",", "")))
                 continue
-            # 單字中文數詞（「新聞/一/開始」的「一」）太歧義，不作
-            # 錨點；兩字以上（一百二十）才收
+            # 單字中文數詞（斷成「新聞」「一」「開始」時的「一」）
+            # 太歧義，不作錨點；兩字以上（一百二十）才收
             if len(token) >= 2 and all(ch in zh_digits for ch in token):
                 values.append(detect._zh_number(token))
         out[row["index"]] = values
@@ -521,6 +527,7 @@ def main(argv=None):
                          "claude-ingest|seg-ingest|detect|srt|complete|"
                          "all")
     args = ap.parse_args(argv)
+    paths.check_srt_name(args.srt_name)
 
     entry = _entry_of(args.srt_name)
     runners = {
@@ -539,11 +546,10 @@ def main(argv=None):
     if args.step == "all":
         for name, _ in STEPS:
             runners[name]()
-        return 0
+        return
     if args.step not in runners:
         raise SystemExit("unknown step %r" % args.step)
     runners[args.step]()
-    return 0
 
 
 if __name__ == "__main__":

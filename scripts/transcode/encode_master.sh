@@ -48,7 +48,7 @@ DST="${2:?$USAGE}"
 CRF="${3:-23}"
 PIX="${4:-yuv420p}"
 
-[ -e "$DST" ] && { echo "refusing to overwrite $DST" >&2; exit 1; }
+[[ -e "$DST" ]] && { echo "refusing to overwrite $DST" >&2; exit 1; }
 
 tracks=$(ffprobe -v error -select_streams a -show_entries stream=index \
                  -of csv=p=0 "$SRC" | wc -l)
@@ -56,11 +56,11 @@ tracks=$(ffprobe -v error -select_streams a -show_entries stream=index \
 # Drop the second audio track only when it is provably a duplicate. An
 # episode where the two carry different mixes would lose one silently.
 keep_second=1
-if [ "$tracks" -eq 2 ]; then
+if [[ "$tracks" -eq 2 ]]; then
   echo "checking whether the two audio tracks are identical ..."
   sums=$(ffmpeg -v error -i "$SRC" -map 0:a:0 -f md5 - -map 0:a:1 -f md5 - \
          | sort -u | wc -l)
-  if [ "$sums" -eq 1 ]; then
+  if [[ "$sums" -eq 1 ]]; then
     echo "  identical -- keeping one"
     keep_second=0
   else
@@ -69,7 +69,7 @@ if [ "$tracks" -eq 2 ]; then
 fi
 
 maps=(-map 0:v:0 -map 0:a:0)
-if [ "$tracks" -ge 2 ] && [ "$keep_second" -eq 1 ]; then
+if [[ "$tracks" -ge 2 ]] && [[ "$keep_second" -eq 1 ]]; then
   maps+=(-map 0:a:1)
 fi
 
@@ -120,7 +120,7 @@ case "$audio_codec" in
 esac
 a=$(ffmpeg -v error -i "$SRC" -map 0:a:0 "${verify_args[@]}" -f md5 -)
 b=$(ffmpeg -v error -i "$DST" -map 0:a:0 "${verify_args[@]}" -f md5 -)
-if [ "$a" = "$b" ]; then
+if [[ "$a" = "$b" ]]; then
   echo "  ok: $a"
 else
   echo "  MISMATCH: source $a, archive $b" >&2

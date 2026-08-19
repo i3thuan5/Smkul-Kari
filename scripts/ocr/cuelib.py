@@ -363,54 +363,64 @@ class Segmenter(object):
         # The mask only matters while the cue is the open one.
         cue.mask = None
 
+    def _extend_current(self, ts, rgb, mask, ink):
+        """True when the frame is the same cue still on screen."""
+        if self.current is None:
+            return False
+        if mask_distance(mask, self.current.mask) >= self.change:
+            return False
+        self.current.end = ts + self.frame_dt
+        self.current.frames += 1
+        self.current.add_sample(rgb.copy())
+        if ink > self.current.best_ink:
+            self.current.best_ink = ink
+            self.current.best_rgb = rgb.copy()
+            self.current.best_ts = ts
+        self.pending = None
+        return True
+
+    def _track_pending(self, ts, rgb, mask, ink, blank):
+        """Grow the pending change, or start a new one."""
+        same_pending = False
+        if self.pending is not None and self.pending.blank == blank:
+            if blank or mask_distance(mask, self.pending.mask) < self.change:
+                same_pending = True
+        if not same_pending:
+            self.pending = _Pending(mask, ink, rgb.copy(), ts, blank)
+            return
+        self.pending.count += 1
+        self.pending.last = ts
+        if not blank and ink > self.pending.ink:
+            self.pending.ink = ink
+            self.pending.mask = mask
+            self.pending.rgb = rgb.copy()
+
+    def _confirm_pending(self, ts):
+        """Once stable long enough, the pending change becomes real."""
+        if self.pending.count < self.min_stable:
+            return
+        self._close(self.pending.start)
+        if self.pending.blank:
+            self.current = None
+        else:
+            self.current = Cue(self.pending.start, self.pending.mask,
+                               self.pending.ink, self.pending.rgb,
+                               self.pending.start)
+            self.current.end = ts + self.frame_dt
+            self.current.frames = self.pending.count
+        self.pending = None
+
     def feed(self, ts, rgb, mask):
         ink = int(mask.sum())
         blank = ink < self.min_ink
 
-        if self.current is not None and not blank:
-            if mask_distance(mask, self.current.mask) < self.change:
-                self.current.end = ts + self.frame_dt
-                self.current.frames += 1
-                self.current.add_sample(rgb.copy())
-                if ink > self.current.best_ink:
-                    self.current.best_ink = ink
-                    self.current.best_rgb = rgb.copy()
-                    self.current.best_ts = ts
-                self.pending = None
-                return
-
+        if not blank and self._extend_current(ts, rgb, mask, ink):
+            return
         if self.current is None and blank:
             self.pending = None
             return
-
-        same_pending = False
-        if self.pending is not None and self.pending.blank == blank:
-            if blank:
-                same_pending = True
-            elif mask_distance(mask, self.pending.mask) < self.change:
-                same_pending = True
-
-        if same_pending:
-            self.pending.count += 1
-            self.pending.last = ts
-            if not blank and ink > self.pending.ink:
-                self.pending.ink = ink
-                self.pending.mask = mask
-                self.pending.rgb = rgb.copy()
-        else:
-            self.pending = _Pending(mask, ink, rgb.copy(), ts, blank)
-
-        if self.pending.count >= self.min_stable:
-            self._close(self.pending.start)
-            if self.pending.blank:
-                self.current = None
-            else:
-                self.current = Cue(self.pending.start, self.pending.mask,
-                                   self.pending.ink, self.pending.rgb,
-                                   self.pending.start)
-                self.current.end = ts + self.frame_dt
-                self.current.frames = self.pending.count
-            self.pending = None
+        self._track_pending(ts, rgb, mask, ink, blank)
+        self._confirm_pending(ts)
 
     def finish(self, end_ts):
         # A change still sitting in `pending` at end of stream is real

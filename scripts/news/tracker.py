@@ -20,8 +20,11 @@ from scripts.news import paths
 
 CORPUS = paths.CORPUS
 
+ETH_EN = "族語別(英)"
+ETH_ZH = "族語別(中)"
+
 FIELDS = ["節目名稱", "年度", "集數", "播出日期", "播出時段",
-          "族語別(英)", "族語別(中)", "影片檔案位置", "文稿位置",
+          ETH_EN, ETH_ZH, "影片檔案位置", "文稿位置",
           "字幕srt狀態", "語音辨識模型"]
 
 # The speech-side cell names the recogniser, not a revision: delivery stops
@@ -90,8 +93,8 @@ def tracker_row(entry, status, asr_dir=None):
         "集數": entry["集數"],
         "播出日期": entry["播出日期"],
         "播出時段": entry["播出時段"],
-        "族語別(英)": entry["族語別(英)"],
-        "族語別(中)": entry["族語別(中)"],
+        ETH_EN: entry[ETH_EN],
+        ETH_ZH: entry[ETH_ZH],
         "影片檔案位置": relative(entry["video"]),
         "文稿位置": script,
         "字幕srt狀態": status,

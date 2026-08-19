@@ -8,8 +8,8 @@
 the vision TSVs are written there by the readers themselves. What is left is
 the per-episode data that `rebuild.py` needs to put an SRT back together
 without touching a video: `cues/<srt_name>.json`, `from_rtf/<srt_name>.json`,
-and the inventory it walks. `migrate_kari.py` did this once for the February
-batch as part of a one-off move; this does it for every batch after.
+and the inventory it walks. A one-off migration script did this once for
+the February batch; this does it for every batch after.
 
 This is also where the store smkul.csv is written. make_all keeps a work
 copy

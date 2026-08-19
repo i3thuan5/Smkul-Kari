@@ -118,21 +118,49 @@ def region_from_profile(profile, top, width, height,
     """
     rows = profile.sum(axis=1)
     threshold = max(rows.max() * min_hits, 1.0)
-    bands = []
+    # Keep the merge gap small: a news lower-third sitting just below the
+    # dialogue is also text, and merging the two produces one 300px "band"
+    # that is mostly station graphics.
+    merged = merge_bands(_ink_runs(rows, threshold), gap=8)
+    candidates = _band_candidates(rows, merged, max_band)
+    ranked = []
+    for weight, lo, hi in candidates:
+        ranked.append({"y": top + lo, "h": hi - lo,
+                       "weight": round(weight, 1)})
+
+    _, lo, hi = candidates[0]
+    y0 = max(top + lo - pad, 0)
+    y1 = min(top + hi + pad, height)
+    x0, x1 = _column_extent(profile, lo, hi, width)
+
+    region = cuelib.normalize_region((x0, y0, x1 - x0, y1 - y0),
+                                     width, height)
+    if region[3] < 12:
+        # The chosen band was tens of pixels tall; if the box that came out
+        # is not, the arithmetic above lost track of the frame height.
+        raise RuntimeError(
+            "band detection produced a %dpx-tall region from a %dpx band "
+            "-- refusing to return it" % (region[3], hi - lo))
+    return region, ranked
+
+
+def _ink_runs(rows, threshold):
+    """Consecutive index runs where the profile clears the threshold."""
+    runs = []
     start = None
     for y in range(len(rows)):
         if rows[y] >= threshold and start is None:
             start = y
         elif rows[y] < threshold and start is not None:
-            bands.append((start, y))
+            runs.append((start, y))
             start = None
     if start is not None:
-        bands.append((start, len(rows)))
+        runs.append((start, len(rows)))
+    return runs
 
-    # Keep the merge gap small: a news lower-third sitting just below the
-    # dialogue is also text, and merging the two produces one 300px "band"
-    # that is mostly station graphics.
-    merged = merge_bands(bands, gap=8)
+
+def _band_candidates(rows, merged, max_band):
+    """Weighted candidate bands; height-filtered unless that empties it."""
     candidates = []
     for lo, hi in merged:
         band_h = hi - lo
@@ -144,35 +172,18 @@ def region_from_profile(profile, top, width, height,
             candidates.append((float(rows[lo:hi].sum()), lo, hi))
     if not candidates:
         raise RuntimeError("no subtitle band found; pass --region manually")
-
     candidates.sort(reverse=True)
-    ranked = []
-    for weight, lo, hi in candidates:
-        ranked.append({"y": top + lo, "h": hi - lo,
-                       "weight": round(weight, 1)})
+    return candidates
 
-    _, lo, hi = candidates[0]
-    y0 = max(top + lo - pad, 0)
-    y1 = min(top + hi + pad, height)
 
+def _column_extent(profile, lo, hi, width):
+    """Horizontal extent of the text, measured inside the chosen band."""
     cols = profile[lo:hi, :].sum(axis=0)
     col_thresh = max(cols.max() * 0.02, 0.5)
     xs = np.nonzero(cols >= col_thresh)[0]
     if len(xs):
-        x0 = max(int(xs[0]) - 12, 0)
-        x1 = min(int(xs[-1]) + 13, width)
-    else:
-        x0, x1 = 0, width
-
-    region = cuelib.normalize_region((x0, y0, x1 - x0, y1 - y0),
-                                     width, height)
-    if region[3] < 12:
-        # The chosen band was tens of pixels tall; if the box that came out
-        # is not, the arithmetic above lost track of the frame height.
-        raise RuntimeError(
-            "band detection produced a %dpx-tall region from a %dpx band "
-            "-- refusing to return it" % (region[3], hi - lo))
-    return region, ranked
+        return max(int(xs[0]) - 12, 0), min(int(xs[-1]) + 13, width)
+    return 0, width
 
 
 def merge_bands(bands, gap):
@@ -196,6 +207,18 @@ def split_lines(video_path, region, spec, samples=80, min_gap=10, pad=10):
     fraction of the peak row's ink, and clipping those rows away hands the
     recogniser decapitated glyphs.
     """
+    rows = _mean_row_ink(video_path, region, spec, samples)
+    threshold = max(rows.max() * 0.03, 0.3)
+    runs = merge_bands(_ink_runs(rows, threshold), gap=min_gap)
+    kept = []
+    for lo, hi in runs:
+        if hi - lo >= 12:
+            kept.append((lo, hi))
+    return _pad_lines(kept, pad, region[3]), rows.tolist()
+
+
+def _mean_row_ink(video_path, region, spec, samples):
+    """Per-row ink, averaged over sampled stable frames."""
     info = probe_or_die(video_path)
     step = max(info["duration"] / float(samples), 0.5)
     rows = np.zeros(region[3], dtype=np.float64)
@@ -214,29 +237,14 @@ def split_lines(video_path, region, spec, samples=80, min_gap=10, pad=10):
         taken += 1
     if taken:
         rows /= taken
+    return rows
 
-    threshold = max(rows.max() * 0.03, 0.3)
-    runs = []
-    start = None
-    for y in range(len(rows)):
-        if rows[y] >= threshold and start is None:
-            start = y
-        elif rows[y] < threshold and start is not None:
-            runs.append((start, y))
-            start = None
-    if start is not None:
-        runs.append((start, len(rows)))
 
-    runs = merge_bands(runs, gap=min_gap)
-    kept = []
-    for lo, hi in runs:
-        if hi - lo >= 12:
-            kept.append((lo, hi))
-
-    # Pad to recover ascenders and descenders, but never by more than half
-    # the gap to the neighbouring line -- otherwise video A's stacked Amis
-    # and Chinese lines grow into each other and merge back into one band,
-    # and they need separate OCR languages.
+def _pad_lines(kept, pad, limit):
+    """Pad to recover ascenders and descenders, but never by more than
+    half the gap to the neighbouring line -- otherwise video A's stacked
+    Amis and Chinese lines grow into each other and merge back into one
+    band, and they need separate OCR languages."""
     padded = []
     for index, (lo, hi) in enumerate(kept):
         up = pad
@@ -245,8 +253,8 @@ def split_lines(video_path, region, spec, samples=80, min_gap=10, pad=10):
             up = min(pad, max((lo - kept[index - 1][1]) // 2, 0))
         if index + 1 < len(kept):
             down = min(pad, max((kept[index + 1][0] - hi) // 2, 0))
-        padded.append((max(lo - up, 0), min(hi + down, region[3])))
-    return padded, rows.tolist()
+        padded.append((max(lo - up, 0), min(hi + down, limit)))
+    return padded
 
 
 # ------------------------------------------------------------- ffmpeg io

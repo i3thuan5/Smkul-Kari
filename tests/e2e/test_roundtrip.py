@@ -1,7 +1,7 @@
 """Full round trip: burn a known SRT in, pull it back out, compare.
 
 Needs ffmpeg (with libass), tesseract + chi_tra, and a CJK font -- run via
-`tox -e subtitle-e2e`. The unit envs never touch this directory.
+`tox -e e2etest`. The unit envs never touch this directory.
 """
 import os
 import shutil

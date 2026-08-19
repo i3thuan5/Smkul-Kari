@@ -85,7 +85,24 @@ def import_tsv(workdir, source, replace=False):
 
     with open(source, "r", encoding="utf-8") as handle:
         parsed, errors = parse_transcript_tsv(handle.read(), default_line)
+    _collect_row_errors(parsed, valid, known, errors)
+    if errors:
+        for message in errors[:20]:
+            sys.stderr.write("  %s\n" % message)
+        raise SystemExit("%d problem(s) in %s; nothing imported"
+                         % (len(errors), source))
 
+    existing = _merge_transcripts(workdir, parsed, replace)
+    _mark_verified(workdir, parsed)
+
+    covered = 0
+    for cue in manifest["cues"]:
+        if existing.get(str(cue["index"])):
+            covered += 1
+    return len(parsed), covered, len(manifest["cues"])
+
+
+def _collect_row_errors(parsed, valid, known, errors):
     for key in sorted(parsed):
         if key not in valid:
             errors.append("cue %s is not in cues.json" % key)
@@ -93,12 +110,9 @@ def import_tsv(workdir, source, replace=False):
             if name not in known:
                 errors.append("cue %s: unknown line name %r (known: %s)"
                               % (key, name, ", ".join(sorted(known))))
-    if errors:
-        for message in errors[:20]:
-            sys.stderr.write("  %s\n" % message)
-        raise SystemExit("%d problem(s) in %s; nothing imported"
-                         % (len(errors), source))
 
+
+def _merge_transcripts(workdir, parsed, replace):
     path = os.path.join(workdir, "transcripts.json")
     existing = {}
     if os.path.exists(path) and not replace:
@@ -108,20 +122,18 @@ def import_tsv(workdir, source, replace=False):
         existing.setdefault(key, {}).update(parsed[key])
     with open(path, "w", encoding="utf-8") as handle:
         json.dump(existing, handle, ensure_ascii=False, indent=1)
+    return existing
 
-    # Record which rows a human actually looked at. export-gt trusts only
-    # these, so a recogniser's own mistakes can never become training labels.
+
+def _mark_verified(workdir, parsed):
+    """Record which rows a human actually looked at. export-gt trusts
+    only these, so a recogniser's own mistakes can never become training
+    labels."""
     verified = load_verified(workdir)
     for key in parsed:
         for name in parsed[key]:
             verified.setdefault(key, {})[name] = True
     save_verified(workdir, verified)
-
-    covered = 0
-    for cue in manifest["cues"]:
-        if existing.get(str(cue["index"])):
-            covered += 1
-    return len(parsed), covered, len(manifest["cues"])
 
 
 def load_verified(workdir):

@@ -15,7 +15,7 @@
 只列到資料夾；檔案層級各見 [scripts/README.md](scripts/README.md)、
 [tests/README.md](tests/README.md)、[Kari-SRT/README.md](Kari-SRT/README.md)。
 
-```
+```text
 scripts/                 程式（照共用性分 package）
 ├── ocr/                     影像側引擎（燒印字幕抽取）
 ├── srtlib/                  兩側共用：SRT 格式與組裝鏈（同軸保證的心臟）
@@ -52,7 +52,7 @@ Kari-SRT/                資料正本（submodule；語料 → 技術 → 編號
 
 ```bash
 tox -e subtitle-rebuild   # 離線重建全部交付 SRT、逐 byte 比對
-tox -e subtitle           # 單元測試（tests/，不含 e2e）
+tox -e unittest           # 單元測試（tests/，不含 e2e）
 tox -e flake8
 ```
 

@@ -104,13 +104,13 @@ ILRDF ê族語模型、ai-labs MT 服務、Claude 攏過；**vosk ê中文模型
 - 每擺程式修改完，ài佇本機走 `tox -e subtitle-rebuild`——對 Kari-SRT
   ê資料離線重建全部交付SRT、逐byte比對。這條**無入CI**（Kari-SRT
   是私人repo，CI掠袂著submodule），所以本機這步是唯一ê把關。
-- 順紲走 `tox -e flake8` 佮 `tox -e subtitle`（單元測試）。
+- 順紲走 `tox -e flake8` 佮 `tox -e unittest`（單元測試）。
 - `tox` 若無佇 PATH（devcontainer 重建了後定定按呢），直接用 `.tox/` 內底
   ê venv，效果相仝：
 
   ```bash
   .tox/subtitle-rebuild/bin/python -m scripts.news.rebuild --verify
-  .tox/subtitle/bin/python -m unittest discover -s tests/<pkg> -t .
+  .tox/unittest/bin/python -m unittest discover -s tests/<pkg> -t .
   .tox/flake8/bin/flake8 . --count
   ```
 

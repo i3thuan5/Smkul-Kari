@@ -101,6 +101,36 @@ def clean_text(text, line):
     return out
 
 
+def _claude_read_line(client, workdir, cue, line, model):
+    """One strip through Claude vision; None when there is no image."""
+    import base64
+    rel = cue["images"].get(line["name"])
+    if not rel:
+        return None
+    with open(os.path.join(workdir, rel), "rb") as handle:
+        blob = base64.standard_b64encode(handle.read()).decode()
+    prompt = line.get("prompt") or default_prompt(line)
+    message = client.messages.create(
+        model=model,
+        max_tokens=400,
+        messages=[{
+            "role": "user",
+            "content": [
+                {"type": "image", "source": {
+                    "type": "base64",
+                    "media_type": "image/png",
+                    "data": blob}},
+                {"type": "text", "text": prompt},
+            ],
+        }],
+    )
+    parts = []
+    for block in message.content:
+        if block.type == "text":
+            parts.append(block.text)
+    return clean_text("".join(parts).strip(), line)
+
+
 def ocr_claude_api(workdir, manifest, args):
     """Recognise strips with Claude vision through the Anthropic API.
 
@@ -113,7 +143,6 @@ def ocr_claude_api(workdir, manifest, args):
         raise SystemExit(
             "claude-api engine needs the `anthropic` package: "
             "pip install anthropic")
-    import base64
 
     if not os.environ.get("ANTHROPIC_API_KEY"):
         raise SystemExit("set ANTHROPIC_API_KEY to use --engine claude-api")
@@ -124,31 +153,9 @@ def ocr_claude_api(workdir, manifest, args):
     for position, cue in enumerate(manifest["cues"]):
         got = {}
         for line in manifest["lines"]:
-            rel = cue["images"].get(line["name"])
-            if not rel:
-                continue
-            with open(os.path.join(workdir, rel), "rb") as handle:
-                blob = base64.standard_b64encode(handle.read()).decode()
-            prompt = line.get("prompt") or default_prompt(line)
-            message = client.messages.create(
-                model=args.model,
-                max_tokens=400,
-                messages=[{
-                    "role": "user",
-                    "content": [
-                        {"type": "image", "source": {
-                            "type": "base64",
-                            "media_type": "image/png",
-                            "data": blob}},
-                        {"type": "text", "text": prompt},
-                    ],
-                }],
-            )
-            parts = []
-            for block in message.content:
-                if block.type == "text":
-                    parts.append(block.text)
-            got[line["name"]] = clean_text("".join(parts).strip(), line)
+            text = _claude_read_line(client, workdir, cue, line, args.model)
+            if text is not None:
+                got[line["name"]] = text
         results[str(cue["index"])] = got
         if args.progress and position % 10 == 0:
             sys.stderr.write("\r  ocr %d/%d" % (position, total))
