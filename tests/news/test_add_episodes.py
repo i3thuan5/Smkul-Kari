@@ -47,6 +47,19 @@ class TestEntry(unittest.TestCase):
         self.assertIn("catalogue", problem)
 
 
+# 一筆完整的 inventory 條目：load_inventory 會擋掉缺欄位的，
+# 所以 fixture 也要是真的形狀
+INVENTORY_ROW = {
+    "slug": "2021_038_2021-02-07_晚間_Pinuyumayan_卑南",
+    "srt_name": "20210207_038_晚間_Pinuyumayan_卑南",
+    "video": "ilrdf-corpus/2月/21NL004_38晚間族語新聞.mxf",
+    "truncated": "", "文稿位置": "", "節目名稱": "晚間族語新聞",
+    "年度": "2021", "集數": "38", "播出日期": "2021-02-07",
+    "播出時段": "晚間", "族語別(英)": "Pinuyumayan",
+    "族語別(中)": "卑南",
+}
+
+
 class TestMerge(unittest.TestCase):
     def _inventory(self, entries):
         tmp = tempfile.TemporaryDirectory()
@@ -70,19 +83,14 @@ class TestMerge(unittest.TestCase):
         self.assertEqual((replaced, skipped, errors), ([], [], []))
 
     def test_finished_episode_is_left_alone(self):
-        old = {"slug": "2021_038_2021-02-07_晚間_Pinuyumayan_卑南",
-               "srt_name": "20210207_038_晚間_Pinuyumayan_卑南",
-               "truncated": ""}
+        old = dict(INVENTORY_ROW, truncated="")
         entries, added, replaced, skipped, _ = self._add([old])
         self.assertEqual(entries, [old])
         self.assertEqual((added, replaced), ([], []))
         self.assertEqual(len(skipped), 1)
 
     def test_truncated_episode_is_replaced_by_the_complete_source(self):
-        old = {"slug": "2021_038_2021-02-07_晚間_Pinuyumayan_卑南",
-               "srt_name": "20210207_038_晚間_Pinuyumayan_卑南",
-               "video": "ilrdf-corpus/2月/21NL004_38晚間族語新聞.mxf",
-               "truncated": "上傳不完整"}
+        old = dict(INVENTORY_ROW, truncated="上傳不完整")
         entries, added, replaced, skipped, _ = self._add([old])
         self.assertEqual(len(entries), 1)
         self.assertEqual(entries[0]["truncated"], "")

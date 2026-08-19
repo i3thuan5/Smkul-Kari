@@ -96,7 +96,11 @@ if __name__ == "__main__":
 
 class TestNameGuardWiring(unittest.TestCase):
     def test_path_escaping_srt_name_dies_before_touching_anything(self):
-        # 帶路徑成分的參數要在格式驗證就擋下，
-        # 不是走到 inventory 查無此集才失敗
-        with self.assertRaisesRegex(SystemExit, "格式"):
+        # 帶路徑成分的參數在入口就擋下，不是走到 inventory 查無此集
+        # 才失敗；訊息要指名是路徑成分，毋是含含糊糊講格式不對
+        with self.assertRaisesRegex(SystemExit, "帶路徑成分"):
             asrmt_run.main(["../../home/somebody/.sftp-pass"])
+
+    def test_a_wrong_shaped_name_still_reports_the_format(self):
+        with self.assertRaisesRegex(SystemExit, "格式"):
+            asrmt_run.main(["2021_32_晚間_Amis_阿美"])

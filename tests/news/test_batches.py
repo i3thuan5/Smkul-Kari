@@ -52,8 +52,13 @@ class TestSrtNameOf(unittest.TestCase):
     order, so a name derived from it lands the reading where nothing reads
     it -- and the only symptom is an episode that assembles empty."""
 
+    # 完整形狀：load_inventory 會擋掉缺欄位的條目
     ENTRY = {"slug": "2021_041_2021-02-10_午間_Cou_鄒",
-             "srt_name": "20210210_041_午間_Cou_鄒"}
+             "srt_name": "20210210_041_午間_Cou_鄒",
+             "video": "ilrdf-corpus/族語新聞/21NL003_41午間族語新聞.mp4",
+             "truncated": "", "文稿位置": "", "節目名稱": "午間族語新聞",
+             "年度": "2021", "集數": "41", "播出日期": "2021-02-10",
+             "播出時段": "午間", "族語別(英)": "Cou", "族語別(中)": "鄒"}
 
     def _inventory(self, entries):
         tmp = tempfile.TemporaryDirectory()

@@ -9,6 +9,7 @@ validation -- facts neither side owns. Corpus-specific paths (the store's
 stage folders, the inventory, the catalogue) stay in `scripts.news.paths`.
 """
 import os
+import re
 import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -27,6 +28,9 @@ KARI = os.path.join(ROOT, "Kari-SRT")
 ALLOWED_ROOTS = (KITHANN, KARI, tempfile.gettempdir())
 
 
+_PATH_COMPONENTS = re.compile(r"[/\\]|\.\.")
+
+
 def check_name(name, kind="name"):
     """Refuse a name-like CLI argument that carries path components.
 
@@ -34,14 +38,23 @@ def check_name(name, kind="name"):
     holding a separator or ".." escapes the base and turns a mistyped (or
     injected) argument into an arbitrary read or write. Validate at the
     entry point, before the name reaches any os.path.join.
+
+    The stripped form is built first and then compared, rather than the
+    stripped form being returned: a name that needed stripping stops the
+    run. Silently rewriting one would be worse than the typo it came from
+    -- the inventory is read, edited and written back by `publish`,
+    `add_episodes` and `build_inventory`, so a quietly corrected name
+    would be written into the store as if it had always said that.
     """
-    ok = bool(name) and name != "."
-    for bad in ("/", "\\", ".."):
-        if bad in (name or ""):
-            ok = False
-    if not ok:
+    # None is what a hand-edited `"slug": null` in the inventory hands over;
+    # it is a missing name, not a name carrying path components, and the
+    # message has to say which so the file gets looked at.
+    if not name:
+        raise SystemExit("%s 無值" % kind)
+    cleaned = _PATH_COMPONENTS.sub("", name)
+    if cleaned != name or name == ".":
         raise SystemExit("%s %r 帶路徑成分，拒絕" % (kind, name))
-    return name
+    return cleaned
 
 
 def check_under(path, kind="path", roots=None):

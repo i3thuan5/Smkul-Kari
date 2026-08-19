@@ -75,6 +75,22 @@ class TestNameGuards(unittest.TestCase):
         name = "20210304_063_晚間_Hla'alua_拉阿魯哇"
         self.assertEqual(paths.check_srt_name(name), name)
 
+    def test_a_missing_name_says_so_instead_of_blaming_path_components(self):
+        # None 是 inventory 寫成 "slug": null 時會拿到的；它並沒有「帶
+        # 路徑成分」，訊息要講對事情才找得到問題。
+        for empty in (None, ""):
+            with self.assertRaisesRegex(SystemExit, "無值"):
+                paths.check_name(empty, "slug")
+        with self.assertRaisesRegex(SystemExit, "無值"):
+            paths.check_srt_name(None)
+
+    def test_a_name_is_never_silently_rewritten(self):
+        # 清乾淨後若跟原本不同，就是中止而不是回傳清過的版本：
+        # inventory 讀進來會被 publish／add_episodes 寫回去，靜默改寫
+        # 等於改掉資料正本。
+        with self.assertRaises(SystemExit):
+            paths.check_name("2021_041_午間/../別集", "slug")
+
     def test_separators_and_dots_are_refused(self):
         for bad in ("a/b", "a\\b", "..", "x/../y", "", "."):
             with self.assertRaises(SystemExit):
@@ -157,7 +173,12 @@ class TestLoadInventory(unittest.TestCase):
 
     def _entry(self, **over):
         entry = {"slug": "2021_032_2021-02-01_午間_Atayal_泰雅",
-                 "srt_name": "20210201_032_午間_Atayal_泰雅"}
+                 "srt_name": "20210201_032_午間_Atayal_泰雅",
+                 "video": "ilrdf-corpus/2月/x.mxf", "truncated": "",
+                 "文稿位置": "", "節目名稱": "午間族語新聞", "年度": "2021",
+                 "集數": "32", "播出日期": "2021-02-01",
+                 "播出時段": "午間", "族語別(英)": "Atayal",
+                 "族語別(中)": "泰雅"}
         entry.update(over)
         return entry
 
@@ -175,6 +196,22 @@ class TestLoadInventory(unittest.TestCase):
         path = self._write([self._entry(srt_name="../../etc/passwd")])
         with self.assertRaises(SystemExit):
             paths.load_inventory(path)
+
+    def test_a_missing_required_field_is_named(self):
+        entry = self._entry()
+        del entry["播出時段"]
+        with self.assertRaisesRegex(SystemExit, "播出時段"):
+            paths.load_inventory(self._write([entry]))
+
+    def test_optional_fields_survive(self):
+        # pending 只在批次進行中存在、publish 完成時刪掉；partial 會併進
+        # smkul.csv 的狀態欄。讀進來若把它們丟掉，寫回去就永久消失。
+        entry = self._entry(pending="尚未切cue", partial="來源只有前半",
+                            file="20NL003_32午間族語新聞.mxf")
+        got = paths.load_inventory(self._write([entry]))
+        self.assertEqual(got[0]["pending"], "尚未切cue")
+        self.assertEqual(got[0]["partial"], "來源只有前半")
+        self.assertEqual(got[0]["file"], "20NL003_32午間族語新聞.mxf")
 
     def test_every_entry_is_checked_not_just_the_first(self):
         path = self._write([self._entry(),
