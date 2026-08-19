@@ -464,7 +464,8 @@ def main():
     ap = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--out", required=True, help="scratch directory")
+    ap.add_argument("--out", required=True,
+                    help="scratch directory (must live under kithann/)")
     ap.add_argument("--start", type=float, default=START)
     ap.add_argument("--duration", type=float, default=DURATION)
     # One value per flag, repeatable. nargs="*" would swallow the subcommand:
@@ -496,6 +497,7 @@ def main():
     five.set_defaults(func=cmd_score)
 
     args = ap.parse_args()
+    paths.check_under(args.out, "--out", roots=[paths.KITHANN])
     args.func(args)
     return 0
 

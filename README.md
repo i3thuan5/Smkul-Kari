@@ -51,8 +51,8 @@ Kari-SRT/                資料正本（submodule；語料 → 技術 → 編號
 ## 驗收（每次改程式後）
 
 ```bash
-tox -e subtitle-rebuild   # 離線重建全部交付 SRT、逐 byte 比對
-tox -e unittest           # 單元測試（tests/，不含 e2e）
+tox -e rebuild    # 離線重建全部交付 SRT、逐 byte 比對
+tox -e unittest   # 單元測試（tests/，不含 e2e）
 tox -e flake8
 ```
 

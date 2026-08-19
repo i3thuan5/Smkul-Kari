@@ -8,7 +8,7 @@ Process one month of 原視族語新聞 from the SFTP server into SRT subtitles.
 Month to do: **$ARGUMENTS**
 
 If no month was given, list what is on the server and ask which one:
-`scripts/news/sftp.sh 'ls /docker/ilrdf-corpus/族語新聞/110.1-110.10'`
+`scripts/news/sftp.sh ls /docker/ilrdf-corpus/族語新聞/110.1-110.10`
 
 Read `scripts/news/README.md` first — it holds the measured numbers and the
 traps. The short version of the procedure:

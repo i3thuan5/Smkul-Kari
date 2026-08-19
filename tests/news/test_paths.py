@@ -1,7 +1,8 @@
-"""paths: ROOT derivation, the ILRDF_CORPUS override, the --var CLI."""
+"""paths: ROOT derivation, the --var CLI, and the argument guards."""
 import os
 import subprocess
 import sys
+import tempfile
 import unittest
 
 from scripts.news import paths
@@ -14,7 +15,7 @@ class TestConstants(unittest.TestCase):
                                                    "news")))
         self.assertTrue(os.path.isfile(os.path.join(paths.ROOT, "tox.ini")))
 
-    def test_everything_but_corpus_lives_under_root(self):
+    def test_every_path_lives_under_root(self):
         for value in (paths.WORK, paths.LOGS, paths.KARI, paths.SRT_DIR,
                       paths.ENGINE_PRESETS, paths.INVENTORY,
                       paths.CATALOGUE):
@@ -42,7 +43,7 @@ class TestConstants(unittest.TestCase):
         self.assertEqual(paths.ASR_DIR, os.path.join(news, "2-asr"))
 
 
-class TestCorpusOverride(unittest.TestCase):
+class TestVarCli(unittest.TestCase):
     def _var(self, name, env_extra):
         env = dict(os.environ)
         env.update(env_extra)
@@ -51,18 +52,10 @@ class TestCorpusOverride(unittest.TestCase):
             capture_output=True, text=True, cwd=paths.ROOT, env=env)
         return proc
 
-    def test_ilrdf_corpus_env_wins(self):
-        proc = self._var("CORPUS", {"ILRDF_CORPUS": "/mnt/elsewhere"})
-        self.assertEqual(proc.stdout.strip(), "/mnt/elsewhere")
-
     def test_unknown_var_fails_and_lists_the_known_ones(self):
         proc = self._var("NO_SUCH_PATH", {})
         self.assertNotEqual(proc.returncode, 0)
         self.assertIn("WORK", proc.stderr)
-
-
-if __name__ == "__main__":
-    unittest.main()
 
 
 class TestNameGuards(unittest.TestCase):
@@ -91,3 +84,59 @@ class TestNameGuards(unittest.TestCase):
                     "20210201_032_晚間/../x", "/etc/passwd"):
             with self.assertRaises(SystemExit):
                 paths.check_srt_name(bad)
+
+    def test_only_ascii_digits_count_as_the_date(self):
+        # Python 的 \d 預設連 Unicode 數字都吃（٢٠٢١、２０２１），那些
+        # 不是集數命名用的字元；日期與集數只認 ASCII 0-9。
+        for bad in ("٢٠٢١٠٢٠١_٠٣٢_晚間_Amis_阿美",
+                    "２０２１０２０１_０３２_晚間_Amis_阿美"):
+            with self.assertRaises(SystemExit):
+                paths.check_srt_name(bad)
+
+
+class TestPathGuard(unittest.TestCase):
+    """check_under：路徑類 CLI 參數只准落在資料資料夾裡。
+
+    白名單是 kithann/（工作區與快取）、Kari-SRT/（資料正本）、系統暫存
+    目錄（rebuild 與 asrmt 在那裡合成工作目錄）。repo 底下的其他地方
+    ——程式碼、openspec——不是資料，不准當輸出入路徑。
+    """
+
+    def test_the_three_data_roots_pass(self):
+        for good in (paths.WORK, paths.STAGE, paths.SRT_DIR, paths.ASR_DIR):
+            self.assertEqual(paths.check_under(good), good)
+
+    def test_tempdir_passes_because_rebuild_synthesises_work_dirs_there(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(paths.check_under(tmp), tmp)
+
+    def test_elsewhere_in_the_repo_is_refused(self):
+        # 「不是 repo 底下都可以讀寫」：程式碼與規格不是資料
+        for bad in (os.path.join(paths.ROOT, "scripts"),
+                    os.path.join(paths.ROOT, "openspec"),
+                    paths.ROOT):
+            with self.assertRaises(SystemExit):
+                paths.check_under(bad)
+
+    def test_outside_the_repo_is_refused(self):
+        for bad in ("/etc/passwd", os.path.expanduser("~/.ssh/id_rsa")):
+            with self.assertRaises(SystemExit):
+                paths.check_under(bad)
+
+    def test_traversal_out_of_a_data_folder_is_refused(self):
+        escape = os.path.join(paths.WORK, "..", "..", "..", "..", "etc")
+        with self.assertRaises(SystemExit):
+            paths.check_under(escape)
+
+    def test_a_sibling_sharing_the_prefix_is_refused(self):
+        # kithann-secret 並不在 kithann/ 底下——前綴比對一定要帶分隔符
+        with self.assertRaises(SystemExit):
+            paths.check_under(paths.KITHANN + "-secret")
+
+    def test_a_call_site_may_name_its_own_roots(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(paths.check_under(tmp, roots=[tmp]), tmp)
+
+
+if __name__ == "__main__":
+    unittest.main()

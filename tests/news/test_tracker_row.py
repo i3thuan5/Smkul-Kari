@@ -57,6 +57,14 @@ class TestTrackerRow(unittest.TestCase):
         row = tracker.tracker_row(dict(ENTRY), DONE)
         self.assertEqual(row["影片檔案位置"], ENTRY["video"])
 
+    def test_an_absolute_video_path_is_refused(self):
+        # inventory 存的是「相對 corpus 根」的路徑。絕對路徑寫進交付表
+        # 會讓表變成這台機器專屬的，別台機器 rebuild 不出同樣的內容。
+        entry = dict(ENTRY)
+        entry["video"] = "/home/vscode/ilrdf-corpus/2月/x.mxf"
+        with self.assertRaises(SystemExit):
+            tracker.tracker_row(entry, DONE)
+
 
 if __name__ == "__main__":
     unittest.main()

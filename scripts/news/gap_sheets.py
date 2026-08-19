@@ -78,7 +78,7 @@ def main(argv=None):
     for entry in entries:
         if entry["truncated"]:
             continue
-        slug = entry["slug"]
+        slug = paths.check_name(entry["slug"], "slug")
         if args.slugs and slug not in args.slugs:
             continue
         if not os.path.exists(os.path.join(WORK, slug + WORK_EXT, CUES)):

@@ -31,6 +31,7 @@ import os
 import subprocess
 import sys
 
+from scripts.news import paths
 from scripts.ocr import cuelib
 
 FPS = 25.0
@@ -293,15 +294,14 @@ def refine_episode(video, cues_path, dry_run=False):
         for line in problems:
             print("FAIL:", line)
         raise SystemExit(1)
-    if dry_run:
-        return stats
 
-    for i, cue in enumerate(cues):
-        cue["start"], cue["end"] = result[i]
-    manifest["refined"] = True
-    manifest["duration"] = round(duration, 3)
-    with open(cues_path, "w", encoding="utf-8") as handle:
-        json.dump(manifest, handle, ensure_ascii=False)
+    if not dry_run:
+        for i, cue in enumerate(cues):
+            cue["start"], cue["end"] = result[i]
+        manifest["refined"] = True
+        manifest["duration"] = round(duration, 3)
+        with open(cues_path, "w", encoding="utf-8") as handle:
+            json.dump(manifest, handle, ensure_ascii=False)
     return stats
 
 
@@ -312,6 +312,9 @@ def main():
     ap.add_argument("--dry-run", action="store_true",
                     help="report the shifts, write nothing")
     args = ap.parse_args()
+    # cues.json 是就地改寫的，指錯目標就毀掉一集的時間軸
+    paths.check_under(args.video, "video")
+    paths.check_under(args.cues, "cues")
     stats = refine_episode(args.video, args.cues, dry_run=args.dry_run)
     print(json.dumps(stats, ensure_ascii=False))
 

@@ -11,7 +11,7 @@
 - **`Kari-SRT/` submodule**：資料正本——交付 SRT、`smkul.csv`、每集時間軸
   `cues/`、視覺逐字稿 `vision/`、`vision-rtf/`。僅靠主 repo + Kari-SRT
   即可離線重建全部 SRT：`python3 -m scripts.news.rebuild --verify`
-  （或 `tox -e subtitle-rebuild`）。**每次程式修改完在本機跑一次**——
+  （或 `tox -e rebuild`）。**每次程式修改完在本機跑一次**——
   Kari-SRT 是私有 repo，CI 抓不到 submodule，這條不進 CI。
 - **`kithann/`**（gitignore）：來源資料與可重生快取（work dir、log）。
 
@@ -141,8 +141,8 @@ python3 -m scripts.news.rebuild --verify
 密碼在 `.sftp-pass`（已 gitignore），用 `scripts/news/sftp.sh` 包起來：
 
 ```bash
-scripts/news/sftp.sh 'ls -l /docker/ilrdf-corpus'
-scripts/news/sftp.sh 'get "/docker/…/魯凱語-霧台20210101S1100.mp4" /tmp/x.mp4'
+scripts/news/sftp.sh ls /docker/ilrdf-corpus
+scripts/news/sftp.sh get '/docker/…/魯凱語-霧台20210101S1100.mp4' /tmp/x.mp4
 ```
 
 密碼從頭到尾只以**檔案**存在，不進指令列、不進 `ps`、不進對話紀錄

@@ -32,8 +32,14 @@ from scripts.news import paths
 ETH_EN = "族語別(英)"
 ETH_ZH = "族語別(中)"
 
-CORPUS = paths.CORPUS
+# The local mount the February masters were scanned from. Nothing else
+# in the pipeline reads it any more -- episodes arrive over SFTP and
+# `add_episodes` registers them from the file name alone.
+CORPUS = os.environ.get("ILRDF_CORPUS", "/home/vscode/ilrdf-corpus")
 VIDEO_DIR = os.path.join(CORPUS, "2月")
+# ...but what gets stored is always corpus-root-relative, so the
+# inventory and the delivered table stay machine-independent.
+VIDEO_PREFIX = "ilrdf-corpus/2月/"
 CATALOGUE = paths.CATALOGUE
 
 # Files whose byte count is far below the constant 6.30 MB/s of a complete
@@ -154,7 +160,7 @@ def build():
             warnings.append(warning)
         entries.append({
             "file": name,
-            "video": os.path.join(VIDEO_DIR, name),
+            "video": VIDEO_PREFIX + name,
             "slug": slugify(row, episode),
             "srt_name": srt_name(row, episode),
             "節目名稱": row["節目名稱"],

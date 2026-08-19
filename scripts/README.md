@@ -3,6 +3,17 @@
 資料夾定位見根 README；這裡列到檔案。原則：引擎 package 語料無關、
 編排歸 `news/`、兩側共用的東西住 `srtlib/`。
 
+## datadirs.py——repo 版面與參數保護（頂層，兩側共用）
+
+`ROOT`／`kithann/`／`Kari-SRT/` 三個位置，加上 CLI 參數的保護：
+`check_name`（名字不得帶路徑成分）、`check_under`（路徑只准落在
+`kithann/`、`Kari-SRT/`、系統暫存目錄——**不是** repo 底下都可以，
+`scripts/` 與 `openspec/` 是程式碼與規格，不是資料）。
+
+放頂層是因為 `ocr/` 刻意不依賴 `news/`：這裡放的是 repo 版面與參數
+驗證，兩邊都不擁有；語料專屬的路徑（stage、inventory、catalogue）
+留在 `news/paths.py`。
+
 ## ocr/——影像側引擎（燒印字幕抽取）
 
 | 檔 | 做什麼 |
@@ -43,12 +54,12 @@
 
 | 檔 | 做什麼 |
 |---|---|
-| `paths.py` | 全部路徑的單一出處（`--var` 供 shell 取值） |
+| `paths.py` | 語料路徑的單一出處（`--var` 供 shell 取值；版面與保護轉出自 `scripts/datadirs.py`） |
 | `asrmt_batch.py` | 語音側整批：逐集 抓音檔→解碼→投影→raw→刪音檔 |
 | `asrmt_run.py` | 語音側單集步驟（預設 words→entries→raw；align 延伸 `--step` 指名） |
 | `anchors_ami.json` | 阿美語錨點表（數詞＋借詞專名，拼法對照模型 lexicon） |
 | `build_inventory.py`／`add_episodes.py`／`resolve_slug.py` | 集數登記與命名 |
-| `fetch_sftp.sh`／`run_cues.sh`／`refine_fetch.sh`／`sftp.sh`／`sftp-askpass.sh` | 影像側抓檔與切 cue（密碼只以檔案存在） |
+| `fetch_sftp.sh`／`run_cues.sh`／`refine_fetch.sh`／`sftp.sh`／`sftp-askpass.sh` | 影像側抓檔與切 cue（密碼只以檔案存在；`sftp.sh` 收動詞＋獨立參數，路徑不進指令字串） |
 | `refine_cues.py`／`verify_band.py` | cue 邊界精修、字幕帶前驗 |
 | `gap_sheets.py`／`batches.py`／`ingest.py` | 視覺辨識批次的出題與收卷 |
 | `make_srt.py`／`make_all.py`／`publish.py`／`tracker.py`／`rebuild.py` | 組裝、定版、進度表、離線重建驗證 |

@@ -52,7 +52,7 @@ mkdir -p "$WORK" "$LOG" "$STAGE"
 # sftp prints non-ASCII file names as octal escapes, so decode them before
 # anything tries to use them as paths.
 listing=$(mktemp); trap 'rm -f "$listing"' EXIT
-"$HERE/sftp.sh" "ls -l \"$REMOTE_ROOT/$REMOTE_DIR\"" 2>/dev/null \
+"$HERE/sftp.sh" ls "$REMOTE_ROOT/$REMOTE_DIR" 2>/dev/null \
   | "$PY" -c '
 import sys
 def dec(s):
@@ -119,7 +119,7 @@ while IFS=$'\t' read -r size name <&3; do
         echo "$(date +%H:%M:%S) reuse $slug (already staged)"
     else
         echo "$(date +%H:%M:%S) get   $slug  ($(( size / 1000000 )) MB)"
-        if ! "$HERE/sftp.sh" "get \"$REMOTE_ROOT/$REMOTE_DIR/$name\" \"$local_file\"" \
+        if ! "$HERE/sftp.sh" get "$REMOTE_ROOT/$REMOTE_DIR/$name" "$local_file" \
              > "$LOG/$slug.get.log" 2>&1; then
             echo "$(date +%H:%M:%S) FAIL  download $slug"; rm -f "$local_file"; continue
         fi

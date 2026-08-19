@@ -504,8 +504,9 @@ def _ckip_numbers(srt_name, entries):
             if arabic:
                 values.append(int(arabic.group(1).replace(",", "")))
                 continue
-            # 單字中文數詞（斷成「新聞」「一」「開始」時的「一」）
-            # 太歧義，不作錨點；兩字以上（一百二十）才收
+            # 單字的中文數詞太歧義，不作錨點：斷詞從新聞一開始這種
+            # 句子切出來的孤字一，多半不是數量。兩字以上才收，
+            # 像是一百二十
             if len(token) >= 2 and all(ch in zh_digits for ch in token):
                 values.append(detect._zh_number(token))
         out[row["index"]] = values

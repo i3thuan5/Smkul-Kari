@@ -14,7 +14,8 @@ tests/
 ├── asrmt/        fixtures.py  test_project  test_bisrt
 │   └── align/    test_mtclient  test_claude_mt  test_dpalign  test_render
 │                 test_detect_blocks  test_detect_scores  test_detect_classify
-├── news/         編排層測試（asrmt_run、smkul、inventory、tracker、refine…）
+├── news/         編排層測試（asrmt_run、smkul、inventory、tracker、refine、
+│                 paths 保護、sftp.sh 介面…）
 └── e2e/          fixture.py  test_roundtrip（合成影片端對端，tox -e e2etest）
 ```
 
@@ -75,6 +76,7 @@ tests/
 | subtitle-text-source | 文稿不供字／中間產物不擋交付 | `news/test_make_one.py`、`news/test_make_srt.py` |
 | asr-bilingual-srt | 音檔時長不符指名中止／續跑跳過已完成步驟 | `news/test_asrmt_run.py` |
 | —（工作流防線） | 不覆蓋已校讀 work dir、批次 sheet 歸屬、TSV 整批拒收 | `news/test_gap_guard.py`、`news/test_batches.py`、`news/test_ingest.py` |
+| —（參數防線） | 名字不得帶路徑成分／路徑只准落在資料資料夾／sftp 路徑不得含引號換行 | `news/test_paths.py`、`news/test_sftp_cli.py` |
 
 ## 端對端（tests/e2e/）
 

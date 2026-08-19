@@ -23,6 +23,7 @@ import sys
 import numpy as np
 from PIL import Image
 
+from scripts import datadirs
 from scripts.ocr import transcripts
 from scripts.srtlib import assemble
 from scripts.ocr import cuelib
@@ -702,9 +703,19 @@ def add_cue_options(parser):
     parser.add_argument("--progress", action="store_true", default=True)
 
 
+# Path-shaped arguments across every subcommand. Checked in one place so a
+# new stage cannot quietly skip the guard; --presets is deliberately absent
+# (it names a file that ships with the code, not data).
+PATH_ARGS = ("video", "work", "out", "source")
+
+
 def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
+    for name in PATH_ARGS:
+        value = getattr(args, name, "")
+        if value:
+            datadirs.check_under(value, name)
     return args.func(args)
 
 

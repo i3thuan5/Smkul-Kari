@@ -22,6 +22,7 @@ import argparse
 import json
 import os
 
+from scripts.news import paths
 from scripts.srtlib import assemble
 from scripts.srtlib import srt
 
@@ -132,6 +133,8 @@ def main(argv=None):
     ap.add_argument("work")
     ap.add_argument("-o", "--out", required=True, help="SRT path")
     args = ap.parse_args(argv)
+    paths.check_under(args.work, "work")
+    paths.check_under(args.out, "-o/--out")
 
     qc = run(args.work, args.out)
     with open(os.path.splitext(args.out)[0] + ".qc.json", "w",

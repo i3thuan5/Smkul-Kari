@@ -60,11 +60,10 @@ import sys
 sys.path.insert(0, ".")
 from scripts.news import paths
 
-for entry in json.load(open(os.path.join(paths.KARI, "inventory.json"),
-                            encoding="utf-8")):
+for entry in json.load(open(paths.INVENTORY, encoding="utf-8")):
     if entry.get("pending") or entry["truncated"]:
         continue
-    cues_path = os.path.join(paths.KARI, "cues",
+    cues_path = os.path.join(paths.KARI_CUES,
                              entry["srt_name"] + ".json")
     manifest = json.load(open(cues_path, encoding="utf-8"))
     if manifest.get("refined"):
@@ -74,6 +73,11 @@ for entry in json.load(open(os.path.join(paths.KARI, "inventory.json"),
     if video.startswith("ilrdf-corpus/"):
         remote = video[len("ilrdf-corpus/"):]
     else:
+        remote = name
+    # 2 月那批在 inventory 記做捷徑 "2月/<檔名>"（那是它們以前掛在
+    # 本機的位置）；SFTP 上真正的目錄深一層，短的那個會 404。
+    # scripts/transcode/archive_batch.py 有同一份對應。
+    if remote.startswith("2月/") or "/" not in remote:
         remote = "族語新聞/110.1-110.10/2月原始mxf檔/" + name
     print("%s\t%s\t%s" % (entry["srt_name"], remote, name))
 EOF
@@ -94,7 +98,7 @@ while IFS=$'\t' read -r -u 3 srt_name remote name; do
         break
     fi
 
-    size=$("$HERE/sftp.sh" "ls -l \"$REMOTE_ROOT/$remote\"" 2>/dev/null \
+    size=$("$HERE/sftp.sh" ls "$REMOTE_ROOT/$remote" 2>/dev/null \
         | awk '/^-/{print $5; exit}')
     if [[ -z "$size" ]]; then
         echo "$(date +%H:%M:%S) FAIL  $srt_name: not found on SFTP"
@@ -107,7 +111,7 @@ while IFS=$'\t' read -r -u 3 srt_name remote name; do
         echo "$(date +%H:%M:%S) reuse $srt_name (already staged)"
     else
         echo "$(date +%H:%M:%S) get   $srt_name  ($(( size / 1000000 )) MB)"
-        if ! "$HERE/sftp.sh" "get \"$REMOTE_ROOT/$remote\" \"$local_file\"" \
+        if ! "$HERE/sftp.sh" get "$REMOTE_ROOT/$remote" "$local_file" \
              > "$LOG/$srt_name.refine-get.log" 2>&1; then
             echo "$(date +%H:%M:%S) FAIL  download $srt_name"
             rm -f "$local_file"; failed=$((failed + 1)); continue

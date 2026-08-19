@@ -37,8 +37,7 @@ def shard_ok(position, worker, total):
 def _fetch(remote, local):
     script = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                           "sftp.sh")
-    command = 'get "%s" "%s"' % (remote, local)
-    done = subprocess.run(["bash", script, command])
+    done = subprocess.run(["bash", script, "get", remote, local])
     if done.returncode or not os.path.exists(local):
         raise SystemExit("sftp fetch failed: %s" % remote)
 

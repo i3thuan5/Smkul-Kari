@@ -1,13 +1,23 @@
 #!/usr/bin/env python3
-"""Every path the news pipeline touches, in one place.
+"""Every path the news corpus touches, in one place.
 
-ROOT is derived from this file's location, so a clone works wherever it is
-checked out -- the previous layout had 17 hard-coded absolute paths pointing
-at a workspace name that no longer exists, and nothing failed until run time.
+Nothing here is absolute: every value is derived from ROOT, which
+`scripts.datadirs` derives from the checkout's own location, so a clone
+works wherever it sits -- the previous layout had 17 hard-coded absolute
+paths pointing at a workspace name that no longer exists, and nothing
+failed until run time.
 
-The corpus mount is the single deliberate exception: it lives outside the
-repo, so it is an absolute path, overridable with the ILRDF_CORPUS
-environment variable.
+The repo layout itself (ROOT, kithann/, Kari-SRT/) and the CLI argument
+guards live in `scripts.datadirs`, because the ocr engine needs them too
+and deliberately does not depend on this package; they are re-exported
+here so existing `paths.X` call sites keep working. What stays here is
+corpus-specific: which stage folder holds what.
+
+Everything is inside the checkout. The corpus mount used to be a
+deliberate exception; the pipeline no longer reads from it (episodes
+arrive over SFTP), so the only place that still names it is
+`build_inventory`, the one-off February scan, which keeps its own
+constant.
 
 Shell scripts read values through the CLI:
 
@@ -17,61 +27,49 @@ import argparse
 import os
 import re
 
+from scripts.datadirs import ALLOWED_ROOTS   # noqa: F401  (re-export)
+from scripts.datadirs import KARI
+from scripts.datadirs import KITHANN
+from scripts.datadirs import ROOT           # noqa: F401  (re-export)
+from scripts.datadirs import check_name
+from scripts.datadirs import check_under     # noqa: F401  (re-export)
+
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(os.path.dirname(HERE))
-
-
-def check_name(name, kind="name"):
-    """Refuse a name-like CLI argument that carries path components.
-
-    Work dirs and store files are all built as base folder + name; a name
-    holding a separator or ".." escapes the base and turns a mistyped (or
-    injected) argument into an arbitrary read or write. Validate at the
-    entry point, before the name reaches any os.path.join.
-    """
-    ok = bool(name) and name != "."
-    for bad in ("/", "\\", ".."):
-        if bad in (name or ""):
-            ok = False
-    if not ok:
-        raise SystemExit("%s %r 帶路徑成分，拒絕" % (kind, name))
-    return name
 
 
 def check_srt_name(name):
     """A valid episode key: <YYYYMMDD>_<NNN>_… and no path components."""
+    # [0-9] 是刻意的，莫改做 \d：Python 的 \d 預設連 Unicode 數字都食
+    # （٢٠٢١、２０２１），驗證會變較鬆。日期佮集數只認 ASCII 0-9。
     if not re.fullmatch(r"[0-9]{8}_[0-9]{3}_.+", name or ""):
         raise SystemExit(
             "srt_name %r 不符「<日期8碼>_<集數3碼>_…」格式" % name)
     return check_name(name, "srt_name")
 
 
-CORPUS = os.environ.get("ILRDF_CORPUS", "/home/vscode/ilrdf-corpus")
-
-WORK = os.path.join(ROOT, "kithann", "out", "mxf")
-LOGS = os.path.join(ROOT, "kithann", "out", "mxf-logs")
+WORK = os.path.join(KITHANN, "out", "mxf")
+LOGS = os.path.join(KITHANN, "out", "mxf-logs")
 
 # Shared download staging area (fetch_sftp.sh / refine_fetch.sh convention):
 # big disk, survives restarts, a file with the right byte count is reused
 # rather than re-fetched.
-STAGE = os.path.join(ROOT, "kithann", "out", "stage")
+STAGE = os.path.join(KITHANN, "out", "stage")
 
 # Archival mkv copies (scripts/transcode/encode_master.sh output), one per
 # episode -- see .claude/skills/video-subtitle-srt/壓縮率分析.md for the spec.
-MKV_ARCHIVE = os.path.join(ROOT, "kithann", "out", "mkv")
+MKV_ARCHIVE = os.path.join(KITHANN, "out", "mkv")
 
 # Working copy of the progress table, refreshed by make_all as often as you
 # like. The delivered one lives in Kari-SRT and is written only by publish,
 # once a whole batch is done: mid-batch a row says which step an episode is
 # stuck at, and that lives in the work dir, which rebuild does not have -- so
 # a mid-batch table in the store could never be rebuilt byte-for-byte.
-TRACKER_CACHE = os.path.join(ROOT, "kithann", "out", "smkul.csv")
+TRACKER_CACHE = os.path.join(KITHANN, "out", "smkul.csv")
 
 # Kari-SRT is the submodule holding the canonical data, layered
 # corpus -> technique -> numbered stage (the numbers are the production
 # order): news/1-ocr/ is the picture side, news/2-asr/ the speech side.
 # kithann/ holds only sources and regenerable caches.
-KARI = os.path.join(ROOT, "Kari-SRT")
 NEWS_STORE = os.path.join(KARI, "news")
 OCR_STORE = os.path.join(NEWS_STORE, "1-ocr")
 ASR_DIR = os.path.join(NEWS_STORE, "2-asr")
@@ -95,7 +93,7 @@ TRACKER_STORE = os.path.join(NEWS_STORE, "smkul.csv")
 # nobody asked for.
 ENGINE_PRESETS = os.path.join(HERE, "presets.json")
 INVENTORY = os.path.join(NEWS_STORE, "inventory.json")
-CATALOGUE = os.path.join(ROOT, "kithann", "tongan", "ilrdf-corpus.csv")
+CATALOGUE = os.path.join(KITHANN, "tongan", "ilrdf-corpus.csv")
 
 VENV_PY = os.path.expanduser("~/.venvs/subs2srt/bin/python")
 

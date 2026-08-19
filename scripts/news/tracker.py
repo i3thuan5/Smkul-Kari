@@ -18,8 +18,6 @@ import os
 
 from scripts.news import paths
 
-CORPUS = paths.CORPUS
-
 ETH_EN = "族語別(英)"
 ETH_ZH = "族語別(中)"
 
@@ -50,11 +48,20 @@ def asr_model(srt_name, asr_dir=None):
     return ""
 
 
-def relative(path):
-    """Paths in the tracker are relative to the corpus root, as in the
-    catalogue this corpus already ships."""
-    if path.startswith(CORPUS + "/"):
-        return "ilrdf-corpus/" + path[len(CORPUS) + 1:]
+def corpus_path(path):
+    """The video path as the delivered table records it: relative to the
+    corpus root, the same form the shipped catalogue uses.
+
+    The inventory already stores it that way -- `add_episodes` writes it,
+    and the February batch was migrated to match -- so this only guards
+    the invariant. An absolute path here would make the delivered table
+    specific to one machine, and `rebuild --verify` on another would
+    report a mismatch with no visible cause.
+    """
+    if path.startswith("/"):
+        raise SystemExit(
+            "inventory 的 video 欄愛是相對 corpus 根的路徑"
+            "（ilrdf-corpus/…），毋是絕對路徑：%s" % path)
     return path
 
 
@@ -95,7 +102,7 @@ def tracker_row(entry, status, asr_dir=None):
         "播出時段": entry["播出時段"],
         ETH_EN: entry[ETH_EN],
         ETH_ZH: entry[ETH_ZH],
-        "影片檔案位置": relative(entry["video"]),
+        "影片檔案位置": corpus_path(entry["video"]),
         "文稿位置": script,
         "字幕srt狀態": status,
         "語音辨識模型": asr_model(entry["srt_name"], asr_dir),

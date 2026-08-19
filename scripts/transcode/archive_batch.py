@@ -84,7 +84,7 @@ def already_done(srt_name, archive_dir=paths.MKV_ARCHIVE):
 
 def _remote_size(remote):
     out = subprocess.run(
-        ["bash", SFTP_SCRIPT, 'ls -l "%s"' % remote],
+        ["bash", SFTP_SCRIPT, "ls", remote],
         capture_output=True, text=True)
     size = None
     for line in out.stdout.splitlines():
@@ -102,8 +102,7 @@ def _fetch(remote, local):
     if have == size:
         print("  已在 stage，重用（%d MB）" % (size // 1_000_000))
         return
-    done = subprocess.run(
-        ["bash", SFTP_SCRIPT, 'get "%s" "%s"' % (remote, local)])
+    done = subprocess.run(["bash", SFTP_SCRIPT, "get", remote, local])
     got = os.path.getsize(local) if os.path.exists(local) else 0
     if done.returncode or got != size:
         if os.path.exists(local):
