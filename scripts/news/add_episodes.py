@@ -93,8 +93,7 @@ def add(remote_paths):
     caller can report it and decide whether to write.
     """
     catalogue = resolve_slug.load()
-    with open(paths.INVENTORY, encoding="utf-8") as handle:
-        entries = json.load(handle)
+    entries = paths.load_inventory()
     known = {}
     for position, entry in enumerate(entries):
         known[entry["slug"]] = position

@@ -1,4 +1,5 @@
 """paths: ROOT derivation, the --var CLI, and the argument guards."""
+import json
 import os
 import subprocess
 import sys
@@ -136,6 +137,50 @@ class TestPathGuard(unittest.TestCase):
     def test_a_call_site_may_name_its_own_roots(self):
         with tempfile.TemporaryDirectory() as tmp:
             self.assertEqual(paths.check_under(tmp, roots=[tmp]), tmp)
+
+
+class TestLoadInventory(unittest.TestCase):
+    """inventory 是名字進入程式的唯一入口，就在這裡檢查。
+
+    11 支程式都拿 slug／srt_name 去組工作目錄與 store 檔名；檢查集中
+    在讀出來的那一刻，下游才不必各自重複，而且「inventory 的名字是
+    安全的」這個假設才變成明講的、擋得住的不變量。
+    """
+
+    def _write(self, entries):
+        handle = tempfile.NamedTemporaryFile(
+            "w", suffix=".json", delete=False, encoding="utf-8")
+        json.dump(entries, handle, ensure_ascii=False)
+        handle.close()
+        self.addCleanup(os.unlink, handle.name)
+        return handle.name
+
+    def _entry(self, **over):
+        entry = {"slug": "2021_032_2021-02-01_午間_Atayal_泰雅",
+                 "srt_name": "20210201_032_午間_Atayal_泰雅"}
+        entry.update(over)
+        return entry
+
+    def test_legal_entries_come_back_unchanged(self):
+        entry = self._entry()
+        got = paths.load_inventory(self._write([entry]))
+        self.assertEqual(got, [entry])
+
+    def test_a_slug_with_path_components_is_refused(self):
+        path = self._write([self._entry(slug="../../etc/passwd")])
+        with self.assertRaises(SystemExit):
+            paths.load_inventory(path)
+
+    def test_an_srt_name_with_path_components_is_refused(self):
+        path = self._write([self._entry(srt_name="../../etc/passwd")])
+        with self.assertRaises(SystemExit):
+            paths.load_inventory(path)
+
+    def test_every_entry_is_checked_not_just_the_first(self):
+        path = self._write([self._entry(),
+                            self._entry(slug="a/b")])
+        with self.assertRaises(SystemExit):
+            paths.load_inventory(path)
 
 
 if __name__ == "__main__":

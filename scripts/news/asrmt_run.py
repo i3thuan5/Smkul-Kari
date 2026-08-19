@@ -127,10 +127,9 @@ def _workdir(srt_name):
 
 
 def _entry_of(srt_name):
-    with open(paths.INVENTORY, encoding="utf-8") as handle:
-        for entry in json.load(handle):
-            if entry["srt_name"] == srt_name:
-                return entry
+    for entry in paths.load_inventory():
+        if entry["srt_name"] == srt_name:
+            return entry
     raise SystemExit("%s is not in the inventory" % srt_name)
 
 

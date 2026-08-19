@@ -15,7 +15,6 @@ on to the next one.
 """
 import argparse
 import csv
-import json
 import os
 import subprocess
 import sys
@@ -128,8 +127,7 @@ def main(argv=None):
     os.makedirs(paths.STAGE, exist_ok=True)
     os.makedirs(paths.MKV_ARCHIVE, exist_ok=True)
 
-    with open(paths.INVENTORY, encoding="utf-8") as handle:
-        entries = json.load(handle)
+    entries = paths.load_inventory()
     with open(paths.TRACKER_STORE, encoding="utf-8-sig", newline="") as handle:
         rows = list(csv.DictReader(handle))
 

@@ -715,7 +715,7 @@ def main(argv=None):
     for name in PATH_ARGS:
         value = getattr(args, name, "")
         if value:
-            datadirs.check_under(value, name)
+            setattr(args, name, datadirs.check_under(value, name))
     return args.func(args)
 
 

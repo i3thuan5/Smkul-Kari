@@ -73,12 +73,12 @@ def main(argv=None):
     ap.add_argument("slugs", nargs="*", help="work-dir slugs; default all")
     args = ap.parse_args(argv)
 
-    entries = json.load(open(paths.INVENTORY, encoding="utf-8"))
+    entries = paths.load_inventory()
     total_sheets = 0
     for entry in entries:
         if entry["truncated"]:
             continue
-        slug = paths.check_name(entry["slug"], "slug")
+        slug = entry["slug"]
         if args.slugs and slug not in args.slugs:
             continue
         if not os.path.exists(os.path.join(WORK, slug + WORK_EXT, CUES)):

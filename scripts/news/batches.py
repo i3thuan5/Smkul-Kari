@@ -46,10 +46,9 @@ def srt_name_of(slug):
     means readers write where nothing will ever look, and the first sign of it
     is an episode that assembles with no text.
     """
-    with open(paths.INVENTORY, encoding="utf-8") as handle:
-        for entry in json.load(handle):
-            if entry["slug"] == slug:
-                return entry["srt_name"]
+    for entry in paths.load_inventory():
+        if entry["slug"] == slug:
+            return entry["srt_name"]
     raise SystemExit("slug %r is not in inventory.json" % slug)
 
 
@@ -59,7 +58,7 @@ def main():
     ap.add_argument("--size", type=int, default=24)
     ap.add_argument("--limit", type=int, default=0)
     args = ap.parse_args()
-    paths.check_name(args.slug, "slug")
+    args.slug = paths.check_name(args.slug, "slug")
 
     work = os.path.join(WORK, args.slug + ".B.work")
     tag = srt_name_of(args.slug)

@@ -72,7 +72,7 @@ def check_inputs(entries):
         # that claim is what the rest of this function checks.
         if entry["truncated"] or tracker.is_pending(entry):
             continue
-        name = paths.check_name(entry["srt_name"], "srt_name")
+        name = entry["srt_name"]
         if not os.path.exists(os.path.join(paths.KARI_CUES, name + ".json")):
             problems.append("missing 1-cues/%s.json" % name)
         if not episode_transcripts(name):
@@ -133,7 +133,7 @@ def main():
                     help="rebuild into this directory instead of a tempdir")
     args = ap.parse_args()
 
-    entries = json.load(open(paths.INVENTORY, encoding="utf-8"))
+    entries = paths.load_inventory()
     problems = check_inputs(entries)
     if problems:
         for line in problems:

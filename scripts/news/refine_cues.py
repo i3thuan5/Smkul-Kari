@@ -313,8 +313,8 @@ def main():
                     help="report the shifts, write nothing")
     args = ap.parse_args()
     # cues.json 是就地改寫的，指錯目標就毀掉一集的時間軸
-    paths.check_under(args.video, "video")
-    paths.check_under(args.cues, "cues")
+    args.video = paths.check_under(args.video, "video")
+    args.cues = paths.check_under(args.cues, "cues")
     stats = refine_episode(args.video, args.cues, dry_run=args.dry_run)
     print(json.dumps(stats, ensure_ascii=False))
 

@@ -41,14 +41,18 @@ usage() {
 }
 
 check_path() {
-    if [[ -z "$1" ]]; then
+    local path=$1
+    if [[ -z "$path" ]]; then
         echo "$0: 空的路徑，拒絕" >&2
         exit 2
     fi
-    case "$1" in
+    case "$path" in
         *'"'* | *\\* | *$'\n'* | *$'\r'* | *$'\t'*)
-            echo "$0: 路徑含引號、反斜線抑是控制字元，拒絕：$1" >&2
+            echo "$0: 路徑含引號、反斜線抑是控制字元，拒絕：$path" >&2
             exit 2
+            ;;
+        *)
+            return 0
             ;;
     esac
 }
@@ -56,22 +60,26 @@ check_path() {
 batch=$(mktemp)
 trap 'rm -f "$batch"' EXIT
 
-case "${1:-}" in
+verb=${1:-}
+remote=${2:-}
+local_path=${3:-}
+
+case "$verb" in
     -)
         cat > "$batch"
         ;;
     get)
         [[ $# -eq 3 ]] || usage
-        check_path "$2"
-        check_path "$3"
-        printf 'get "%s" "%s"\n' "$2" "$3" > "$batch"
+        check_path "$remote"
+        check_path "$local_path"
+        printf 'get "%s" "%s"\n' "$remote" "$local_path" > "$batch"
         ;;
     ls)
         # every caller reads the byte count out of column 5, so the long
         # form is part of the contract, not a convenience
         [[ $# -eq 2 ]] || usage
-        check_path "$2"
-        printf 'ls -l "%s"\n' "$2" > "$batch"
+        check_path "$remote"
+        printf 'ls -l "%s"\n' "$remote" > "$batch"
         ;;
     *)
         usage

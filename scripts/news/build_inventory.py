@@ -216,8 +216,7 @@ def main(argv=None):
     scanned, warnings = build()
     existing = []
     if os.path.exists(paths.INVENTORY):
-        with open(paths.INVENTORY, encoding="utf-8") as handle:
-            existing = json.load(handle)
+        existing = paths.load_inventory()
 
     if args.replace:
         entries, added = scanned, scanned

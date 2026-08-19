@@ -24,6 +24,7 @@ Shell scripts read values through the CLI:
     python3 -m scripts.news.paths --var WORK
 """
 import argparse
+import json
 import os
 import re
 
@@ -96,6 +97,28 @@ INVENTORY = os.path.join(NEWS_STORE, "inventory.json")
 CATALOGUE = os.path.join(KITHANN, "tongan", "ilrdf-corpus.csv")
 
 VENV_PY = os.path.expanduser("~/.venvs/subs2srt/bin/python")
+
+
+def load_inventory(path=None):
+    """The inventory, with every name checked before it can become a path.
+
+    Eleven programs read this file and every one of them turns `slug` and
+    `srt_name` into a work dir or a store file name. Checking here -- the
+    single point where the file's contents enter the program -- is what
+    lets them do that without each repeating the check, and turns "the
+    names in the inventory are safe" from an assumption resting on
+    `resolve_slug.safe()` into an invariant that is enforced and testable.
+
+    The checked value is assigned back rather than merely validated:
+    downstream has to be handed the value that was checked, not a second
+    reference to the one that was not.
+    """
+    with open(path or INVENTORY, encoding="utf-8") as handle:
+        entries = json.load(handle)
+    for entry in entries:
+        entry["slug"] = check_name(entry["slug"], "slug")
+        entry["srt_name"] = check_name(entry["srt_name"], "srt_name")
+    return entries
 
 
 def main():

@@ -68,8 +68,7 @@ def make_one(entry):
 
 
 def main():
-    entries = json.load(open(paths.INVENTORY,
-                             encoding="utf-8"))
+    entries = paths.load_inventory()
     os.makedirs(SRT_DIR, exist_ok=True)
     os.makedirs(os.path.dirname(paths.TRACKER_CACHE), exist_ok=True)
 

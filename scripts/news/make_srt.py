@@ -133,8 +133,8 @@ def main(argv=None):
     ap.add_argument("work")
     ap.add_argument("-o", "--out", required=True, help="SRT path")
     args = ap.parse_args(argv)
-    paths.check_under(args.work, "work")
-    paths.check_under(args.out, "-o/--out")
+    args.work = paths.check_under(args.work, "work")
+    args.out = paths.check_under(args.out, "-o/--out")
 
     qc = run(args.work, args.out)
     with open(os.path.splitext(args.out)[0] + ".qc.json", "w",

@@ -134,8 +134,7 @@ def main(argv=None):
                     help="report what would be published, write nothing")
     args = ap.parse_args(argv)
 
-    with open(paths.INVENTORY, encoding="utf-8") as handle:
-        entries = json.load(handle)
+    entries = paths.load_inventory()
 
     # Decide everything before writing anything: publishing is all-or-nothing.
     blocked = gate(entries)

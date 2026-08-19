@@ -497,7 +497,8 @@ def main():
     five.set_defaults(func=cmd_score)
 
     args = ap.parse_args()
-    paths.check_under(args.out, "--out", roots=[paths.KITHANN])
+    args.out = paths.check_under(args.out, "--out",
+                                 roots=[paths.KITHANN])
     args.func(args)
     return 0
 

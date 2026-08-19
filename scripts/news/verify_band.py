@@ -171,7 +171,7 @@ def main():
     ap.add_argument("--quiet", action="store_true",
                     help="only report pass/fail, no profile")
     args = ap.parse_args()
-    paths.check_under(args.video, "video")
+    args.video = paths.check_under(args.video, "video")
 
     with open(paths.ENGINE_PRESETS, encoding="utf-8") as handle:
         presets = json.load(handle)

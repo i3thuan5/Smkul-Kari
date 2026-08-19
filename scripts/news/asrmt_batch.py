@@ -10,7 +10,6 @@ skipped; a failing episode is reported and the batch moves on.
 """
 import argparse
 import csv
-import json
 import os
 import subprocess
 import sys
@@ -46,7 +45,7 @@ def _todo(entries, worker, total, raw_dir):
     """This worker's episodes still without a raw SRT, inventory order."""
     todo = []
     for position, entry in enumerate(entries):
-        name = paths.check_srt_name(entry["srt_name"])
+        name = entry["srt_name"]
         if not shard_ok(position, worker, total):
             continue
         if entry.get("pending") or entry.get("truncated"):
@@ -79,8 +78,7 @@ def main(argv=None):
     args = ap.parse_args(argv)
     worker, total = parse_shard(args.shard)
 
-    with open(paths.INVENTORY, encoding="utf-8") as handle:
-        entries = json.load(handle)
+    entries = paths.load_inventory()
     with open(paths.CATALOGUE, encoding="utf-8-sig", newline="") as handle:
         catalogue = list(csv.DictReader(handle))
 

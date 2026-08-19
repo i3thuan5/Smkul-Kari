@@ -41,7 +41,7 @@ def normalise(path):
 
 def _tsvdir_of(slug):
     """Default TSV dir: news/1-ocr/3-vision/<srt_name>, from the slug."""
-    for entry in json.load(open(paths.INVENTORY, encoding="utf-8")):
+    for entry in paths.load_inventory():
         if entry["slug"] == slug:
             return os.path.join(paths.KARI_VISION, entry["srt_name"])
     raise SystemExit("slug %r not in inventory; pass a TSV dir "
@@ -84,10 +84,11 @@ def main():
                     help="work-dir suffix; .B.work is where gap_sheets puts "
                          "the contact sheets a reader works from")
     args = ap.parse_args()
-    paths.check_name(args.slug, "slug")
+    args.slug = paths.check_name(args.slug, "slug")
 
     if not args.tsvdir:
         args.tsvdir = _tsvdir_of(args.slug)
+    args.tsvdir = paths.check_under(args.tsvdir, "tsvdir")
 
     work = os.path.join(WORK, args.slug + args.suffix)
     with open(os.path.join(work, "sheets.json"), encoding="utf-8") as handle:
