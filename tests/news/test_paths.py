@@ -200,8 +200,9 @@ class TestLoadInventory(unittest.TestCase):
     def test_a_missing_required_field_is_named(self):
         entry = self._entry()
         del entry["播出時段"]
+        path = self._write([entry])
         with self.assertRaisesRegex(SystemExit, "播出時段"):
-            paths.load_inventory(self._write([entry]))
+            paths.load_inventory(path)
 
     def test_optional_fields_survive(self):
         # pending 只在批次進行中存在、publish 完成時刪掉；partial 會併進
@@ -218,8 +219,9 @@ class TestLoadInventory(unittest.TestCase):
         # 消失。與其靜默掉資料，不如中止、要求先去宣告。
         entry = self._entry()
         entry["新欄位"] = "x"
+        path = self._write([entry])
         with self.assertRaisesRegex(SystemExit, "新欄位"):
-            paths.load_inventory(self._write([entry]))
+            paths.load_inventory(path)
 
     def test_field_order_follows_the_store_not_the_input(self):
         # publish／add_episodes 會把這些條目寫回 inventory.json；重建的
