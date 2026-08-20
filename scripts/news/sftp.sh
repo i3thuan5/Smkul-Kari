@@ -35,9 +35,10 @@ export SFTP_PASS_FILE="${SFTP_PASS_FILE:-$HERE/../../.sftp-pass}"
 
 SFTP_HOST="${SFTP_HOST:-ilrdf-corpus@192.168.35.10}"
 
+# 印用法、回傳離開碼；離開由呼叫端做，函式才有明確的出口
 usage() {
     echo "usage: $0 {get REMOTE LOCAL | ls REMOTE | -}" >&2
-    exit 2
+    return 2
 }
 
 check_path() {
@@ -69,7 +70,7 @@ case "$verb" in
         cat > "$batch"
         ;;
     get)
-        [[ $# -eq 3 ]] || usage
+        [[ $# -eq 3 ]] || { usage; exit $?; }
         check_path "$remote"
         check_path "$local_path"
         printf 'get "%s" "%s"\n' "$remote" "$local_path" > "$batch"
@@ -77,12 +78,13 @@ case "$verb" in
     ls)
         # every caller reads the byte count out of column 5, so the long
         # form is part of the contract, not a convenience
-        [[ $# -eq 2 ]] || usage
+        [[ $# -eq 2 ]] || { usage; exit $?; }
         check_path "$remote"
         printf 'ls -l "%s"\n' "$remote" > "$batch"
         ;;
     *)
         usage
+        exit $?
         ;;
 esac
 
