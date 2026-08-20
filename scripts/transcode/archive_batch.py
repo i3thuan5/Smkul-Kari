@@ -73,11 +73,16 @@ def stage_name(srt_name, remote):
     return srt_name + ext
 
 
-def output_path(srt_name, archive_dir=paths.MKV_ARCHIVE):
+def output_path(srt_name, archive_dir=None):
+    # 預設值查佇呼叫ê時陣，毋是 import ê時陣：寫做
+    # `archive_dir=paths.MKV_ARCHIVE` ê話，模組載入了後 patch
+    # paths.MKV_ARCHIVE 就無效，測試改了看起來若像有影，其實無。
+    if archive_dir is None:
+        archive_dir = paths.MKV_ARCHIVE
     return os.path.join(archive_dir, srt_name + ".mkv")
 
 
-def already_done(srt_name, archive_dir=paths.MKV_ARCHIVE):
+def already_done(srt_name, archive_dir=None):
     return os.path.exists(output_path(srt_name, archive_dir))
 
 

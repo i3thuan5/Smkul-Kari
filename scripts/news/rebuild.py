@@ -2,7 +2,6 @@
 """Rebuild every delivered SRT from Kari-SRT alone, and prove it.
 
     python3 -m scripts.news.rebuild --verify
-    python3 -m scripts.news.rebuild -o /some/dir      # keep the output
 
 This is the executable form of the srt-data-store spec's core guarantee:
 main repo (code) + Kari-SRT (news/1-ocr/ 1-cues + 3-vision + 4-vision-rtf,
@@ -129,8 +128,6 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--verify", action="store_true",
                     help="byte-compare the rebuild against news/1-ocr/6-srt/")
-    ap.add_argument("-o", "--out", default="",
-                    help="rebuild into this directory instead of a tempdir")
     args = ap.parse_args()
 
     entries = paths.load_inventory()
@@ -140,7 +137,7 @@ def main():
             print("MISSING:", line)
         raise SystemExit(1)
 
-    tmp = args.out or tempfile.mkdtemp(prefix="rebuild-")
+    tmp = tempfile.mkdtemp(prefix="rebuild-")
     os.makedirs(os.path.join(tmp, "srt"), exist_ok=True)
 
     def status_of(entry):
@@ -162,12 +159,13 @@ def main():
         return
 
     mismatched = _mismatches(tmp, entries)
-    if not args.out:
-        shutil.rmtree(tmp)
     if mismatched:
+        # 留咧予人 diff：這時陣正是需要看輸出ê時陣，刣掉就無通比
         for name in mismatched:
             print("DIFFERS:", name)
+        print("\n重建ê結果留佇", tmp)
         raise SystemExit(1)
+    shutil.rmtree(tmp)
     print("\nOK: %d SRTs + smkul.csv rebuilt byte-identical from Kari-SRT"
           % _delivered_count(entries))
 

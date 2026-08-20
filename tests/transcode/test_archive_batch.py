@@ -7,7 +7,9 @@ call layer: real-transfer smoke test guards them instead).
 import os
 import tempfile
 import unittest
+from unittest import mock
 
+from scripts.news import paths
 from scripts.transcode import archive_batch
 
 
@@ -67,6 +69,13 @@ class TestStageName(unittest.TestCase):
 
 
 class TestOutputPath(unittest.TestCase):
+    def test_the_archive_dir_is_read_when_called_not_when_imported(self):
+        # 預設值若佇 import 的時陣就綁死，換掉 paths.MKV_ARCHIVE 這爿
+        # 完全無感覺——測試改了無效，是彼種恬恬失效ê陷阱。
+        with mock.patch.object(paths, "MKV_ARCHIVE", "/tmp/somewhere-else"):
+            out = archive_batch.output_path("20210201_032_晚間_Amis_阿美")
+        self.assertTrue(out.startswith("/tmp/somewhere-else/"), out)
+
     def test_output_is_srt_name_dot_mkv(self):
         out = archive_batch.output_path(
             "20210201_032_晚間_Amis_阿美", archive_dir="/tmp/mkv")

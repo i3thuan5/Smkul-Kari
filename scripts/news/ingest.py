@@ -21,6 +21,10 @@ from scripts.ocr import transcripts
 
 WORK = paths.WORK
 
+# gap_sheets kā 校讀用ê contact sheet 园佇 <slug>.B.work，
+# 逐擺攏仝款；本來是 --suffix，毋過對來到今無人傳過別ê值。
+WORK_SUFFIX = ".B.work"
+
 
 def normalise(path):
     """Restore the empty third field on confirmed-blank rows."""
@@ -80,24 +84,19 @@ def main():
     ap.add_argument("tsvdir", nargs="?", default="",
                     help="TSV dir; default news/1-ocr/3-vision/<srt_name> "
                          "looked up from the slug")
-    ap.add_argument("--suffix", default=".B.work",
-                    help="work-dir suffix; .B.work is where gap_sheets puts "
-                         "the contact sheets a reader works from")
     args = ap.parse_args()
-    args.slug = paths.check_name(args.slug, "slug")
 
-    if not args.tsvdir:
-        args.tsvdir = _tsvdir_of(args.slug)
-    args.tsvdir = paths.check_under(args.tsvdir, "tsvdir")
+    slug = paths.check_name(args.slug, "slug")
+    tsvdir = paths.check_under(args.tsvdir or _tsvdir_of(slug), "tsvdir")
 
-    work = os.path.join(WORK, args.slug + args.suffix)
+    work = os.path.join(WORK, slug + WORK_SUFFIX)
     with open(os.path.join(work, "sheets.json"), encoding="utf-8") as handle:
         sheets = json.load(handle)
     on_sheets = set()
     for cues in sheets.values():
         on_sheets.update(cues)
 
-    files = sorted(glob.glob(os.path.join(args.tsvdir, "*.tsv")))
+    files = sorted(glob.glob(os.path.join(tsvdir, "*.tsv")))
     seen, problems = _audit_rows(files, on_sheets)
 
     if problems:
