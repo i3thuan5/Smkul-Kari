@@ -17,6 +17,7 @@ import csv
 import os
 
 from scripts.news import paths
+from scripts.errors import PipelineError
 
 ETH_EN = "族語別(英)"
 ETH_ZH = "族語別(中)"
@@ -59,7 +60,7 @@ def corpus_path(path):
     report a mismatch with no visible cause.
     """
     if path.startswith("/"):
-        raise SystemExit(
+        raise PipelineError(
             "inventory 的 video 欄愛是相對 corpus 根的路徑"
             "（ilrdf-corpus/…），毋是絕對路徑：%s" % path)
     return path

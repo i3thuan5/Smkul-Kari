@@ -7,6 +7,7 @@ import tempfile
 import unittest
 
 from scripts.news import paths
+from scripts.errors import PipelineError
 
 
 class TestConstants(unittest.TestCase):
@@ -79,27 +80,27 @@ class TestNameGuards(unittest.TestCase):
         # None 是 inventory 寫成 "slug": null 時會拿到的；它並沒有「帶
         # 路徑成分」，訊息要講對事情才找得到問題。
         for empty in (None, ""):
-            with self.assertRaisesRegex(SystemExit, "無值"):
+            with self.assertRaisesRegex(PipelineError, "無值"):
                 paths.check_name(empty, "slug")
-        with self.assertRaisesRegex(SystemExit, "無值"):
+        with self.assertRaisesRegex(PipelineError, "無值"):
             paths.check_srt_name(None)
 
     def test_a_name_is_never_silently_rewritten(self):
         # 清乾淨後若跟原本不同，就是中止而不是回傳清過的版本：
         # inventory 讀進來會被 publish／add_episodes 寫回去，靜默改寫
         # 等於改掉資料正本。
-        with self.assertRaises(SystemExit):
+        with self.assertRaises(PipelineError):
             paths.check_name("2021_041_午間/../別集", "slug")
 
     def test_separators_and_dots_are_refused(self):
         for bad in ("a/b", "a\\b", "..", "x/../y", "", "."):
-            with self.assertRaises(SystemExit):
+            with self.assertRaises(PipelineError):
                 paths.check_name(bad, "slug")
 
     def test_srt_name_needs_the_date_episode_prefix(self):
         for bad in ("evil", "2021_032_晚間", "20210201_32_晚間",
                     "20210201_032_晚間/../x", "/etc/passwd"):
-            with self.assertRaises(SystemExit):
+            with self.assertRaises(PipelineError):
                 paths.check_srt_name(bad)
 
     def test_only_ascii_digits_count_as_the_date(self):
@@ -107,7 +108,7 @@ class TestNameGuards(unittest.TestCase):
         # 不是集數命名用的字元；日期與集數只認 ASCII 0-9。
         for bad in ("٢٠٢١٠٢٠١_٠٣٢_晚間_Amis_阿美",
                     "２０２１０２０１_０３２_晚間_Amis_阿美"):
-            with self.assertRaises(SystemExit):
+            with self.assertRaises(PipelineError):
                 paths.check_srt_name(bad)
 
 
@@ -132,22 +133,22 @@ class TestPathGuard(unittest.TestCase):
         for bad in (os.path.join(paths.ROOT, "scripts"),
                     os.path.join(paths.ROOT, "openspec"),
                     paths.ROOT):
-            with self.assertRaises(SystemExit):
+            with self.assertRaises(PipelineError):
                 paths.check_under(bad)
 
     def test_outside_the_repo_is_refused(self):
         for bad in ("/etc/passwd", os.path.expanduser("~/.ssh/id_rsa")):
-            with self.assertRaises(SystemExit):
+            with self.assertRaises(PipelineError):
                 paths.check_under(bad)
 
     def test_traversal_out_of_a_data_folder_is_refused(self):
         escape = os.path.join(paths.WORK, "..", "..", "..", "..", "etc")
-        with self.assertRaises(SystemExit):
+        with self.assertRaises(PipelineError):
             paths.check_under(escape)
 
     def test_a_sibling_sharing_the_prefix_is_refused(self):
         # kithann-secret 並不在 kithann/ 底下——前綴比對一定要帶分隔符
-        with self.assertRaises(SystemExit):
+        with self.assertRaises(PipelineError):
             paths.check_under(paths.KITHANN + "-secret")
 
     def test_a_call_site_may_name_its_own_roots(self):
@@ -189,19 +190,19 @@ class TestLoadInventory(unittest.TestCase):
 
     def test_a_slug_with_path_components_is_refused(self):
         path = self._write([self._entry(slug="../../etc/passwd")])
-        with self.assertRaises(SystemExit):
+        with self.assertRaises(PipelineError):
             paths.load_inventory(path)
 
     def test_an_srt_name_with_path_components_is_refused(self):
         path = self._write([self._entry(srt_name="../../etc/passwd")])
-        with self.assertRaises(SystemExit):
+        with self.assertRaises(PipelineError):
             paths.load_inventory(path)
 
     def test_a_missing_required_field_is_named(self):
         entry = self._entry()
         del entry["播出時段"]
         path = self._write([entry])
-        with self.assertRaisesRegex(SystemExit, "播出時段"):
+        with self.assertRaisesRegex(PipelineError, "播出時段"):
             paths.load_inventory(path)
 
     def test_optional_fields_survive(self):
@@ -220,7 +221,7 @@ class TestLoadInventory(unittest.TestCase):
         entry = self._entry()
         entry["新欄位"] = "x"
         path = self._write([entry])
-        with self.assertRaisesRegex(SystemExit, "新欄位"):
+        with self.assertRaisesRegex(PipelineError, "新欄位"):
             paths.load_inventory(path)
 
     def test_field_order_follows_the_store_not_the_input(self):
@@ -236,7 +237,7 @@ class TestLoadInventory(unittest.TestCase):
     def test_every_entry_is_checked_not_just_the_first(self):
         path = self._write([self._entry(),
                             self._entry(slug="a/b")])
-        with self.assertRaises(SystemExit):
+        with self.assertRaises(PipelineError):
             paths.load_inventory(path)
 
 

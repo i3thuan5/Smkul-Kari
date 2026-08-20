@@ -11,6 +11,7 @@ stage folders, the inventory, the catalogue) stay in `scripts.news.paths`.
 import os
 import re
 import tempfile
+from scripts.errors import PipelineError
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -50,10 +51,10 @@ def check_name(name, kind="name"):
     # it is a missing name, not a name carrying path components, and the
     # message has to say which so the file gets looked at.
     if not name:
-        raise SystemExit("%s 無值" % kind)
+        raise PipelineError("%s 無值" % kind)
     cleaned = _PATH_COMPONENTS.sub("", name)
     if cleaned != name or name == ".":
-        raise SystemExit("%s %r 帶路徑成分，拒絕" % (kind, name))
+        raise PipelineError("%s %r 帶路徑成分，拒絕" % (kind, name))
     return cleaned
 
 
@@ -75,6 +76,6 @@ def check_under(path, kind="path", roots=None):
         base = os.path.realpath(base)
         if resolved == base or resolved.startswith(base + os.sep):
             return path
-    raise SystemExit(
+    raise PipelineError(
         "%s %r 毋佇資料資料夾內底（准的是 kithann/、Kari-SRT/、暫存目錄）"
         % (kind, path))

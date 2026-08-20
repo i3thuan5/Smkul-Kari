@@ -15,6 +15,7 @@ import numpy as np
 from PIL import Image
 
 from scripts.ocr import cuelib
+from scripts.errors import PipelineError
 
 
 TESS_COMMON = [
@@ -140,12 +141,12 @@ def ocr_claude_api(workdir, manifest, args):
     try:
         import anthropic
     except ImportError:
-        raise SystemExit(
+        raise PipelineError(
             "claude-api engine needs the `anthropic` package: "
             "pip install anthropic")
 
     if not os.environ.get("ANTHROPIC_API_KEY"):
-        raise SystemExit("set ANTHROPIC_API_KEY to use --engine claude-api")
+        raise PipelineError("set ANTHROPIC_API_KEY to use --engine claude-api")
 
     client = anthropic.Anthropic()
     results = {}

@@ -8,6 +8,7 @@ rather than at any of the three call sites.
 import unittest
 
 from scripts.news import tracker
+from scripts.errors import PipelineError
 
 
 ENTRY = {
@@ -62,7 +63,7 @@ class TestTrackerRow(unittest.TestCase):
         # 會讓表變成這台機器專屬的，別台機器 rebuild 不出同樣的內容。
         entry = dict(ENTRY)
         entry["video"] = "/home/vscode/ilrdf-corpus/2月/x.mxf"
-        with self.assertRaises(SystemExit):
+        with self.assertRaises(PipelineError):
             tracker.tracker_row(entry, DONE)
 
 

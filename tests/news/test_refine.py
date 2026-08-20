@@ -11,6 +11,7 @@ import unittest
 from unittest import mock
 
 from scripts.news import refine_cues
+from scripts.errors import PipelineError
 
 
 class TestTransitionTime(unittest.TestCase):
@@ -120,7 +121,7 @@ class TestRefineEpisode(unittest.TestCase):
 
     def test_shift_beyond_limit_fails_the_whole_episode(self):
         # one bad boundary: nothing at all may be written
-        with self.assertRaises(SystemExit):
+        with self.assertRaises(PipelineError):
             self._run([9.92, 12.5, 13.88, 16.12])
         # and the file is untouched
         path = self._cues_file([dict(c) for c in self.CUES])

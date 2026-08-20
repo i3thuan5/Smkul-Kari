@@ -14,6 +14,7 @@ real-model smoke test, faithfulness downstream by the projection tests.
 """
 import json
 import subprocess
+from scripts.errors import PipelineError
 
 SAMPLE_RATE = 16000
 CHUNK_BYTES = 4000  # 0.125 s of s16le mono at 16 kHz
@@ -56,7 +57,7 @@ def decode(audio_path, model_dir, srt_name, model_label=""):
         proc.stdout.close()
         proc.wait()
     if proc.returncode:
-        raise SystemExit("ffmpeg failed decoding %s" % audio_path)
+        raise PipelineError("ffmpeg failed decoding %s" % audio_path)
 
     return {"srt_name": srt_name, "model": model_label or model_dir,
             "sample_rate": SAMPLE_RATE, "words": words, "sents": sents}

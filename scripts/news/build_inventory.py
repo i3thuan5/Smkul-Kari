@@ -28,6 +28,7 @@ import re
 import sys
 
 from scripts.news import paths
+from scripts.errors import PipelineError
 
 ETH_EN = "族語別(英)"
 ETH_ZH = "族語別(中)"
@@ -146,11 +147,12 @@ def build():
             continue
         match = SLOT_RE.search(name)
         if not match:
-            raise SystemExit("cannot parse episode/slot from %r" % name)
+            raise PipelineError("cannot parse episode/slot from %r" % name)
         episode, slot = match.group(1), match.group(2)
         row = index.get(("2021", episode, slot))
         if row is None:
-            raise SystemExit("no catalogue row for 集%s %s" % (episode, slot))
+            raise PipelineError("no catalogue row for 集%s %s"
+                                % (episode, slot))
 
         date_key = "110%02d%02d" % tuple(
             int(p) for p in row["播出日期"].split("-")[1:])

@@ -17,6 +17,7 @@ import os
 import time
 import urllib.error
 import urllib.request
+from scripts.errors import PipelineError
 
 ZH = "zho_Hant"
 
@@ -36,8 +37,8 @@ ETHNICITY = {
 def ethnicity_of(lang_code):
     prefix = lang_code.split("_")[0]
     if prefix not in ETHNICITY:
-        raise SystemExit("unknown language code %r (no ethnicity for %r)"
-                         % (lang_code, prefix))
+        raise PipelineError("unknown language code %r (no ethnicity for %r)"
+                            % (lang_code, prefix))
     return ETHNICITY[prefix]
 
 
@@ -111,7 +112,7 @@ class HttpTransport(object):
                 last = err
             except urllib.error.URLError as err:
                 last = err
-        raise SystemExit("service unreachable after retries: %s" % last)
+        raise PipelineError("service unreachable after retries: %s" % last)
 
     def _once(self, endpoint, text, src_lang="", tgt_lang=""):
         body = json.dumps({
@@ -126,7 +127,7 @@ class HttpTransport(object):
         with urllib.request.urlopen(req, timeout=60) as resp:
             joined = resp.read().decode("utf-8")
         if "event_id" not in joined:
-            raise SystemExit("queue/join failed: %s" % joined[:500])
+            raise PipelineError("queue/join failed: %s" % joined[:500])
 
         stream = urllib.request.Request(
             self.base + "/queue/data?session_hash=" + self.session)
@@ -139,14 +140,14 @@ class HttpTransport(object):
                 if event.get("msg") == "process_completed":
                     output = event.get("output") or {}
                     if not event.get("success", True):
-                        raise SystemExit("service error: %s"
-                                         % json.dumps(event)[:500])
+                        raise PipelineError("service error: %s"
+                                            % json.dumps(event)[:500])
                     data = output.get("data") or [""]
                     first = data[0]
                     if isinstance(first, str):
                         return first
                     return json.dumps(first, ensure_ascii=False)
-        raise SystemExit("SSE stream ended without process_completed")
+        raise PipelineError("SSE stream ended without process_completed")
 
 
 class MTClient(object):
@@ -186,7 +187,7 @@ class MTClient(object):
         elif direction == "z2f":
             handshake, endpoint = "lambda_1", "translate_1"
         else:
-            raise SystemExit("unknown direction %r" % direction)
+            raise PipelineError("unknown direction %r" % direction)
         if (direction, lang) not in self._ready:
             self._call(handshake, ethnicity_of(lang))
             self._ready.add((direction, lang))

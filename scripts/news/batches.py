@@ -12,6 +12,7 @@ import json
 import os
 
 from scripts.news import paths
+from scripts.errors import PipelineError
 
 WORK = paths.WORK
 OUT = paths.KARI_VISION
@@ -49,7 +50,7 @@ def srt_name_of(slug):
     for entry in paths.load_inventory():
         if entry["slug"] == slug:
             return entry["srt_name"]
-    raise SystemExit("slug %r is not in inventory.json" % slug)
+    raise PipelineError("slug %r is not in inventory.json" % slug)
 
 
 def main():

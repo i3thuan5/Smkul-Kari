@@ -16,16 +16,17 @@ import sys
 
 from scripts.news import asrmt_run
 from scripts.news import paths
+from scripts.errors import PipelineError
 
 
 def parse_shard(spec):
     """"i/n" -> (i, n); worker i of n takes positions where pos%n==i."""
     part, _, total = spec.partition("/")
     if not (part.isdigit() and total.isdigit()):
-        raise SystemExit("bad --shard %r (want i/n, e.g. 0/3)" % spec)
+        raise PipelineError("bad --shard %r (want i/n, e.g. 0/3)" % spec)
     i, n = int(part), int(total)
     if not 0 <= i < n:
-        raise SystemExit("bad --shard %r: need 0 <= i < n" % spec)
+        raise PipelineError("bad --shard %r: need 0 <= i < n" % spec)
     return i, n
 
 
@@ -38,7 +39,7 @@ def _fetch(remote, local):
                           "sftp.sh")
     done = subprocess.run(["bash", script, "get", remote, local])
     if done.returncode or not os.path.exists(local):
-        raise SystemExit("sftp fetch failed: %s" % remote)
+        raise PipelineError("sftp fetch failed: %s" % remote)
 
 
 def _todo(entries, worker, total, raw_dir):
@@ -95,7 +96,7 @@ def main(argv=None):
         try:
             _run_episode(entry, catalogue)
             done.append(name)
-        except SystemExit as error:
+        except PipelineError as error:
             failed.append((name, str(error)))
             print("FAILED:", name, "--", error, flush=True)
 

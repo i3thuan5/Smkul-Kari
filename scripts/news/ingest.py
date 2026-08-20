@@ -18,6 +18,7 @@ import os
 
 from scripts.news import paths
 from scripts.ocr import transcripts
+from scripts.errors import PipelineError
 
 WORK = paths.WORK
 
@@ -48,8 +49,8 @@ def _tsvdir_of(slug):
     for entry in paths.load_inventory():
         if entry["slug"] == slug:
             return os.path.join(paths.KARI_VISION, entry["srt_name"])
-    raise SystemExit("slug %r not in inventory; pass a TSV dir "
-                     "explicitly" % slug)
+    raise PipelineError("slug %r not in inventory; pass a TSV dir "
+                        "explicitly" % slug)
 
 
 def _audit_row(path, row, on_sheets, seen, problems):
@@ -102,7 +103,7 @@ def main():
     if problems:
         for line in problems[:20]:
             print("PROBLEM", line)
-        raise SystemExit("%d problem(s); nothing imported" % len(problems))
+        raise PipelineError("%d problem(s); nothing imported" % len(problems))
 
     missing = sorted(on_sheets - set(seen))
     print("%d TSV file(s), %d cue(s) read, %d of %d gap cues covered"

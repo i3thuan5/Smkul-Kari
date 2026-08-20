@@ -11,6 +11,7 @@ from unittest import mock
 
 from scripts.news import paths
 from scripts.transcode import archive_batch
+from scripts.errors import PipelineError
 
 
 class TestVideoRemote(unittest.TestCase):
@@ -26,7 +27,7 @@ class TestVideoRemote(unittest.TestCase):
                  "21NL004_37晚間族語新聞.mp4")
 
     def test_missing_row_fails_loud(self):
-        with self.assertRaises(SystemExit):
+        with self.assertRaises(PipelineError):
             archive_batch.video_remote("20210301_060_午間_Cou_鄒", [])
 
     def test_semicolon_cell_picks_the_matching_slot(self):

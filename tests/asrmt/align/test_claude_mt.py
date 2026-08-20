@@ -11,6 +11,7 @@ import unittest
 
 from scripts.asrmt.align import claude_mt
 from scripts.asrmt.align import mtclient
+from scripts.errors import PipelineError
 
 
 class Fixture(unittest.TestCase):
@@ -71,7 +72,7 @@ class TestIngest(Fixture):
     def test_a_stranger_id_rejects_the_whole_batch(self):
         request = self._request()
         reply = self._reply("b01.reply.tsv", "3\t我\n99\t幽靈\n7\t主持\n")
-        with self.assertRaises(SystemExit):
+        with self.assertRaises(PipelineError):
             claude_mt.ingest_reply(request, reply, self.cache,
                                    "f2z", "ami_Xiug")
         self.assertIsNone(
@@ -80,14 +81,14 @@ class TestIngest(Fixture):
     def test_a_missing_line_rejects_the_whole_batch(self):
         request = self._request()
         reply = self._reply("b01.reply.tsv", "3\t我\n")
-        with self.assertRaises(SystemExit):
+        with self.assertRaises(PipelineError):
             claude_mt.ingest_reply(request, reply, self.cache,
                                    "f2z", "ami_Xiug")
 
     def test_a_duplicate_id_rejects_the_whole_batch(self):
         request = self._request()
         reply = self._reply("b01.reply.tsv", "3\t我\n3\t我再\n7\t主持\n")
-        with self.assertRaises(SystemExit):
+        with self.assertRaises(PipelineError):
             claude_mt.ingest_reply(request, reply, self.cache,
                                    "f2z", "ami_Xiug")
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from scripts.errors import PipelineError
 """Confirm a video's subtitle band really is where the preset says.
 
     python3 -m scripts.news.verify_band VIDEO --preset titv-news   # --quiet
@@ -114,7 +115,7 @@ def profile(path, region, spec, start, duration, fps=1.0):
         rows += cuelib.text_mask(rgb, spec).sum(axis=1)
         frames += 1
     if not frames:
-        raise SystemExit("no frames decoded from %s" % path)
+        raise PipelineError("no frames decoded from %s" % path)
     return rows / float(frames), frames
 
 
@@ -176,7 +177,7 @@ def main():
     with open(paths.ENGINE_PRESETS, encoding="utf-8") as handle:
         presets = json.load(handle)
     if args.preset not in presets:
-        raise SystemExit("no preset %r" % args.preset)
+        raise PipelineError("no preset %r" % args.preset)
     preset = presets[args.preset]
     want = preset["region"]
     spec = cuelib.MaskSpec.from_dict(preset.get("mask", {}))
@@ -229,7 +230,8 @@ def main():
     if problems:
         for line in problems:
             print("FAIL:", line)
-        raise SystemExit(1)
+        raise PipelineError("字幕帶佮 preset 對袂起來（%d 項）"
+                            % len(problems))
     print("OK: band matches the preset")
 
 

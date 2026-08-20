@@ -6,6 +6,7 @@ import unittest
 from unittest import mock
 
 from scripts.news import ingest
+from scripts.errors import PipelineError
 
 
 class TestNormalise(unittest.TestCase):
@@ -57,11 +58,11 @@ class TestBatchRejection(unittest.TestCase):
                 ingest.main()
 
     def test_cue_not_on_any_sheet_rejects_the_batch(self):
-        with self.assertRaises(SystemExit):
+        with self.assertRaises(PipelineError):
             self._run([1, 2, 3], "1\than\t甲\n99\than\t亂入\n")
 
     def test_bad_index_rejects_the_batch(self):
-        with self.assertRaises(SystemExit):
+        with self.assertRaises(PipelineError):
             self._run([1, 2, 3], "x\than\t甲\n")
 
 

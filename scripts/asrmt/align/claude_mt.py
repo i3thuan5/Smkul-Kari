@@ -11,6 +11,7 @@ cache under engine "claude"; the reply files themselves are scratch.
 """
 import os
 import sys
+from scripts.errors import PipelineError
 
 
 def write_batches(items, direction, folder, size=100):
@@ -85,8 +86,8 @@ def ingest_reply(request_path, reply_path, cache, direction, lang):
     if errors:
         for message in errors[:20]:
             sys.stderr.write("  %s\n" % message)
-        raise SystemExit("%d problem(s) in %s; nothing ingested"
-                         % (len(errors), reply_path))
+        raise PipelineError("%d problem(s) in %s; nothing ingested"
+                            % (len(errors), reply_path))
 
     for key in seen:
         cache.put("claude", direction, lang, request[key], seen[key])

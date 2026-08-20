@@ -33,6 +33,7 @@ import sys
 
 from scripts.news import paths
 from scripts.ocr import cuelib
+from scripts.errors import PipelineError
 
 FPS = 25.0
 WINDOW = 0.24
@@ -47,7 +48,7 @@ def probe_duration(video):
     try:
         return float(proc.stdout.strip())
     except ValueError:
-        raise SystemExit("cannot probe duration of %s" % video)
+        raise PipelineError("cannot probe duration of %s" % video)
 
 
 def confirmed_runs(labels, confirm):
@@ -293,7 +294,8 @@ def refine_episode(video, cues_path, dry_run=False):
     if problems:
         for line in problems:
             print("FAIL:", line)
-        raise SystemExit(1)
+        raise PipelineError("%d 个邊界超出容允範圍；cues.json 無改"
+                            % len(problems))
 
     if not dry_run:
         for i, cue in enumerate(cues):

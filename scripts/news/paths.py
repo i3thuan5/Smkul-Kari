@@ -34,6 +34,7 @@ from scripts.datadirs import KITHANN
 from scripts.datadirs import ROOT           # noqa: F401  (re-export)
 from scripts.datadirs import check_name
 from scripts.datadirs import check_under     # noqa: F401  (re-export)
+from scripts.errors import PipelineError
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -45,7 +46,7 @@ def check_srt_name(name):
     # [0-9] 是刻意的，莫改做 \d：Python 的 \d 預設連 Unicode 數字都食
     # （٢٠٢١、２０２１），驗證會變較鬆。日期佮集數只認 ASCII 0-9。
     if not re.fullmatch(r"[0-9]{8}_[0-9]{3}_.+", name):
-        raise SystemExit(
+        raise PipelineError(
             "srt_name %r 不符「<日期8碼>_<集數3碼>_…」格式" % name)
     return name
 
@@ -164,15 +165,15 @@ def load_inventory(path=None):
             if field not in INVENTORY_OPTIONAL and field not in entry:
                 missing.append(field)
         if missing:
-            raise SystemExit("inventory 第 %d 筆缺欄位：%s"
-                             % (position + 1, "、".join(missing)))
+            raise PipelineError("inventory 第 %d 筆缺欄位：%s"
+                                % (position + 1, "、".join(missing)))
 
         unknown = []
         for field in entry:
             if field not in INVENTORY_FIELDS:
                 unknown.append(field)
         if unknown:
-            raise SystemExit(
+            raise PipelineError(
                 "inventory 第 %d 筆有未宣告的欄位：%s"
                 "——條目是照 INVENTORY_FIELDS 一欄一欄重建的，未宣告的會"
                 "佇寫轉去 store 時無去，先加入宣告"
@@ -201,8 +202,8 @@ def main():
         for name in sorted(globals()):
             if name.isupper() and isinstance(globals()[name], str):
                 known.append(name)
-        raise SystemExit("no path named %r (have: %s)"
-                         % (args.var, ", ".join(known)))
+        raise PipelineError("no path named %r (have: %s)"
+                            % (args.var, ", ".join(known)))
     print(value)
 
 

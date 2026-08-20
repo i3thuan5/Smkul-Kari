@@ -3,6 +3,18 @@
 資料夾定位見根 README；這裡列到檔案。原則：引擎 package 語料無關、
 編排歸 `news/`、兩側共用的東西住 `srtlib/`。
 
+## errors.py——唯一對人丟的例外（頂層，兩側共用）
+
+`PipelineError`：操作者、store 抑是外部服務出錯，講予人知然後停。
+以前 48 个函式庫函式直接丟 `SystemExit`——彼是 `BaseException`，
+`except Exception` 掠袂著，等於恬恬繞過別人ê錯誤處理；而且
+`asrmt_batch` 為著「跳過這集、繼續落一集」，愛掠 `BaseException` 來做
+一般ê流程控制。
+
+無人佇 CLI 邊界kā它換轉去 `SystemExit`（使用者裁定）：沒接的例外會
+印 traceback、離開碼 1。堆疊會講是佗一个檢查掠著ê、是啥物叫伊，批次
+做一半停落來ê時，彼比一逝清氣ê訊息較有路用。
+
 ## datadirs.py——repo 版面與參數保護（頂層，兩側共用）
 
 `ROOT`／`kithann/`／`Kari-SRT/` 三個位置，加上 CLI 參數的保護：

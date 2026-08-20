@@ -15,6 +15,7 @@ import subprocess
 import numpy as np
 
 from scripts.ocr import cuelib
+from scripts.errors import PipelineError
 
 
 # --------------------------------------------------------------- presets
@@ -264,7 +265,7 @@ def probe_or_die(video_path):
     try:
         return cuelib.probe_video(video_path)
     except Exception as exc:
-        raise SystemExit("ffprobe failed on %s: %s" % (video_path, exc))
+        raise PipelineError("ffprobe failed on %s: %s" % (video_path, exc))
 
 
 def grab_frame(video_path, ts, region):

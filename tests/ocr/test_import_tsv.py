@@ -17,6 +17,7 @@ import tempfile
 import unittest
 
 from scripts.ocr import transcripts
+from scripts.errors import PipelineError
 
 
 MANIFEST = {
@@ -79,26 +80,26 @@ class TestImportTsv(unittest.TestCase):
 
     def test_a_cue_from_another_episode_is_refused(self):
         tsv = self._tsv("1\t第一句\n99\t漂走了\n")
-        with self.assertRaises(SystemExit):
+        with self.assertRaises(PipelineError):
             transcripts.import_tsv(self.work, tsv)
 
     def test_nothing_is_written_when_a_row_is_refused(self):
         # The whole batch or none of it -- a half-imported file leaves no
         # trace of which rows made it.
         tsv = self._tsv("1\t第一句\n99\t漂走了\n")
-        with self.assertRaises(SystemExit):
+        with self.assertRaises(PipelineError):
             transcripts.import_tsv(self.work, tsv)
         self.assertIsNone(self._read("transcripts.json"))
         self.assertIsNone(self._read("verified.json"))
 
     def test_an_unknown_line_name_is_refused(self):
         tsv = self._tsv("1\tamis\tnot a line\n")
-        with self.assertRaises(SystemExit):
+        with self.assertRaises(PipelineError):
             transcripts.import_tsv(self.work, tsv)
 
     def test_a_row_with_no_index_is_refused(self):
         tsv = self._tsv("x\t第一句\n")
-        with self.assertRaises(SystemExit):
+        with self.assertRaises(PipelineError):
             transcripts.import_tsv(self.work, tsv)
 
     def test_coverage_counts_cues_not_rows(self):

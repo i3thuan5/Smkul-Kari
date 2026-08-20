@@ -20,6 +20,7 @@ import subprocess
 import sys
 
 from scripts.news import paths
+from scripts.errors import PipelineError
 
 REMOTE_ROOT = "/docker"
 
@@ -65,7 +66,7 @@ def video_remote(srt_name, rows):
         if chosen.startswith(FEB_MXF_SHORTHAND):
             chosen = FEB_MXF_REAL_DIR + chosen[len(FEB_MXF_SHORTHAND):]
         return REMOTE_ROOT + "/" + chosen
-    raise SystemExit("no video in smkul.csv for %s" % srt_name)
+    raise PipelineError("no video in smkul.csv for %s" % srt_name)
 
 
 def stage_name(srt_name, remote):
@@ -101,7 +102,7 @@ def _remote_size(remote):
 def _fetch(remote, local):
     size = _remote_size(remote)
     if size is None:
-        raise SystemExit("not found on SFTP: %s" % remote)
+        raise PipelineError("not found on SFTP: %s" % remote)
     have = os.path.getsize(local) if os.path.exists(local) else 0
     if have == size:
         print("  已在 stage，重用（%d MB）" % (size // 1_000_000))
@@ -111,8 +112,8 @@ def _fetch(remote, local):
     if done.returncode or got != size:
         if os.path.exists(local):
             os.remove(local)
-        raise SystemExit("sftp fetch incomplete: %s (%s/%s bytes)"
-                         % (remote, got, size))
+        raise PipelineError("sftp fetch incomplete: %s (%s/%s bytes)"
+                            % (remote, got, size))
 
 
 def _encode(src, dst):
@@ -156,7 +157,7 @@ def main(argv=None):
             _encode(local, output_path(name))
             os.remove(local)
             done.append(name)
-        except (SystemExit, subprocess.CalledProcessError) as error:
+        except (PipelineError, subprocess.CalledProcessError) as error:
             failed.append((name, str(error)))
             print("FAILED:", name, "--", error, flush=True)
 

@@ -32,6 +32,7 @@ import tempfile
 from scripts.news import make_srt
 from scripts.news import paths
 from scripts.news import tracker
+from scripts.errors import PipelineError
 
 SMKUL = "smkul.csv"
 
@@ -135,7 +136,7 @@ def main():
     if problems:
         for line in problems:
             print("MISSING:", line)
-        raise SystemExit(1)
+        raise PipelineError("%d 項輸入袂齊，無重建" % len(problems))
 
     tmp = tempfile.mkdtemp(prefix="rebuild-")
     os.makedirs(os.path.join(tmp, "srt"), exist_ok=True)
@@ -164,7 +165,7 @@ def main():
         for name in mismatched:
             print("DIFFERS:", name)
         print("\n重建ê結果留佇", tmp)
-        raise SystemExit(1)
+        raise PipelineError("%d 項佮交付ê無仝" % len(mismatched))
     shutil.rmtree(tmp)
     print("\nOK: %d SRTs + smkul.csv rebuilt byte-identical from Kari-SRT"
           % _delivered_count(entries))

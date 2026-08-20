@@ -31,6 +31,7 @@ from scripts.srtlib import srt as srtfmt
 from scripts.ocr import band as detector
 from scripts.ocr import ocr as recogniser
 from scripts.ocr import sheets as contact
+from scripts.errors import PipelineError
 
 
 # --------------------------------------------------------------- staging
@@ -160,8 +161,8 @@ def stage_cues(args):
     if args.preset:
         presets = detector.load_presets(presets_path)
         if args.preset not in presets:
-            raise SystemExit("no preset %r (have: %s)"
-                             % (args.preset, ", ".join(sorted(presets))))
+            raise PipelineError("no preset %r (have: %s)"
+                                % (args.preset, ", ".join(sorted(presets))))
         key, preset = args.preset, presets[args.preset]
 
     region, spec, lines = _region_spec_lines(video, args, key, preset)
@@ -254,7 +255,7 @@ def stage_ocr(args):
     elif args.engine == "claude-api":
         texts = recogniser.ocr_claude_api(workdir, manifest, args)
     else:
-        raise SystemExit("unknown engine %r" % args.engine)
+        raise PipelineError("unknown engine %r" % args.engine)
 
     path = os.path.join(workdir, "transcripts.json")
     with open(path, "w", encoding="utf-8") as handle:
@@ -426,7 +427,7 @@ def stage_pending(args):
 
     path = os.path.join(workdir, "sheets.json")
     if not os.path.exists(path):
-        raise SystemExit(
+        raise PipelineError(
             "no sheets.json in %s -- rebuild the contact sheets so the "
             "sheet-to-cue map exists" % workdir)
     with open(path, "r", encoding="utf-8") as handle:

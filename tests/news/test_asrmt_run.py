@@ -10,6 +10,7 @@ import tempfile
 import unittest
 
 from scripts.news import asrmt_run
+from scripts.errors import PipelineError
 
 
 class TestVerifyAudio(unittest.TestCase):
@@ -17,7 +18,7 @@ class TestVerifyAudio(unittest.TestCase):
         asrmt_run.verify_audio("試集", 2880.168, 2880.144)
 
     def test_mismatch_names_the_episode_and_both_numbers(self):
-        with self.assertRaises(SystemExit) as caught:
+        with self.assertRaises(PipelineError) as caught:
             asrmt_run.verify_audio("試集", 2760.0, 2880.144)
         message = str(caught.exception)
         self.assertIn("試集", message)
@@ -25,7 +26,7 @@ class TestVerifyAudio(unittest.TestCase):
         self.assertIn("2880.144", message)
 
     def test_tolerance_is_one_second_by_default(self):
-        with self.assertRaises(SystemExit):
+        with self.assertRaises(PipelineError):
             asrmt_run.verify_audio("試集", 2881.5, 2880.0)
         asrmt_run.verify_audio("試集", 2880.9, 2880.0)
 
@@ -58,7 +59,7 @@ class TestModelMapping(unittest.TestCase):
                          "ILRDF/kaldi_formosan_250514_Thao")
 
     def test_unknown_ethnicity_fails_loud(self):
-        with self.assertRaises(SystemExit):
+        with self.assertRaises(PipelineError):
             asrmt_run.model_id_of("Klingon")
 
 
@@ -70,7 +71,7 @@ class TestMp3Resolution(unittest.TestCase):
         self.assertEqual(got, "/docker/ilrdf-corpus/族語新聞/7月/x.mp3")
 
     def test_missing_row_fails_loud(self):
-        with self.assertRaises(SystemExit):
+        with self.assertRaises(PipelineError):
             asrmt_run.mp3_remote("20210301_060_午間_Cou_鄒", [])
 
     def test_semicolon_cell_picks_the_matching_slot(self):
@@ -98,9 +99,9 @@ class TestNameGuardWiring(unittest.TestCase):
     def test_path_escaping_srt_name_dies_before_touching_anything(self):
         # 帶路徑成分的參數在入口就擋下，不是走到 inventory 查無此集
         # 才失敗；訊息要指名是路徑成分，毋是含含糊糊講格式不對
-        with self.assertRaisesRegex(SystemExit, "帶路徑成分"):
+        with self.assertRaisesRegex(PipelineError, "帶路徑成分"):
             asrmt_run.main(["../../home/somebody/.sftp-pass"])
 
     def test_a_wrong_shaped_name_still_reports_the_format(self):
-        with self.assertRaisesRegex(SystemExit, "格式"):
+        with self.assertRaisesRegex(PipelineError, "格式"):
             asrmt_run.main(["2021_32_晚間_Amis_阿美"])

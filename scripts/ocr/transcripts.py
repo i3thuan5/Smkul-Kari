@@ -8,13 +8,14 @@ records which rows a human actually looked at.
 import json
 import os
 import sys
+from scripts.errors import PipelineError
 
 
 def read_manifest(workdir):
     path = os.path.join(workdir, "cues.json")
     if not os.path.exists(path):
-        raise SystemExit("no cues.json in %s -- run the `cues` stage first"
-                         % workdir)
+        raise PipelineError("no cues.json in %s -- run the `cues` stage first"
+                            % workdir)
     with open(path, "r", encoding="utf-8") as handle:
         return json.load(handle)
 
@@ -22,8 +23,8 @@ def read_manifest(workdir):
 def load_transcripts(workdir):
     path = os.path.join(workdir, "transcripts.json")
     if not os.path.exists(path):
-        raise SystemExit("no transcripts.json in %s -- run `ocr` first"
-                         % workdir)
+        raise PipelineError("no transcripts.json in %s -- run `ocr` first"
+                            % workdir)
     with open(path, "r", encoding="utf-8") as handle:
         return json.load(handle)
 
@@ -64,7 +65,7 @@ def import_tsv(workdir, source, replace=False):
     """Load a TSV of read-off-the-sheet text into a work dir.
 
     Returns (imported cue count, cues now covered, cue total). Raises
-    SystemExit naming every problem if any row is unusable -- and imports
+    PipelineError naming every problem if any row is unusable -- and imports
     nothing at all in that case. A partial import is the worst outcome
     available: the rows that landed look no different from the rows that did
     not, so nobody can tell afterwards which half was read.
@@ -89,8 +90,8 @@ def import_tsv(workdir, source, replace=False):
     if errors:
         for message in errors[:20]:
             sys.stderr.write("  %s\n" % message)
-        raise SystemExit("%d problem(s) in %s; nothing imported"
-                         % (len(errors), source))
+        raise PipelineError("%d problem(s) in %s; nothing imported"
+                            % (len(errors), source))
 
     existing = _merge_transcripts(workdir, parsed, replace)
     _mark_verified(workdir, parsed)

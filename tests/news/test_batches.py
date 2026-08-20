@@ -6,6 +6,7 @@ import unittest
 from unittest import mock
 
 from scripts.news import batches
+from scripts.errors import PipelineError
 
 
 class TestPendingSheets(unittest.TestCase):
@@ -77,7 +78,7 @@ class TestSrtNameOf(unittest.TestCase):
     def test_unknown_slug_stops_rather_than_guessing_a_folder(self):
         path = self._inventory([self.ENTRY])
         with mock.patch.object(batches.paths, "INVENTORY", path):
-            with self.assertRaises(SystemExit):
+            with self.assertRaises(PipelineError):
                 batches.srt_name_of("2021_999_2021-01-01_午間_Nope_無")
 
 

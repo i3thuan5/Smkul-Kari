@@ -20,6 +20,7 @@ import os
 
 from scripts.news import paths
 from scripts.ocr import sheets
+from scripts.errors import PipelineError
 
 WORK = paths.WORK
 WORK_EXT = ".work"
@@ -45,8 +46,9 @@ def prepare(slug):
     src = os.path.join(WORK, slug + WORK_EXT)
     dst = os.path.join(WORK, slug + ".B.work")
     if already_read(dst):
-        raise SystemExit("%s already holds verified transcripts; refusing to "
-                         "overwrite" % dst)
+        raise PipelineError(
+            "%s already holds verified transcripts; refusing to "
+            "overwrite" % dst)
     os.makedirs(dst, exist_ok=True)
 
     with open(os.path.join(src, CUES), encoding="utf-8") as handle:

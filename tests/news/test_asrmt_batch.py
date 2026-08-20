@@ -6,6 +6,7 @@ race for the same episode and a rerun lands on the same partition.
 import unittest
 
 from scripts.news import asrmt_batch
+from scripts.errors import PipelineError
 
 
 class TestShard(unittest.TestCase):
@@ -25,9 +26,9 @@ class TestShard(unittest.TestCase):
             self.assertTrue(asrmt_batch.shard_ok(position, 0, 1))
 
     def test_bad_spec_fails_loud(self):
-        with self.assertRaises(SystemExit):
+        with self.assertRaises(PipelineError):
             asrmt_batch.parse_shard("3/3")
-        with self.assertRaises(SystemExit):
+        with self.assertRaises(PipelineError):
             asrmt_batch.parse_shard("x")
         self.assertEqual(asrmt_batch.parse_shard("1/3"), (1, 3))
 

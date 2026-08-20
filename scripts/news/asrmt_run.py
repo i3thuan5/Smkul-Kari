@@ -42,6 +42,7 @@ from scripts.news import make_srt
 from scripts.news import paths
 from scripts.news import rebuild
 from scripts.srtlib import assemble
+from scripts.errors import PipelineError
 
 JSON = ".json"
 MT_URL = "https://ai-labs.ilrdf.org.tw/kari-seejiq-tnpusu-ai-hmjil"
@@ -59,7 +60,7 @@ MODEL_ETHNICITIES = {"Amis", "Atayal", "Bunun", "Kanakanavu", "Kavalan",
 def model_id_of(ethnicity):
     fixed = MODEL_NAME_FIX.get(ethnicity, ethnicity)
     if fixed not in MODEL_ETHNICITIES:
-        raise SystemExit("no ASR model known for ethnicity %r" % ethnicity)
+        raise PipelineError("no ASR model known for ethnicity %r" % ethnicity)
     return MODEL_ID % fixed
 
 
@@ -91,7 +92,7 @@ def mp3_remote(srt_name, rows):
         chosen = _mp3_cell_path(row["音檔位置(mp3)"].strip(), slot)
         if chosen is not None:
             return "/docker/" + chosen
-    raise SystemExit("no mp3 in the catalogue for %s" % srt_name)
+    raise PipelineError("no mp3 in the catalogue for %s" % srt_name)
 
 
 AMI_CODES = ["ami_Coas", "ami_Heng", "ami_Mala", "ami_Sout", "ami_Xiug"]
@@ -108,7 +109,7 @@ def step_needed(path):
 def verify_audio(srt_name, actual, expected, tolerance=1.0):
     """Same timeline or nothing (spec: 音檔時長不符 -> fail loud)."""
     if abs(actual - expected) > tolerance:
-        raise SystemExit(
+        raise PipelineError(
             "%s: 音檔時長 %.3fs 與 cue 軸 %.3fs 差超過 %.1fs——"
             "音檔與時間軸不同源，中止；改抓 mxf 抽音再來"
             % (srt_name, actual, expected, tolerance))
@@ -130,7 +131,7 @@ def _entry_of(srt_name):
     for entry in paths.load_inventory():
         if entry["srt_name"] == srt_name:
             return entry
-    raise SystemExit("%s is not in the inventory" % srt_name)
+    raise PipelineError("%s is not in the inventory" % srt_name)
 
 
 def _probe_duration(path):
@@ -155,8 +156,8 @@ def _cues_duration(srt_name):
 def _audio(srt_name):
     path = os.path.join(_workdir(srt_name), "audio.mp3")
     if not os.path.exists(path):
-        raise SystemExit("no audio at %s -- fetch it with sftp.sh first"
-                         % path)
+        raise PipelineError("no audio at %s -- fetch it with sftp.sh first"
+                            % path)
     verify_audio(srt_name, _probe_duration(path), _cues_duration(srt_name))
     return path
 
@@ -255,8 +256,8 @@ def _codes_for(client, ethnicity_zh):
             return codes
     except (ValueError, TypeError, IndexError):
         pass
-    raise SystemExit("無法從服務取得 %s 的語別碼（回應：%.120s）"
-                     % (ethnicity_zh, reply))
+    raise PipelineError("無法從服務取得 %s 的語別碼（回應：%.120s）"
+                        % (ethnicity_zh, reply))
 
 
 def step_dialect(srt_name):
@@ -314,7 +315,7 @@ def step_mt(srt_name):
     doc = _load(_entries_path(srt_name))
     lang = doc["src_lang"]
     if not lang:
-        raise SystemExit("run --step dialect first")
+        raise PipelineError("run --step dialect first")
     client, cache = _client_cache()
     done = 0
     for row in doc["entries"]:
@@ -385,7 +386,7 @@ def step_seg_ingest(srt_name):
     for name in sorted(os.listdir(folder)):
         reply = os.path.join(folder, name, "reply.tsv")
         if not os.path.exists(reply):
-            raise SystemExit("缺分句回覆：%s" % name)
+            raise PipelineError("缺分句回覆：%s" % name)
         with open(reply, encoding="utf-8") as handle:
             for line in handle:
                 line = line.strip()
@@ -401,7 +402,7 @@ def step_seg_ingest(srt_name):
             continue
         row["sent_end"] = (mark == "E")
     if missing:
-        raise SystemExit("分句標記缺漏或非 E/C：%s" % missing[:20])
+        raise PipelineError("分句標記缺漏或非 E/C：%s" % missing[:20])
     doc["entries"][-1]["sent_end"] = True
     _save(doc, _entries_path(srt_name))
     ends = 0
@@ -457,8 +458,8 @@ def step_complete(srt_name):
     doc = _load(_entries_path(srt_name))
     align_path = os.path.join(_stage("5-align"), srt_name + JSON)
     if not os.path.exists(align_path):
-        raise SystemExit("run --step detect first -- the complete render "
-                         "merges by its verdicts and blocks")
+        raise PipelineError("run --step detect first -- the complete render "
+                            "merges by its verdicts and blocks")
     align = _load(align_path)
     verdicts = {}
     for record in align["entries"]:
@@ -548,7 +549,7 @@ def main(argv=None):
             runners[name]()
         return
     if args.step not in runners:
-        raise SystemExit("unknown step %r" % args.step)
+        raise PipelineError("unknown step %r" % args.step)
     runners[args.step]()
 
 
