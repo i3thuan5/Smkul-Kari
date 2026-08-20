@@ -1,0 +1,30 @@
+---
+schema: spec-driven
+
+# 這份設定跟著 repo 走（換電腦不會掉）。工作規範的正本：
+# - 全程規範（TDD 先紅後綠、for 在前、避免對岸用詞、git 分工）在 CLAUDE.md
+# - 這裡放「寫 openspec artifacts 時」才需要的規則
+
+context: |
+  規劃階段（explore）要照固定順序逐層攤出架構、逐層經使用者確認，
+  三層都確認後才建立 proposal（換機器也一樣，此規則隨 repo 走）：
+  1. Kari-SRT（資料）：目錄分層「語料→技術→編號階段」、檔案產出
+     順序與輸出入對應
+  2. tests/（測試）：測試檔結構、與 spec scenario 的對照
+  3. scripts/（程式）：package 分層（照共用性）與模組歸位
+  不要等到 apply 才出現新檔案。
+
+rules:
+  proposal:
+    - 建立 proposal 前，Kari-SRT／tests／scripts 三層架構須已依序
+      經使用者確認
+    - 提案要列出會新增／修改的檔案與資料夾結構
+  design:
+    - design 附完整檔案樹（含 tests/ 與資料目錄），標明每檔由哪支
+      程式產、吃什麼輸入
+    - 資料產出目錄用編號階段命名（如 1-words/、2-entries/），編號
+      即產出順序，另附 README 說明輸出入對應；README 等產出文件
+      不記 design／task 編號
+  tasks:
+    - 照 CLAUDE.md 的 TDD 規定排序：每個模組任務先寫測試（紅）再
+      實作（綠），測試不獨立成一個事後階段

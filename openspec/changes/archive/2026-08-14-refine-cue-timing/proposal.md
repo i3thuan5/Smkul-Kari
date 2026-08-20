@@ -1,0 +1,66 @@
+# cue 時間邊界精修至 0.05 秒
+
+## Why
+
+現行 cue 切分以 5fps（0.2 秒格點）取樣，**全部已交付集數**（寫此文時
+35 集，含補做的 13 集——實測全落在 0.2s 格點）的時間邊界因此帶有最大
+±0.2s 的量化誤差（e2e 實測 worst-start ≤ 0.30s）。後續要拿這批字幕
+做語音對齊／切音檔，需要 ≤0.05s 的邊界精度；字幕本身的顯示品質也受益。
+CLAUDE.md 已收錄的 0.5s 邊界留白規定也尚未實作進組裝程式。
+另外 `verify_band.py` 放寬後的紅帶判準（只擋落在 region 內的邊緣）改完
+從未拿任何影片實測過，開新月份前必須補驗——這些事都要重抓影片，併在
+同一個 change 一次做完。
+
+## What Changes
+
+- **新增邊界精修 pass**（`scripts/news/refine_cues.py`）：cue 切分維持
+  5fps／`min_stable=2` 不動，另在每個既有邊界 ±0.2s 窗內以 ≥20fps 重新
+  解碼字幕帶，逐幀對照左右 cue 的參考 mask 分類（不重跑 segmenter），
+  把 start/end 精修到 ≤0.05s。cue 集合、編號、文字完全不變。
+- **全部已交付集數回頭精修**（以 store inventory 非 pending 筆數為準，
+  寫此文時 35 集）：逐集自 SFTP 重抓 mxf → 精修 → 刪影片，更新
+  `Kari-SRT/cues/`、重產 `Kari-SRT/srt/`。**BREAKING**：交付 SRT
+  的時間戳全面改變（文字不變），`rebuild --verify` 基準隨之更新。
+- **新月份流程整合**：`fetch_sftp.sh` 在切 cue 之後、刪影片之前順跑
+  精修——影片還在本機時做掉，不必二次下載。
+- **SRT 邊界留白**：組裝 SRT 時每句往前後各延伸至多 0.5s，被鄰句與
+  0 秒下限截短——與 Kaldi `segment_ctm_edits.py` 的
+  `--max-edge-silence-length` 預設（0.5s）對齊，供語音切分留邊。
+  留白只作用在 SRT 輸出；`cues.json` 保存真實切換點。
+- **verify_band 紅帶判準實測**：拿紅帶低位（y=917 型，如 1 月卑南）的
+  實際影片跑通過案例，並以合成剖面 pin 成單元測試。
+- **安全網**：精修後邊界必須落在原值 ±0.2s 內，超出即列名報錯不寫入；
+  交錯掃描過渡幀「兩邊都不像」時取不明區段中點。
+
+## Capabilities
+
+### New Capabilities
+
+- `cue-timing`: cue 時間邊界的精度契約——精修後邊界與畫面實際切換點的
+  誤差上限、精修不得改動 cue 集合與文字、精修結果的可驗證性（與粗切
+  邊界的偏移上限、缺輸入時明確失敗），以及開跑前字幕帶位置驗證的判準。
+
+### Modified Capabilities
+
+（無。`srt-data-store` 的離線重建保證**要求不變**——僅靠主 repo +
+Kari-SRT、不碰影片、逐 byte 相同；變的是 Kari-SRT 內 `cues/` 與 `srt/`
+的資料值，屬資料更新，不是契約變更。）
+
+## Impact
+
+- **新增**：`scripts/news/refine_cues.py`；`tests/news/test_refine.py`
+  （分類邏輯、±0.2s 安全網、過渡幀規則，全部離線 fixture）；
+  `tests/news/test_verify_band.py`（紅帶判準合成剖面案例）。
+- **修改**：`scripts/news/make_srt.py`（留白，經 `assemble` 的
+  entries 管線）、`scripts/news/fetch_sftp.sh`（cues 後接精修再刪
+  影片）、`Kari-SRT/cues/*.json` 與 `Kari-SRT/srt/*.srt`（全部已交付
+  集時間戳更新，一個 commit 同時換）、`openspec` 基準檔。
+- **重跑成本**：每集 mxf ~16GB 自 SFTP 重抓（75MB/s，約 4 分鐘/集），
+  精修每集約 2,000 個邊界窗；35 集無人值守約 3–4 小時。
+- **git 分工**：依 CLAUDE.md，Kari-SRT commit 與主 repo pointer bump
+  由使用者執行。
+
+（原列的「把 110 年 2 月做完」已由另一批次於 `da2f0b3` 以粗切精度
+完成——每族語至少 2 集達成、13 集入庫；該 13 集納入本 change 的
+回頭精修範圍。文稿對齊與 C-pass 路徑已於 tidy-subtitle-pipeline
+移除，不再是任何集數的處理步驟。）

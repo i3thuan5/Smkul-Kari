@@ -1,0 +1,91 @@
+{
+  "amis-titv-news": {
+    "match": "20210104s2000",
+    "note": "TITV Amis evening news - Chinese dialogue subtitle painted straight onto the footage, so the dark-outline test is required. The box is tall because the subtitle uses two heights: y=786..838 normally, and y=730..778 over letterboxed clips. It stops at y=844 on purpose - the red lower-third starts at y=846, and its Amis keyword and reporter name would otherwise be read as dialogue.",
+    "region": [
+      0,
+      722,
+      1920,
+      122
+    ],
+    "mask": {
+      "outline": true,
+      "white_min": 185,
+      "max_spread": 45,
+      "dark_max": 95,
+      "outline_size": 9
+    },
+    "lines": [
+      {
+        "name": "han",
+        "y": 0,
+        "h": 122,
+        "lang": "chi_tra",
+        "ocr_scale": 1
+      }
+    ]
+  },
+  "amis-xiuguluan-bilingual": {
+    "match": "秀姑巒",
+    "note": "'a'ǔyalaeho: 開會了 - Amis over Chinese in an opaque yellow band at the foot of the frame. Because the band is a saturated colour, plain white-pixel detection is enough and the dark-outline test is not needed.",
+    "region": [
+      0,
+      876,
+      1920,
+      138
+    ],
+    "mask": {
+      "outline": false,
+      "white_min": 180,
+      "max_spread": 50,
+      "band_probe": {
+        "x": 0,
+        "w": 60,
+        "min_saturation": 60
+      }
+    },
+    "lines": [
+      {
+        "name": "ami",
+        "y": 12,
+        "h": 60,
+        "lang": "eng",
+        "whitelist": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'^ ",
+        "ocr_scale": 2
+      },
+      {
+        "name": "han",
+        "y": 72,
+        "h": 60,
+        "lang": "chi_tra",
+        "ocr_scale": 1
+      }
+    ]
+  },
+  "titv-news": {
+    "match": "NL00",
+    "note": "TITV 族語新聞. Chinese dialogue subtitle painted onto the footage, so the dark-outline test is required. Measured row profiles agree across both deliveries: the 1080i MPEG-2 masters (2月原始mxf檔) and the h264 mp4s of every other month both put the text plateau at y=788..844 with a sharp spike at y=848 -- the top edge of the red lower-third, which carries the indigenous-language headline and interviewee name supers and must not be read as dialogue. SELECT THIS BY FOLDER, not by file name: pass `--preset titv-news` for anything under 族語新聞/. File names in this corpus are not a reliable signal (魯凱語-霧台…, 賽德克-…, 排灣-… all name the same programme), which is why `match` below only covers the mxf batch and is a convenience, not the contract.",
+    "region": [
+      0,
+      722,
+      1920,
+      122
+    ],
+    "mask": {
+      "outline": true,
+      "white_min": 185,
+      "max_spread": 45,
+      "dark_max": 95,
+      "outline_size": 9
+    },
+    "lines": [
+      {
+        "name": "han",
+        "y": 0,
+        "h": 122,
+        "lang": "chi_tra",
+        "ocr_scale": 1
+      }
+    ]
+  }
+}

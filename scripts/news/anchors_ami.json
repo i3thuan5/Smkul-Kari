@@ -1,0 +1,26 @@
+{
+  "_comment": "阿美語錨點表：數詞與新聞常見借詞專名。拼法對照 ILRDF kaldi 模型的 graph/words.txt 確認過；比對時小寫、容許 1 個編輯距離（detect.match_loanwords）。",
+  "numerals": {
+    "1": ["cecay", "cacay"],
+    "2": ["tosa"],
+    "3": ["tolo"],
+    "4": ["sepat"],
+    "5": ["lima"],
+    "6": ["enem"],
+    "7": ["pito"],
+    "8": ["falo"],
+    "9": ["siwa"],
+    "10": ["polo", "polo'", "mo^tep", "motep", "muketep"]
+  },
+  "loanwords": {
+    "台北": ["taypak", "taypey"],
+    "花蓮": ["kalingko", "karingko"],
+    "台東": ["posong"],
+    "高雄": ["takaw"],
+    "公司": ["kongsiya", "kongsi"],
+    "政府": ["cifu", "hu"],
+    "學校": ["takoyay", "gako"],
+    "醫院": ["pihying", "iing"],
+    "部落": ["niyaro'", "niyaro"]
+  }
+}

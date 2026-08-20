@@ -6,6 +6,10 @@ python:
   - '3.10'
 before_install:
   - pip install --upgrade pip setuptools
+# Kari-SRT submodule 是私有 repo，CI 抓不到；關掉自動 checkout，
+# 否則 .gitmodules 進 main 後所有 job 會在 clone 階段就掛。
+git:
+  submodules: false
 branches:
   only:
     - main
@@ -39,13 +43,25 @@ jobs:
         - pip install tox
       script:
         - tox -e shellcheck
-    - name: Test
-      install:
-        - pip install tox
-      script:
-        - tox -e test
     - name: Behave
       install:
         - pip install tox
       script:
         - tox -e behave
+    - name: Subtitle toolkit unit tests
+      install:
+        - pip install tox
+      script:
+        - tox -e unittest
+    - name: Subtitle toolkit end-to-end
+      addons:
+        apt:
+          packages:
+            - ffmpeg
+            - tesseract-ocr
+            - tesseract-ocr-chi-tra
+            - fonts-noto-cjk
+      install:
+        - pip install tox
+      script:
+        - tox -e e2etest
