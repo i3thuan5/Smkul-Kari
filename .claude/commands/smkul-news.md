@@ -133,8 +133,7 @@ gap-fill batch is proportionally smaller. (An earlier version of this file said
 3,000 sheets ≈ 125 subagents; that was written while cues supplied by the 文稿
 were left off the sheets, and is about 4× too low now that every cue is read.)
 
-The vision pass is the expensive part and it is farmed out to subagents, so it
-is not something to start quietly: **tell the user the episode count, the sheet
-and subagent count, and the rough hours for the month they picked, and wait for
-them to agree before farming it out.** Steps 1 and 2 are cheap and can go ahead
-without asking.
+The vision pass is the expensive part and it is farmed out to subagents. **The
+user has standing authorisation for this (2026-08-30): plan it, say the numbers,
+and start — do not wait for agreement.** Still say the episode count, the sheet
+and subagent count and the rough hours, so the size is on the record; then go.

@@ -26,6 +26,7 @@ once a person has decided, `add_episodes.py` takes the chosen path.
 import argparse
 import collections
 import json
+import os
 import sys
 
 from scripts.news import add_episodes
@@ -130,24 +131,71 @@ def plan(month, catalogue, inventory=None, limit=0):
     return Report(month, entries, added, skipped, no_source)
 
 
-def todo(month, entries):
-    """[(slug, corpus-relative path)] for this month's unfetched episodes.
+def has_local_video(entry):
+    """Is there a video on this disk we can still read this episode off?
+
+    The archive mkv, which `sources.reading_copy` prefers: CRF 23, 1920x1080,
+    byte-verified on upload, and the copy every reread actually opens.
+    """
+    path = os.path.join(paths.MKV_ARCHIVE, entry["srt_name"] + ".mkv")
+    return os.path.exists(path)
+
+
+def todo(month, entries, has_video=None, has_cues=None):
+    """[(slug, corpus-relative path, already-cut)] for this month's fetches.
 
     The fetch list comes from here rather than from listing a remote folder,
     which is the practical half of "a folder is not a month": one month's
     episodes can sit in two folders, so no single listing holds them all, and
     a listing cannot say which episode a file is anyway.
 
+    Two kinds need a download, and each has an exception:
+
+    - **pending** episodes -- registered but not delivered -- *unless the
+      cues are already cut*. Cutting is the last step that needs the video;
+      the vision pass reads `strips/` and `sheets/` and the SRT is assembled
+      from `cues.json`. Pending used to mean "fetch unconditionally", which
+      re-downloaded 2.7 GB for two episodes cut back on 8/21 only to verify
+      the band and delete them again. 使用者裁定 2026-08-31.
+    - **delivered** episodes with no readable video left on this disk. Their
+      cues are cut and their SRT shipped, but the video is deleted the moment
+      `cues.json` lands, and a *reread* needs native frames to find the split
+      points -- the strips are cropped to the band and cannot show what is
+      outside it. January's 11 delivered episodes are exactly this: sheets
+      and strips intact, mkv gone. 使用者裁定 2026-08-31.
+
+    So an episode skipped here today because it is cut comes back on the list
+    the day a reread wants it: this defers the download, it does not cancel it.
+
+    The third field says whether the episode is already cut, which is what
+    tells the caller to fetch the video but leave the cues alone. It is
+    decided here rather than in the shell so that "已切過" has one definition
+    -- the shell's own test asked `.work` only, and an episode cut straight
+    into `.B.work` would have been cut a second time, renumbering every cue
+    underneath a delivered SRT.
+
+    `has_video` and `has_cues` are injectable so the rules can be exercised
+    without a disk.
+
     Paths come back corpus-root-relative, the form the server takes under its
     own root and the form `resolve_slug` normalises to.
     """
+    if has_video is None:
+        has_video = has_local_video
+    if has_cues is None:
+        has_cues = paths.has_cues
     out = []
     for entry in entries:
-        if not entry.get("pending"):
-            continue
         if not entry["播出日期"].startswith(month):
             continue
-        out.append((entry["slug"], resolve_slug.normalise(entry["video"])))
+        cut = has_cues(entry["slug"])
+        if entry.get("pending"):
+            if cut:
+                continue
+        elif has_video(entry):
+            continue
+        out.append((entry["slug"], resolve_slug.normalise(entry["video"]),
+                    cut))
     return out
 
 
@@ -179,14 +227,15 @@ def main(argv=None):
     ap.add_argument("-n", "--dry-run", action="store_true",
                     help="報告欲做啥，毋寫入 inventory")
     ap.add_argument("--todo", action="store_true",
-                    help="干焦印出愛抓的清單（slug<TAB>路徑），予 shell 食")
+                    help="干焦印出愛抓的清單"
+                         "（slug<TAB>路徑<TAB>cut|new），予 shell 食")
     ap.add_argument("--limit", type=int, default=0,
                     help="一改干焦登記 N 集（0＝規个月）")
     args = ap.parse_args(argv)
 
     if args.todo:
-        for slug, video in todo(args.month, paths.load_inventory()):
-            print("%s\t%s" % (slug, video))
+        for slug, video, cut in todo(args.month, paths.load_inventory()):
+            print("%s\t%s\t%s" % (slug, video, "cut" if cut else "new"))
         return 0
 
     report = plan(args.month, resolve_slug.load(), limit=args.limit)

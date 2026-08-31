@@ -81,16 +81,44 @@
 | `add_episodes.py`／`resolve_slug.py` | 逐支指定路徑登記；目錄索引與命名 |
 | `fetch_sftp.sh`／`run_cues.sh`／`refine_fetch.sh`／`sftp.sh`／`sftp-askpass.sh` | 影像側抓檔與切 cue（吃播出月份，清單對 inventory 提；密碼只以檔案存在；`sftp.sh` 收動詞＋獨立參數，路徑不進指令字串） |
 | `refine_cues.py`／`verify_band.py` | cue 邊界精修、字幕帶前驗 |
+| `blank_runs.py` | 掠 vision TSV 內底ê長連紲空白：字幕印佇帶外ê段會規段變空白 |
+| `rescan_band.py` | 用改正ê帶重切一段，接轉原本ê cue 排、規集重新編號 |
+| `line_height.py` | 量字懸掠新聞標題卡：伊佇帶內、字型嘛成，干焦懸度差一半 |
 | `gap_sheets.py`／`batches.py`／`ingest.py` | 視覺辨識批次的出題與收卷 |
 | `make_srt.py`／`make_all.py`／`publish.py`／`tracker.py`／`rebuild.py` | 組裝、定版、進度表、離線重建驗證 |
 | `name_catalogue.py` | kā `srt_name` 寫入目錄ê**產生欄**（`--check` 重算逐格、對袂起來就 exit 1；CRLF＋BOM 原樣保留） |
 | `blind_cues.py` | 揀出 contact sheet 無真正看著ê cue（`frames × 0.2` 對 `end - start` ê差額），補查ê出題單 |
+| `reread.py` | kā失敗ê cue 切做「一句一段」：時間中位數先洗掉會振動ê雜訊，才兩兩比。時間軸無振動，出來ê段是予視覺辨識重讀ê |
+| `reread_tools/allsheets.py` | 逐集切段出圖條，會跳過做過ê（可續跑） |
+| `reread_tools/prompt.py` | 印一批ê讀者提示；判準ê正本囥佇 `brief.md`，改一擺後壁逐批攏會著 |
+| `reread_tools/safe_resplit.py` | 規集做伙把關（`resplit.admit`），過ê才切，寫 cues.json ＋ TSV；閣會報「切袂開毋過讀者讀著無仝」ê（`resplit.unsplit_but_changed`） |
+| `reread_tools/regen_strips.py` | 照新編號重生 strips／sheets／sheets.json |
+| `reread_tools/fix_rtf.py` | kā `4-vision-rtf` 疊層重編號（無這步 `rebuild --verify` 會炸） |
+| `resplit.py` | kā `reread` 切出來ê段真正寫入時間軸：一條 cue 換做幾若條，TSV ê編號綴咧徙（兩爿做伙改，無就逐格ê字會歪去） |
 | `evidence.py` | kā掠著ê問題切一段影片／對照圖，附母帶出處佮秒數，予人家己去核 |
 | `presets.json` | 版型知識（哪個節目哪種帶位） |
 
-## aiyalaeho/、transcode/
+## aiyalaeho/——《開會了》編排
 
-《開會了》編排預留位。
+畫面同時燒族語佮華語兩逝，所以交付 SRT 是**兩行一條**（「族語：／
+華語：」），兩逝攏對畫面來，無語音側。引擎（`ocr/`、`srtlib/`）共用，
+一行無改；詳見 [scripts/aiyalaeho/README.md](aiyalaeho/README.md)。
+
+| 檔 | 做什麼 |
+|---|---|
+| `paths.py` | 語料路徑單一出處（`stage_path()` 逐集檔案**無分層**；`check_srt_name` 認 `開會了_<集數3碼>_…`） |
+| `catalogue.py` | 檔名就是這一集：解析集數／族語別／語言別／語言代號＋整批登記；**無讀** `ilrdf-corpus.csv`（彼 46 逝無日期、無族語別，43 逝標無影片煞有影片） |
+| `verify_band.py` | 切 cue 前逐集驗版型：量帶ê色佮字幕列ê位置（門檻攏是量出來ê，見該 README） |
+| `ingest.py` | 兩逝一 cue ê TSV 驗證匯入（cue↔sheet 歸屬、空白列補 tab、干焦提 `b*.tsv`） |
+| `make_srt.py` | 單集組裝：每條兩行帶標籤，走共用組裝鏈（0.5 秒留白仝款） |
+| `make_all.py`／`publish.py`／`tracker.py`／`rebuild.py` | 整批組裝、定版、九欄進度表、離線重建驗證 |
+| `presets.json` | `aiyalaeho-bilingual`（黃底雙列帶；本底寄佇 `news/presets.json`，這改搬轉來家己遮） |
+
+news 有而遮無ê四支：`fetch_sftp.sh`（素材已經佇本機）、`plan_month.py`
+（無月份批次，登記併入 `catalogue.py`）、`gap_sheets.py`（無 `.B.work`
+彼層歷史）、`batches.py`（`ocr.cli pending` 就會列未讀ê sheet）。
+
+## transcode/
 
 `transcode/` 是母帶封存：`encode_master.sh` 是編碼本身（CRF 23、
 yuv420p、flac、MKV），`archive_batch.py` 是整批流程——抓母帶落

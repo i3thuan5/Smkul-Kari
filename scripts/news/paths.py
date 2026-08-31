@@ -25,6 +25,8 @@ import argparse
 import json
 import os
 import re
+import subprocess
+import sys
 
 from scripts.datadirs import ALLOWED_ROOTS   # noqa: F401  (re-export)
 from scripts.datadirs import KARI
@@ -83,6 +85,36 @@ def stage_path(stage, srt_name, suffix=""):
 
 WORK = os.path.join(KITHANN, "out", "mxf")
 LOGS = os.path.join(KITHANN, "out", "mxf-logs")
+
+
+def work_dirs(slug, work=None):
+    """Both work dirs an episode may have, the vision one first.
+
+    Usually both exist -- `cues` writes `<slug>.work` and `gap_sheets`
+    derives `<slug>.B.work` from it -- but `fetch_sftp.sh` cuts straight
+    into `.B.work`, and the 054-059 batch has no `.work` at all.
+    """
+    root = WORK if work is None else work
+    return (os.path.join(root, slug + ".B.work"),
+            os.path.join(root, slug + ".work"))
+
+
+def has_cues(slug, work=None):
+    """Has this episode been cut? Either work dir holding cues.json counts.
+
+    One definition, because two callers act on it and they must not
+    disagree. `make_all` asking only `.work` reported fourteen finished
+    episodes as 尚未切cue and `publish` then died looking for an SRT that
+    was never assembled; the same mistake in `fetch_sftp.sh` is worse than
+    a wrong report -- it re-cuts a delivered episode, which renumbers every
+    cue, and the shipped SRT's timings come from the numbering that is
+    there now.
+    """
+    for folder in work_dirs(slug, work):
+        if os.path.exists(os.path.join(folder, "cues.json")):
+            return True
+    return False
+
 
 # Shared download staging area (fetch_sftp.sh / refine_fetch.sh convention):
 # big disk, survives restarts, a file with the right byte count is reused
@@ -151,7 +183,57 @@ INVENTORY = os.path.join(NEWS_STORE, "inventory.json")
 # every future month is planned from would have been gone.
 CATALOGUE = os.path.join(KARI, "ilrdf-corpus.csv")
 
-VENV_PY = os.path.expanduser("~/.venvs/subs2srt/bin/python")
+# The interpreter `fetch_sftp.sh` and friends run the heavy steps with.
+# This used to be the one hard-coded path below, which is fine on the
+# machine it was written on and a dead stop everywhere else -- 使用者
+# 2026-08-31 hit `列 67: /home/.../.venvs/subs2srt/bin/python: 沒有此一
+# 檔案或目錄` and the whole month's fetch stopped there.
+#
+# Existing is not enough, either: `ocr-cli cues` needs numpy and PIL, and
+# an interpreter without them fails halfway through, after the video is
+# already downloaded. So a candidate has to import them before it counts.
+DEFAULT_VENV = os.path.expanduser("~/.venvs/subs2srt/bin/python")
+
+
+def venv_candidates():
+    """Interpreters to try, best first."""
+    out = []
+    for path in (os.environ.get("SUBS2SRT_PY"),
+                 DEFAULT_VENV,
+                 os.path.join(ROOT, ".tox", "rebuild", "bin", "python"),
+                 sys.executable):
+        if path and path not in out:
+            out.append(path)
+    return out
+
+
+def python_usable(path):
+    """Can this interpreter actually run the decode steps?"""
+    if not os.path.exists(path):
+        return False
+    try:
+        done = subprocess.run([path, "-c", "import numpy, PIL"],
+                              capture_output=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return done.returncode == 0
+
+
+def venv_py(candidates=None, usable=None):
+    """The first candidate that can run the decode steps.
+
+    Falls back to the running interpreter rather than to nothing: a
+    downstream step saying "No module named numpy" names the problem,
+    while an empty string makes the shell say a file does not exist.
+    """
+    if candidates is None:
+        candidates = venv_candidates()
+    if usable is None:
+        usable = python_usable
+    for path in candidates:
+        if usable(path):
+            return path
+    return sys.executable
 
 
 # What one inventory entry holds, in the order inventory.json holds it.
@@ -248,12 +330,19 @@ def main():
     ap.add_argument("--var", required=True,
                     help="name of the path constant to print, e.g. WORK")
     args = ap.parse_args()
+    # A few "paths" have to be worked out rather than looked up: which
+    # interpreter is present differs per machine, so VENV_PY is a call.
+    computed = {"VENV_PY": venv_py}
+    if args.var in computed:
+        print(computed[args.var]())
+        return
     value = globals().get(args.var)
     if not isinstance(value, str):
         known = []
         for name in sorted(globals()):
             if name.isupper() and isinstance(globals()[name], str):
                 known.append(name)
+        known += sorted(computed)
         raise PipelineError("no path named %r (have: %s)"
                             % (args.var, ", ".join(known)))
     print(value)

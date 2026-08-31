@@ -60,6 +60,28 @@ class TestMakeOne(unittest.TestCase):
              mock.patch.object(make_all, "SRT_DIR", out):
             return make_all.make_one(dict(ENTRY))
 
+    def test_cut_straight_into_the_B_work_dir_is_not_called_uncut(self):
+        """判「切了未」愛看伊實在**組裝ê彼跡**，毋是邊仔彼跡。
+
+        本底是看 `<slug>.work/cues.json`，毋過 SRT 是對
+        `<slug>.B.work` 組ê。054–059 這批是直接切入去 `.B.work`
+        （`fetch_sftp.sh` 是按呢做ê），無 `.work`，所以 `make_all`
+        講「尚未切cue」——實際上圖條、strips、TSV 攏好勢矣。
+        """
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        done = os.path.join(tmp.name, ENTRY["slug"] + ".B.work")
+        os.makedirs(done)
+        self._cues(done)
+        self._write(done, "verified.json", {"1": {"han": True}})
+        self._write(done, "transcripts.json", {"1": {"han": "有字"}})
+        out = os.path.join(tmp.name, "srt")
+        os.makedirs(out)
+        with mock.patch.object(make_all, "WORK", tmp.name), \
+                mock.patch.object(make_all, "SRT_DIR", out):
+            got = make_all.make_one(dict(ENTRY))
+        self.assertNotIn("尚未切cue", got)
+
     def test_uncut_episode_says_so(self):
         self.assertIn("尚未切cue", self._status(cues=False))
 

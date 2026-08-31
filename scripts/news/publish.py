@@ -56,17 +56,33 @@ def publishable(entry):
     return work, ""
 
 
-def gate(entries):
-    """Pending episodes that are not finished, i.e. why we cannot publish.
+def months_of(entries):
+    """Every broadcast month the inventory holds, in order."""
+    seen = set()
+    for entry in entries:
+        seen.add(paths.month_of(entry["srt_name"]))
+    return sorted(seen)
 
-    Publishing is a whole-batch step, not a per-episode one: it clears the
-    pending flags and writes the tracker, and both of those are claims about
-    the batch as a whole. Half of them would leave the store saying it holds
-    deliverables it does not -- the very inconsistency `rebuild --verify`
-    exists to find.
+
+def gate(entries, month=None):
+    """Pending episodes in `month` that are not finished -- why it is held.
+
+    Publishing is a whole-*batch* step, not a per-episode one: it clears the
+    pending flags and writes the tracker, and both are claims about the
+    batch. Half of them would leave the store saying it holds deliverables
+    it does not -- the inconsistency `rebuild --verify` exists to find.
+
+    A batch is a **broadcast month**, the same unit `plan_month.py` and
+    `fetch_sftp.sh` work in. This used to walk the whole inventory instead,
+    which meant registering January held February back even though the two
+    months share nothing; 使用者裁定 2026-08-31 that they must not. Passing
+    no month keeps the old whole-inventory behaviour for callers that want
+    a single verdict.
     """
     blocked = []
     for entry in entries:
+        if month is not None and paths.month_of(entry["srt_name"]) != month:
+            continue
         if not tracker.is_pending(entry):
             continue
         _work, reason = publishable(entry)
@@ -117,10 +133,19 @@ def write_deliverable_tracker(entries):
     return path
 
 
-def clear_pending(entries):
-    """Drop the pending flags: every one of them is now delivered."""
+def clear_pending(entries, published):
+    """Drop the pending flag from the episodes actually written this run.
+
+    `published` is the set of srt_names that were. It used to clear every
+    pending flag in the inventory, which was right while publishing was
+    whole-inventory; now that a month can go out while another is still
+    being read, clearing them all would mark the unpublished month
+    delivered -- the store would claim a deliverable that is not there.
+    """
     cleared = 0
     for entry in entries:
+        if entry["srt_name"] not in published:
+            continue
         if tracker.is_pending(entry):
             del entry["pending"]
             cleared += 1
@@ -137,10 +162,20 @@ def main(argv=None):
 
     entries = paths.load_inventory()
 
-    # Decide everything before writing anything: publishing is all-or-nothing.
-    blocked = gate(entries)
+    # Decide everything before writing anything: publishing is
+    # all-or-nothing *within a broadcast month*. A month that is still
+    # being read holds only itself back now, not the finished ones.
+    held = {}
+    for month in months_of(entries):
+        blocked = gate(entries, month)
+        if blocked:
+            held[month] = blocked
+
     ready = []
     for entry in entries:
+        month = paths.month_of(entry["srt_name"])
+        if month in held:
+            continue
         work, reason = publishable(entry)
         if reason:
             print("skip  %-46s %s" % (entry["srt_name"], reason))
@@ -149,11 +184,17 @@ def main(argv=None):
         if args.check:
             print("ready %s" % entry["srt_name"])
 
-    if blocked:
-        print("\n%d pending episode(s) not finished; nothing written:"
-              % len(blocked))
-        for name, reason in blocked[:10]:
+    for month in sorted(held):
+        print("\nhold  %s：%d 集猶未讀完，這個月無寫"
+              % (month, len(held[month])))
+        for name, reason in held[month][:10]:
             print("  %-46s %s" % (name, reason))
+
+    # Empty `ready` on its own is not a failure: an inventory that is
+    # wholly delivered has nothing to copy, and the tracker still gets
+    # written. It is a failure only when work was held and none went out.
+    if held and not ready:
+        print("\n無一个月份好勢，啥物都無寫")
         return 1
 
     if args.check:
@@ -170,7 +211,10 @@ def main(argv=None):
     # store's copy with a second one kept in the main repo, which is how the
     # two could disagree about which episodes exist. What is written back is
     # the same file with the pending flags gone.
-    cleared = clear_pending(entries)
+    published = set()
+    for entry, _work in ready:
+        published.add(entry["srt_name"])
+    cleared = clear_pending(entries, published)
     path = write_deliverable_tracker(entries)
     print("\npublished %d of %d episode(s); %d no longer pending; wrote %s"
           % (len(ready), len(entries), cleared, os.path.basename(path)))

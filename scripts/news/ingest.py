@@ -98,7 +98,11 @@ def main():
     for cues in sheets.values():
         on_sheets.update(cues)
 
-    files = sorted(glob.glob(os.path.join(tsvdir, "*.tsv")))
+    # `b*.tsv` ê 才是視覺辨識ê批。Store 內底 644 个 TSV 有 643 个
+    # 按呢號名；賰彼一个（20210209_040 ê `sample.tsv`）是逐 72 條抽
+    # 4 條ê抽查檔，內容對 `b*.tsv` 抄ê，ingest 伊加無半字，顛倒會
+    # 予 `_audit_row` 掠做「仝一个 cue 出現佇兩个檔」規批擋落來。
+    files = sorted(glob.glob(os.path.join(tsvdir, "b*.tsv")))
     seen, problems = _audit_rows(files, on_sheets)
 
     if problems:

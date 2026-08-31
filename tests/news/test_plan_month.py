@@ -194,26 +194,108 @@ class TestTodo(Fixture):
         report = self._plan(month)
         plan_month.write(report, self.inventory)
         entries = plan_month.paths.load_inventory(self.inventory)
-        return plan_month.todo(month, entries)
+        return plan_month.todo(month, entries, has_video=lambda e: True,
+                               has_cues=lambda s: False)
 
     def test_lists_this_months_pending_episodes(self):
         rows = self._todo()
         self.assertEqual(len(rows), 2)
-        for slug, video in rows:
+        for slug, video, _cut in rows:
             self.assertTrue(slug)
             self.assertTrue(video.startswith("族語新聞/"))
 
     def test_the_path_is_corpus_relative_ready_for_the_server(self):
-        for _slug, video in self._todo():
+        for _slug, video, _cut in self._todo():
             self.assertFalse(video.startswith("/"))
             self.assertFalse(video.startswith("ilrdf-corpus/"))
 
-    def test_delivered_episodes_are_not_fetched_again(self):
+    def _delivered(self):
         report = self._plan()
         entries = []
         for entry in report.entries:
             entries.append(dict(entry, pending=False))
-        self.assertEqual(plan_month.todo("2021-02", entries), [])
+        return entries
+
+    def test_delivered_episodes_with_the_video_are_not_fetched_again(self):
+        entries = self._delivered()
+        got = plan_month.todo("2021-02", entries, has_video=lambda e: True,
+                              has_cues=lambda s: True)
+        self.assertEqual(got, [])
+
+    def test_delivered_episodes_without_the_video_are_fetched(self):
+        """重讀愛抽原生格，毋過影片佇 cues.json 落地彼時就刣掉矣。
+
+        使用者裁定 2026-08-31：有 cues.json 毋過無通讀ê影片，照抓。
+        1 月彼 11 集已交付ê就是按呢——圖條佮 strips 攏佇咧，干焦
+        mkv 無去。
+        """
+        entries = self._delivered()
+        got = plan_month.todo("2021-02", entries, has_video=lambda e: False,
+                              has_cues=lambda s: True)
+        self.assertEqual(len(got), len(entries))
+
+    def test_only_the_ones_missing_a_video_are_fetched(self):
+        entries = self._delivered()
+        keep = entries[0]["slug"]
+
+        def has_video(entry):
+            return entry["slug"] == keep
+
+        got = plan_month.todo("2021-02", entries, has_video=has_video,
+                              has_cues=lambda s: True)
+        self.assertEqual([slug for slug, _video, _cut in got],
+                         [e["slug"] for e in entries[1:]])
+
+    def test_pending_but_uncut_is_fetched_even_with_a_video_on_disk(self):
+        """猶未切 cue ê，影片佇咧嘛愛行完規套。"""
+        got = self._todo()
+        self.assertEqual(len(got), 2)
+
+    def test_pending_that_is_already_cut_is_not_downloaded(self):
+        """登記矣、cue 嘛切好矣ê，莫閣抓一遍。
+
+        使用者裁定 2026-08-31（第二遍）：本底 pending 是無條件重抓ê，
+        所以先前 `--limit 2` 試跑抓ê 2.7 GB 兩支，其實 8/21 就切好矣，
+        抓落來干焦驗一下帶位就刣掉。切 cue 了後影片ê用途干焦賰重讀，
+        彼是 publish 了後ê代誌，到時 `has_video` 彼條家己會kā伊抓轉來。
+        """
+        report = self._plan()
+        plan_month.write(report, self.inventory)
+        entries = plan_month.paths.load_inventory(self.inventory)
+        got = plan_month.todo("2021-02", entries, has_video=lambda e: False,
+                              has_cues=lambda s: True)
+        self.assertEqual(got, [])
+
+    def test_only_the_uncut_pending_ones_are_fetched(self):
+        report = self._plan()
+        plan_month.write(report, self.inventory)
+        entries = plan_month.paths.load_inventory(self.inventory)
+        cut = entries[0]["slug"]
+        got = plan_month.todo("2021-02", entries, has_video=lambda e: False,
+                              has_cues=lambda s: s == cut)
+        self.assertEqual([slug for slug, _video, _cut in got],
+                         [e["slug"] for e in entries[1:]])
+
+    def test_each_row_says_whether_it_is_already_cut(self):
+        """第三欄是予 shell 判「抓就好，莫閣切」ê。
+
+        彼句判斷本底佇 shell 家己做，而且干焦問 `.work`——已交付ê集數
+        若干焦有 `.B.work`（054–059 彼批），就會予人重切，cue 規排重
+        編號，交付ê SRT 時間全走位。判斷提來遮做，兩爿就袂各講各話。
+        """
+        entries = self._delivered()
+        got = plan_month.todo("2021-02", entries, has_video=lambda e: False,
+                              has_cues=lambda s: True)
+        for _slug, _video, cut in got:
+            self.assertTrue(cut)
+
+        report = self._plan()
+        plan_month.write(report, self.inventory)
+        fresh = plan_month.paths.load_inventory(self.inventory)
+        got = plan_month.todo("2021-02", fresh, has_video=lambda e: False,
+                              has_cues=lambda s: False)
+        for _slug, _video, cut in got:
+            self.assertFalse(cut)
 
     def test_another_month_is_not_included(self):
         self._todo()

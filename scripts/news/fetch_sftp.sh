@@ -24,14 +24,28 @@
 # is one video (2.2 GB transcode, up to 19.7 GB master) plus the work dirs,
 # which measured ~0.5 GB per episode.
 #
-# Re-runnable: an episode whose work dir already has `cues.json` is skipped,
-# so an interrupted month picks up where it stopped.
+# Re-runnable: an interrupted month picks up where it stopped. An episode
+# whose work dir already has `cues.json` is not cut again, and while it is
+# still pending it is not even downloaded -- cutting is the last step that
+# needs the video. Once it is delivered it comes back on the list if no video
+# is left on this disk, because a *reread* needs native frames and the strips
+# are cropped to the band. 使用者裁定 2026-08-31. `plan_month.py --todo`
+# decides all of that, and says per episode whether it is `cut` or `new`.
 set -u
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
 cd "$ROOT" || exit 1
-PY=$(python3 -m scripts.news.paths --var VENV_PY)
+# 這支 interpreter 是家己揀ê，毋是寫死ê：`SUBS2SRT_PY` → `~/.venvs/
+# subs2srt` → repo ê `.tox/rebuild` → 這馬走ê python，頭一支入會去
+# numpy 佮 PIL ê就用伊。（本底寫死一條路，別台機器就講「沒有此一
+# 檔案或目錄」，規个月ê抓檔停佇遮。）
+PY=$(python3 -m scripts.news.paths --var VENV_PY) || exit 1
+if [[ ! -x "$PY" ]]; then
+    echo "揣無會使走ê python：$PY" >&2
+    echo "  用 SUBS2SRT_PY=/path/to/python 指定，抑是 tox -e rebuild 建起來" >&2
+    exit 1
+fi
 WORK=$(python3 -m scripts.news.paths --var WORK)
 LOG=$(python3 -m scripts.news.paths --var LOGS)
 PRESETS=$(python3 -m scripts.news.paths --var ENGINE_PRESETS)
@@ -116,17 +130,27 @@ done_count=0
 # on stdin that is the list itself: the loop swallowed every remaining
 # episode and reported "finished: 1 episode(s) cut" as if the batch were
 # done. Never noticed before because every earlier run used --limit.
-while IFS=$'\t' read -r slug remote <&3; do
+while IFS=$'\t' read -r slug remote state <&3; do
     [[ -n "$remote" ]] || continue
     if [[ "$LIMIT" -gt 0 ]] && [[ "$done_count" -ge "$LIMIT" ]]; then
         echo "$(date +%H:%M:%S) stopping at --limit $LIMIT"
         break
     fi
 
+    # An episode already cut is on this list only because it has no video
+    # left on this disk (plan_month decides that). Fetch it, but do NOT cut
+    # it again: re-cutting renumbers every cue, and the delivered SRT's
+    # timings come from the numbering that is there now. Download, keep,
+    # move on -- the reread opens the file and that is all it needs.
+    #
+    # The verdict comes from plan_month, not from a `-f` test here: cues can
+    # be in `<slug>.work` or `<slug>.B.work`, and this script's own test
+    # asked only the first -- an episode cut straight into `.B.work` would
+    # have been cut a second time under a delivered SRT.
     dst="$WORK/$slug.work"
-    if [[ -f "$dst/cues.json" ]]; then
-        echo "$(date +%H:%M:%S) skip  $slug (already cut)"
-        continue
+    fetch_only=
+    if [[ "$state" = cut ]]; then
+        fetch_only=1
     fi
 
     name=$(basename "$remote")
@@ -170,6 +194,14 @@ while IFS=$'\t' read -r slug remote <&3; do
             echo "  add a preset for this folder before continuing."
             rm -f "$local_file"; exit 1
         fi
+    fi
+
+    if [[ -n "$fetch_only" ]]; then
+        touch "$local_file.keep"
+        done_count=$((done_count + 1))
+        echo "$(date +%H:%M:%S) kept  $slug (already cut -- video only," \
+             "no re-cut)"
+        continue
     fi
 
     # nice/ionice 落去，佮 encode_master.sh 仝一套：一批走幾點鐘，

@@ -1,6 +1,8 @@
-# Smkul-Kari：原視族語新聞字幕語料 pipeline
+# Smkul-Kari：原視族語字幕語料 pipeline
 
-對原視族語新聞做兩件事，產出同一條時間軸上的字幕語料：
+兩個語料：**族語新聞**（`news/`）與**《開會了》**（`aiyalaeho/`）。
+
+族語新聞做兩件事，產出同一條時間軸上的字幕語料：
 
 - **影像側（OCR）**：把燒在畫面上的華語字幕抽成 SRT。
 - **語音側（ASR）**：把族語語音整集辨識、投影到與交付字幕逐行
@@ -22,18 +24,20 @@ scripts/                 程式（照共用性分 package）
 ├── asrmt/                   語音側引擎——預設線（每支影片都跑，到 raw）
 │   └── align/               align 延伸（翻譯、偵測、審查、整併；指名才跑）
 ├── news/                    族語新聞編排（單集／整批入口、路徑單一出處）
-├── aiyalaeho/               《開會了》語料預留
+├── aiyalaeho/               《開會了》編排（雙列交付，無語音側）
 └── transcode/               母帶轉檔小工具
 
 tests/                   測試（鏡射 scripts 分包；全離線）
-├── ocr/  srtlib/  news/  e2e/
+├── ocr/  srtlib/  news/  aiyalaeho/  e2e/
 └── asrmt/
     └── align/
 
 Kari-SRT/                資料正本（submodule；語料 → 技術 → 編號階段）
-└── news/
-    ├── 1-ocr/               影像側階段資料
-    └── 2-asr/               語音側階段資料（預設止於 3-srt-raw）
+├── news/                    語料：族語新聞
+│   ├── 1-ocr/               影像側階段資料
+│   └── 2-asr/               語音側階段資料（預設止於 3-srt-raw）
+└── aiyalaeho/               語料：《開會了》
+    └── 1-ocr/               影像側階段資料（1-cues／2-vision／3-srt）
 ```
 
 ## 執行方法
@@ -48,6 +52,19 @@ Kari-SRT/                資料正本（submodule；語料 → 技術 → 編號
 ~/.venvs/asrmt/bin/python -m scripts.news.asrmt_run <srt_name>
 
 # 影像側：見 scripts/news/README.md 與 Kari-SRT/news/1-ocr/README.md
+```
+
+### 《開會了》
+
+畫面同時燒著族語與華語兩列，交付 SRT 每條兩行（「族語：／華語：」），
+兩行都來自畫面，沒有語音側。跑法見
+[scripts/aiyalaeho/README.md](scripts/aiyalaeho/README.md)。
+
+```bash
+python3 -m scripts.aiyalaeho.catalogue        # 登記（檔名驅動）
+python3 -m scripts.aiyalaeho.make_all         # 組裝
+python3 -m scripts.aiyalaeho.publish          # 定版
+python3 -m scripts.aiyalaeho.rebuild --verify # 驗離線重建
 ```
 
 ### 母帶封存（mxf → mkv）

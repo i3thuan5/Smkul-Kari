@@ -93,6 +93,17 @@ FRAME_DT = 0.2
 # whole hidden sentence 1.2 s.
 FLOOR = 1.0
 
+# A cue this long is worth a second look whatever `frames` says. The
+# segmenter's other failure is the mirror of the jam: a *static* bright
+# background (a white document, snow) floods the mask, the subtitle is under
+# 7% of it, and a sentence change moves too little for either gate to notice.
+# `_extend_current` then succeeds on every frame, so `frames` looks healthy
+# and the unseen figure stays small -- 20210220_051 cue 125 holds six
+# sentences with frames=64 and only 1.04s unseen. Duration is the only
+# handle on that one. Measured: 2,125 cues clear `LONG` that `FLOOR` misses,
+# 17,664 seconds, more than the jam type's 16,036.
+LONG = 6.0
+
 # What `batches.py --size` is called with everywhere in this pipeline.
 BATCH_SIZE = 96
 
@@ -104,33 +115,44 @@ def unseen(cue):
     return max(0.0, span - looked)
 
 
-def risky(cues, floor=FLOOR):
+def risky(cues, floor=FLOOR, long=LONG):
     """The cues worth re-reading off the video, worst first.
 
-    Each is the original dict plus `unseen`.
+    Each is the original dict plus `unseen` and `why` -- "unseen" for the
+    jam, "long" for the static-bright case that only duration catches. Pass
+    `long=None` to ask the unseen question alone.
     """
     out = []
     for cue in cues:
         gap = unseen(cue)
-        if gap < floor:
+        span = cue["end"] - cue["start"]
+        if gap >= floor:
+            why = "unseen"
+        elif long is not None and span >= long:
+            why = "long"
+        else:
             continue
         copy = dict(cue)
         copy["unseen"] = gap
+        copy["why"] = why
         out.append(copy)
     out.sort(key=lambda c: -c["unseen"])
     return out
 
 
-def summary(cues, floor=FLOOR):
+def summary(cues, floor=FLOOR, long=LONG):
     """How much of one episode needs a second look."""
-    flagged = risky(cues, floor)
+    flagged = risky(cues, floor, long)
     total = 0.0
+    longs = 0
     for cue in flagged:
         total += cue["unseen"]
+        if cue["why"] == "long":
+            longs += 1
     share = 0.0
     if cues:
         share = 100.0 * len(flagged) / len(cues)
-    return {"cues": len(cues), "risky": len(flagged),
+    return {"cues": len(cues), "risky": len(flagged), "long": longs,
             "unseen": total, "share": share}
 
 
@@ -159,23 +181,24 @@ def delivered():
     return out
 
 
-def _one(srt_name, floor):
+def _one(srt_name, floor, long):
     cues = load(srt_name)
-    for cue in risky(cues, floor):
-        print("%s\t%s\t%d\t%.2f\t%.2f\t%.2f"
+    for cue in risky(cues, floor, long):
+        print("%s\t%s\t%d\t%.2f\t%.2f\t%.2f\t%s"
               % (srt_name, batch_of(cue["index"]), cue["index"],
-                 cue["start"], cue["end"], cue["unseen"]))
+                 cue["start"], cue["end"], cue["unseen"], cue["why"]))
 
 
-def _all(floor):
+def _all(floor, long):
     rows = []
     for name in delivered():
-        rows.append((name, summary(load(name), floor)))
+        rows.append((name, summary(load(name), floor, long)))
     rows.sort(key=lambda r: -r[1]["share"])
-    print("%-42s %6s %6s %6s %9s" % ("集數", "cue", "待查", "占比", "未見秒"))
+    print("%-42s %6s %6s %6s %6s %9s"
+          % ("集數", "cue", "待查", "傷長", "占比", "未見秒"))
     for name, got in rows:
-        print("%-42s %6d %6d %5.1f%% %9.0f"
-              % (name[:42], got["cues"], got["risky"],
+        print("%-42s %6d %6d %6d %5.1f%% %9.0f"
+              % (name[:42], got["cues"], got["risky"], got["long"],
                  got["share"], got["unseen"]))
     cues = 0
     flagged = 0
@@ -196,11 +219,15 @@ def main(argv=None):
                     help="干焦這一集（省略就是全部ê總表）")
     ap.add_argument("--floor", type=float, default=FLOOR,
                     help="偌濟秒無看著才算待查（預設 %.1f）" % FLOOR)
+    ap.add_argument("--long", type=float, default=LONG,
+                    help="偌長ê cue 無論按怎攏愛閣看（預設 %.1f，0 ＝ 莫）"
+                         % LONG)
     args = ap.parse_args(argv)
+    long = args.long or None
     if args.srt_name:
-        _one(paths.check_srt_name(args.srt_name), args.floor)
+        _one(paths.check_srt_name(args.srt_name), args.floor, long)
     else:
-        _all(args.floor)
+        _all(args.floor, long)
     return 0
 
 

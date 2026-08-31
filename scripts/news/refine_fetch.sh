@@ -19,7 +19,12 @@ set -u
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
 cd "$ROOT" || exit 1
-PY=$(python3 -m scripts.news.paths --var VENV_PY)
+PY=$(python3 -m scripts.news.paths --var VENV_PY) || exit 1
+if [[ ! -x "$PY" ]]; then
+    echo "揣無會使走ê python：$PY" >&2
+    echo "  用 SUBS2SRT_PY=/path/to/python 指定，抑是 tox -e rebuild 建起來" >&2
+    exit 1
+fi
 KARI=$(python3 -m scripts.news.paths --var KARI)
 STAGE="${STAGE:-$ROOT/kithann/out/stage}"
 LOG="$ROOT/kithann/out/mxf-logs"

@@ -113,5 +113,56 @@ class TestBatchOf(unittest.TestCase):
         self.assertEqual(blind_cues.batch_of(1017, size=96), "b11")
 
 
+class TestOverlong(unittest.TestCase):
+    """第二種失效：`frames` 正常，毋過一格關傷濟句。
+
+    背景若是**靜態**ê亮物（白紙、雪地），遮罩予伊灌爆，字幕干焦佔
+    7% 以下。換句ê時遮罩振動無到門檻，兩道閘門攏無感覺，所以
+    `_extend_current` 逐格攏成功——`frames` 媠媠，差額判準看無。
+
+    實測 20210219_050_午間_Rukai_魯凱 cue 174：**74 秒**、`frames=370`、
+    差額 **0.00**——規 74 秒逐格攏佮凍結遮罩相符。遮罩 74 秒無振動，
+    毋是「字幕停 74 秒」，是遮罩無咧描述字。差額判準對這型完全無感。
+
+    全批 53582 條內底，時長 ≥6 秒閣予差額判準漏掉ê有 2171 條。
+    """
+
+    CUES = [
+        cue(1, 0.0, 2.0, 10),          # 短閣看透，免查
+        cue(174, 0.0, 74.0, 370),      # 靜態型：差額 0.00，干焦時長掠會著
+        cue(735, 0.0, 27.58, 2),       # 卡死型：差額 27.18
+        cue(9, 0.0, 5.9, 29),          # 5.9 秒，門檻以下
+    ]
+
+    def test_a_long_cue_is_flagged_even_when_fully_sampled(self):
+        got = blind_cues.risky(self.CUES, floor=1.0, long=6.0)
+        self.assertIn(174, [c["index"] for c in got])
+
+    def test_the_duration_threshold_is_respected(self):
+        got = blind_cues.risky(self.CUES, floor=1.0, long=6.0)
+        self.assertNotIn(9, [c["index"] for c in got])
+
+    def test_a_short_well_sampled_cue_is_still_left_alone(self):
+        got = blind_cues.risky(self.CUES, floor=1.0, long=6.0)
+        self.assertNotIn(1, [c["index"] for c in got])
+
+    def test_each_flagged_cue_says_which_trigger_fired(self):
+        by = {}
+        for c in blind_cues.risky(self.CUES, floor=1.0, long=6.0):
+            by[c["index"]] = c["why"]
+        self.assertEqual(by[174], "long")
+        self.assertEqual(by[735], "unseen")
+
+    def test_turning_the_duration_trigger_off_restores_the_old_list(self):
+        # long=None ⇒ 干焦差額判準，佮舊行為仝款
+        got = blind_cues.risky(self.CUES, floor=1.0, long=None)
+        self.assertEqual([c["index"] for c in got], [735])
+
+    def test_the_summary_counts_both_kinds(self):
+        got = blind_cues.summary(self.CUES, floor=1.0, long=6.0)
+        self.assertEqual(got["risky"], 2)
+        self.assertEqual(got["long"], 1)
+
+
 if __name__ == "__main__":
     unittest.main()

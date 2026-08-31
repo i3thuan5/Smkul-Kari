@@ -316,9 +316,14 @@ crops with the detected line edges drawn on. Two things reliably fool it:
 - Detection picks a single band, so on a bilingual video it returns whichever
   of the two lines carries more ink, not both.
 
-Once confirmed, record the region in `scripts/news/presets.json`（引擎不再自帶 preset，執行時用 `--presets` 指路徑） keyed by a
-substring of the file name; `cues` then picks it up automatically. That file
-already holds verified entries for the two videos in `kithann/`.
+Once confirmed, record the region in the corpus' own presets file
+（引擎不再自帶 preset，執行時用 `--presets` 指路徑）: `scripts/news/presets.json`
+for 族語新聞, `scripts/aiyalaeho/presets.json` for 《開會了》
+（`aiyalaeho-bilingual`，本底寄佇 news 彼份，2026-08-31 搬轉來家己ê package）.
+A preset may carry a `match` substring for the file name and `cues` will then
+pick it up automatically, but **pass `--preset` explicitly**: file names in this
+corpus carry no reliable common substring, and matching the wrong one segments
+a whole batch against the wrong pixels without reporting anything.
 
 ## The text mask
 

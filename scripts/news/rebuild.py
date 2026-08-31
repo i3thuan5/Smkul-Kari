@@ -54,7 +54,11 @@ def episode_transcripts(srt_name):
         folder = paths.stage_path(source, srt_name)
         if not os.path.isdir(folder):
             continue
-        for path in sorted(glob.glob(os.path.join(folder, "*.tsv"))):
+        # `b*.tsv` ê 才是視覺辨識ê批（644 个內底 643 个按呢號名）。
+        # 賰彼一个 `sample.tsv` sort 起來排佇後壁，會kā彼幾條蓋過
+        # 去；舊編號ê時內容拄好仝款所以看袂出來，重新編號了後就
+        # 指著別條 cue。`ingest` 彼爿仝款愛限做 `b*.tsv`。
+        for path in sorted(glob.glob(os.path.join(folder, "b*.tsv"))):
             for line in _tsv_lines(path):
                 parts = line.split("\t")
                 text = parts[2] if len(parts) > 2 else ""

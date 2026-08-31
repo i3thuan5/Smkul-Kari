@@ -50,15 +50,16 @@ def vision_complete(work):
 def make_one(entry):
     """Build one episode's SRT; return its status line."""
     slug = entry["slug"]
-    work = os.path.join(WORK, slug + ".work")
-    if not os.path.exists(os.path.join(work, "cues.json")):
+    # "Has it been cut?" is true if *either* work dir holds cues -- see
+    # paths.has_cues, which `fetch_sftp.sh` asks the same question of.
+    vision = paths.work_dirs(slug, WORK)[0]
+    if not paths.has_cues(slug, WORK):
         return "待處理（尚未切cue）"
 
     # The vision pass is where the text comes from: read off the contact
     # sheets by a human, cue by cue. An episode is only assembled once every
     # one of its cues has been read -- a half-read pass is a normal state
     # (the pass is designed to be resumable) but not a deliverable one.
-    vision = os.path.join(WORK, slug + ".B.work")
     if not vision_complete(vision):
         return "待處理（已切cue，尚未校讀完）"
 

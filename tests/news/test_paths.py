@@ -319,5 +319,48 @@ class TestLoadInventory(unittest.TestCase):
             paths.load_inventory(path)
 
 
+class TestHasCues(unittest.TestCase):
+    """「這集切過矣未？」——兩个 work dir 隨一个有 cues.json 就算切過。
+
+    通常兩个攏有（`cues` 寫 `.work`，`gap_sheets` 對伊生 `.B.work`），
+    毋過 `fetch_sftp.sh` 是直接切入去 `.B.work`，054–059 彼批連 `.work`
+    都無。干焦問 `.work` ê話，14 集已經做好ê會予人講「尚未切cue」。
+
+    問題毋是干焦報告歹看：`fetch_sftp.sh` 用仝一句判斷來決定「愛閣切
+    無」，判毋著就是kā已交付ê集數重切——cue 規排重編號，交付ê SRT
+    時間就對袂起來矣。所以這句判斷愛干焦一份，佇遮。
+    """
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.work = tmp.name
+
+    def _cut(self, suffix):
+        folder = os.path.join(self.work, "ep" + suffix)
+        os.makedirs(folder)
+        with open(os.path.join(folder, "cues.json"), "w") as handle:
+            handle.write("{}")
+
+    def test_nothing_on_disk_means_not_cut(self):
+        self.assertFalse(paths.has_cues("ep", work=self.work))
+
+    def test_the_plain_work_dir_counts(self):
+        self._cut(".work")
+        self.assertTrue(paths.has_cues("ep", work=self.work))
+
+    def test_the_vision_work_dir_counts_on_its_own(self):
+        self._cut(".B.work")
+        self.assertTrue(paths.has_cues("ep", work=self.work))
+
+    def test_an_empty_work_dir_is_not_cut(self):
+        os.makedirs(os.path.join(self.work, "ep.work"))
+        self.assertFalse(paths.has_cues("ep", work=self.work))
+
+    def test_another_episodes_cues_do_not_count(self):
+        self._cut(".work")
+        self.assertFalse(paths.has_cues("other", work=self.work))
+
+
 if __name__ == "__main__":
     unittest.main()
