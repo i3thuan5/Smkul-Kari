@@ -1,0 +1,37 @@
+{
+  "aiyalaeho-bilingual": {
+    "note": "'a'iyalaeho: 開會了 - one Formosan row above one Chinese row, on an opaque yellow-to-red gradient band at the foot of the frame. The band is a saturated colour, so the plain white-pixel test is enough and the dark-outline one is not needed; `band_probe` reads a slice of the left edge the text never reaches, which is what tells a frame with no band (titles, credits) from one carrying a subtitle. Measured over 12 samples in each of the 38 subtitled episodes, the band drifts by episode: the Formosan row runs y=893..947 and the Chinese row y=950..1011, so the Chinese slot runs to y=1012 rather than stopping at 1008: three episodes (094, 111, 117) put its glyph bottoms at 1008..1011 and a 60px slot clipped them. Not to the region's foot at 1014, though -- the strip height feeds the contact sheet's packing budget, and at 66px a cue's block came to 560px against a 558px budget, which dropped the sheets from four cues to three and would have cost a third more reading for two pixels. Measured below 1011 there is nothing to keep: ink per row is 2 and 1 at y=1012 and 1013 on 094, and zero on 068. The top row is named `formosan`, not for any one language: this programme covers eleven of them and the row carries whichever the episode is in, Chinese words included where the speaker used them. SELECT THIS WITH `--preset`: file names in this corpus carry no reliable common substring, so there is deliberately no `match` here.",
+    "region": [
+      0,
+      876,
+      1920,
+      138
+    ],
+    "mask": {
+      "outline": false,
+      "white_min": 180,
+      "max_spread": 50,
+      "band_probe": {
+        "x": 0,
+        "w": 60,
+        "min_saturation": 60
+      }
+    },
+    "lines": [
+      {
+        "name": "formosan",
+        "y": 12,
+        "h": 60,
+        "lang": "eng",
+        "ocr_scale": 2
+      },
+      {
+        "name": "han",
+        "y": 72,
+        "h": 64,
+        "lang": "chi_tra",
+        "ocr_scale": 1
+      }
+    ]
+  }
+}

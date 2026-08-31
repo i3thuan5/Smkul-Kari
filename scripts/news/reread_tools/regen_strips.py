@@ -13,6 +13,11 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from scripts.ocr import cuelib
 
+from scripts import lowpri
+from scripts.ocr import stripname
+
+lowpri.be_nice()   # 重生規集圖條，是長時間ê重工
+
 NAME, SLUG = sys.argv[1], sys.argv[2]
 W = os.path.join("kithann/out/mxf", SLUG + ".B.work")
 doc = json.load(open(os.path.join(W, "cues.json"), encoding="utf-8"))
@@ -41,9 +46,18 @@ for c in cues:
         frames = [np.zeros((region[3], region[2], 3), np.uint8)]
     img = (np.median(np.stack(frames), axis=0).astype(np.uint8)
            if len(frames) >= 3 else frames[0])
-    Image.fromarray(img).save(os.path.join(sdir, "%05d_han.png" % c["index"]))
+    # 檔名用起始時間，莫用 index——index 會綴重新編號走，時間袂。
+    # 見 `scripts/ocr/stripname.py`。
+    Image.fromarray(img).save(
+        os.path.join(sdir, stripname.of(c["start"], "han")))
+    c["images"] = {"han": os.path.join("strips",
+                                       stripname.of(c["start"], "han"))}
     if c["index"] % 100 == 0:
         print("  %d/%d" % (c["index"], len(cues)), flush=True)
+
+by_index = {}
+for one in cues:
+    by_index[one["index"]] = one
 
 font = ImageFont.truetype(
     "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf", 20)
@@ -65,7 +79,9 @@ for k in range(0, len(idx), 4):
     dr = ImageDraw.Draw(sheet)
     for r, i in enumerate(group):
         im = Image.open(
-            os.path.join(sdir, "%05d_han.png" % i)).resize((sw, sh))
+            os.path.join(sdir,
+                         stripname.of(by_index[i]["start"], "han"))
+        ).resize((sw, sh))
         sheet.paste(im, (GUT, r * (sh + 3)))
         dr.text((6, r * (sh + 3) + sh // 2 - 12), str(i),
                 fill="yellow", font=font)

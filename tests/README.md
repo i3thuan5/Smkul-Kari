@@ -103,6 +103,7 @@ tests/
 | subtitle-text-source | 每條恆兩行帶標籤「族語：／華語：」；某列空白猶原出標籤行；兩列攏空無出；合併比兩行合成ê字串 | `aiyalaeho/test_make_srt.py` |
 | subtitle-text-source | 兩逝一 cue ê TSV：列名毋著／cue 無佇 sheet 頂懸／仝一 cue 兩批攏有——規批拒收 | `aiyalaeho/test_ingest.py` |
 | srt-data-store | store 版面（`aiyalaeho/1-ocr/{1-cues,2-vision,3-srt}`、不分層）；inventory 欄位宣告 | `aiyalaeho/test_paths.py` |
+| —（成本防線） | preset ê列懸度愛予一張 sheet 囥會落四條 cue（1.10 MP 預算；超過就恬恬加三成閱讀量） | `aiyalaeho/test_paths.py` |
 | srt-data-store | 進度表九欄佮順序；成果檔名＝srt_name；影片長度由時間軸推導；pending 不入定版表 | `aiyalaeho/test_tracker.py` |
 | srt-data-store | 0-cue 集算校讀完成、以 0 行交付、袂擋整批；整批未完成一字都無寫 | `aiyalaeho/test_publish.py` |
 | srt-data-store | 干焦用 store 重建雙列 SRT＋smkul.csv 逐 byte；缺件指名；pending 跳過 | `aiyalaeho/test_rebuild.py` |

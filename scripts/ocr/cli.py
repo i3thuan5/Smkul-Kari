@@ -27,6 +27,7 @@ from scripts import datadirs
 from scripts.ocr import transcripts
 from scripts.srtlib import assemble
 from scripts.ocr import cuelib
+from scripts.ocr import stripname
 from scripts.srtlib import srt as srtfmt
 from scripts.ocr import band as detector
 from scripts.ocr import ocr as recogniser
@@ -194,7 +195,7 @@ def stage_cues(args):
             lo = line["y"]
             hi = lo + line["h"]
             crop = cue.best_rgb[lo:hi, :, :]
-            name = "%05d_%s.png" % (number, line["name"])
+            name = stripname.of(cue.start, line["name"])
             Image.fromarray(crop).save(os.path.join(strips, name))
             record["images"][line["name"]] = os.path.join("strips", name)
         records.append(record)

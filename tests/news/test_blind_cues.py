@@ -21,6 +21,7 @@
 ê cue 861 `frames=17`（看起來袂少）嘛中鏢，17×0.2=3.4s 對 6.08s。
 """
 import unittest
+from unittest import mock
 
 from scripts.news import blind_cues
 
@@ -162,6 +163,47 @@ class TestOverlong(unittest.TestCase):
         got = blind_cues.summary(self.CUES, floor=1.0, long=6.0)
         self.assertEqual(got["risky"], 2)
         self.assertEqual(got["long"], 1)
+
+
+class TestCliThresholds(unittest.TestCase):
+    """兩个門檻攏愛對指令列改會著，`risky()` 才有法度換數字重掠。
+
+    `LONG = 6.0` 是照 20210222_053 彼幾條校ê，a9 提《開會了》083 量
+    `risky()` ê召回率：25 條有實據ê漏切干焦掠著 12 條。門檻愛調就愛
+    對外開，才免逐擺改原始碼。這條測ê是 CLI 彼層——`risky()` 家己ê
+    參數頂懸 TestOverlong 已經測過矣。
+    """
+
+    def _seen(self, argv):
+        """跑一擺 CLI，共 `risky()` 收著ê門檻掠起來。"""
+        got = {}
+
+        def spy(cues, floor=None, long=None):
+            got["floor"] = floor
+            got["long"] = long
+            return []
+
+        with mock.patch.object(blind_cues, "risky", spy), \
+             mock.patch.object(blind_cues, "load", lambda name: []):
+            blind_cues.main(argv)
+        return got
+
+    NAME = "20210222_053_午間_Atayal_泰雅"
+
+    def test_the_default_duration_threshold_is_unchanged(self):
+        self.assertEqual(self._seen([self.NAME])["long"], 6.0)
+
+    def test_the_duration_threshold_can_be_overridden(self):
+        self.assertEqual(self._seen([self.NAME, "--long", "4.5"])["long"],
+                         4.5)
+
+    def test_zero_turns_the_duration_trigger_off(self):
+        """`--long 0` ＝ 干焦問差額，佮 `long=None` 仝款。"""
+        self.assertIsNone(self._seen([self.NAME, "--long", "0"])["long"])
+
+    def test_the_floor_can_be_overridden_too(self):
+        self.assertEqual(self._seen([self.NAME, "--floor", "2.0"])["floor"],
+                         2.0)
 
 
 if __name__ == "__main__":

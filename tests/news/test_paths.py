@@ -319,6 +319,91 @@ class TestLoadInventory(unittest.TestCase):
             paths.load_inventory(path)
 
 
+class TestStageLayout(unittest.TestCase):
+    """work dir 的 cues.json 分階段：粗切一份、精修一份，不互相蓋。
+
+    使用者裁定 2026-08-31：**refine 不可以原地改寫粗切那份。** 原本
+    `refine_cues` 是讀進記憶體、改完整份寫回同一個檔，於是：
+
+    - 精修跑到一半被砍，粗切那份就毀了（而且它是**重切才生得回來**的，
+      要重新下載 2 GB 的影片）；
+    - 兩個行程同時開同一份 manifest，後寫的贏，沒有一個地方會報錯
+      （這是 aiyalaeho 那條線先踩到、回報過來的）。
+
+    分開之後粗切變成唯讀，上面兩件都消掉了：精修失敗最多是沒有精修版。
+
+    編號跟 store 的 `news/1-ocr/1-cues/` 是同一套意思——數字是產製順序。
+    """
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.work = tmp.name
+
+    def _write(self, rel, body="{}"):
+        path = os.path.join(self.work, rel)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(body)
+        return path
+
+    def test_the_two_stages_are_separate_files(self):
+        self.assertNotEqual(paths.coarse_cues(self.work),
+                            paths.refined_cues(self.work))
+
+    def test_the_coarse_one_is_stage_one(self):
+        self.assertEqual(paths.coarse_cues(self.work),
+                         os.path.join(self.work, "1-cues", "cues.json"))
+
+    def test_the_refined_one_is_stage_two(self):
+        self.assertEqual(paths.refined_cues(self.work),
+                         os.path.join(self.work, "2-refined", "cues.json"))
+
+    def test_reading_prefers_the_refined_one(self):
+        self._write("1-cues/cues.json")
+        self._write("2-refined/cues.json")
+        self.assertEqual(paths.cues_to_read(self.work),
+                         paths.refined_cues(self.work))
+
+    def test_reading_falls_back_to_the_coarse_one(self):
+        # 精修猶未做（抑是做失敗），粗切彼份照常會使組 SRT，干焦邊界
+        # 是 0.2 秒格ê。
+        self._write("1-cues/cues.json")
+        self.assertEqual(paths.cues_to_read(self.work),
+                         paths.coarse_cues(self.work))
+
+    def test_reading_nothing_is_none_not_a_guess(self):
+        self.assertIsNone(paths.cues_to_read(self.work))
+
+    def test_a_work_dir_from_before_the_split_still_reads(self):
+        """舊版面（平的 `<work>/cues.json`）愛照常讀會著。
+
+        遷移袂當一睏做煞：換這个版面ê時，《開會了》彼條線咧走一批
+        7 點鐘ê切 cue，一直咧生舊版面ê work dir。若讀ê程式干焦捌新
+        版面，伊彼批做到一半就斷去矣。
+
+        所以過渡期間三種攏讀會著，順序是精修 → 粗切 → 舊版面。
+        `migrate_cues_layout` 掃過了後這條就無人用矣。
+        """
+        self._write("cues.json")
+        self.assertEqual(paths.cues_to_read(self.work),
+                         os.path.join(self.work, "cues.json"))
+
+    def test_the_new_layout_wins_over_the_old_one(self):
+        # 兩種攏佇咧ê時（遷移做一半），新ê贏——舊ê是遺留，毋是正本。
+        self._write("cues.json")
+        self._write("1-cues/cues.json")
+        self.assertEqual(paths.cues_to_read(self.work),
+                         paths.coarse_cues(self.work))
+
+    def test_refined_asks_the_file_not_the_flag(self):
+        # 「敢精修過矣」是問彼个檔案佇無，毋是去剖粗切彼份內底ê旗標
+        self._write("1-cues/cues.json")
+        self.assertFalse(paths.is_refined(self.work))
+        self._write("2-refined/cues.json")
+        self.assertTrue(paths.is_refined(self.work))
+
+
 class TestHasCues(unittest.TestCase):
     """「這集切過矣未？」——兩个 work dir 隨一个有 cues.json 就算切過。
 
@@ -336,8 +421,8 @@ class TestHasCues(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.work = tmp.name
 
-    def _cut(self, suffix):
-        folder = os.path.join(self.work, "ep" + suffix)
+    def _cut(self, suffix, stage="1-cues"):
+        folder = os.path.join(self.work, "ep" + suffix, stage)
         os.makedirs(folder)
         with open(os.path.join(folder, "cues.json"), "w") as handle:
             handle.write("{}")

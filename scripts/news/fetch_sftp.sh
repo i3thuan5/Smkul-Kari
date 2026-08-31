@@ -25,12 +25,11 @@
 # which measured ~0.5 GB per episode.
 #
 # Re-runnable: an interrupted month picks up where it stopped. An episode
-# whose work dir already has `cues.json` is not cut again, and while it is
-# still pending it is not even downloaded -- cutting is the last step that
-# needs the video. Once it is delivered it comes back on the list if no video
-# is left on this disk, because a *reread* needs native frames and the strips
-# are cropped to the band. 使用者裁定 2026-08-31. `plan_month.py --todo`
-# decides all of that, and says per episode whether it is `cut` or `new`.
+# that already has a timeline -- in a work dir or in the store -- is not
+# downloaded at all, because cutting is the last step that needs the video.
+# Delivered episodes are never fetched here either; a reread downloads what
+# it needs when it runs (`refine_fetch.sh`). 使用者裁定 2026-08-31.
+# `plan_month.py --todo` decides all of that.
 set -u
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -130,28 +129,18 @@ done_count=0
 # on stdin that is the list itself: the loop swallowed every remaining
 # episode and reported "finished: 1 episode(s) cut" as if the batch were
 # done. Never noticed before because every earlier run used --limit.
-while IFS=$'\t' read -r slug remote state <&3; do
+while IFS=$'\t' read -r slug remote <&3; do
     [[ -n "$remote" ]] || continue
     if [[ "$LIMIT" -gt 0 ]] && [[ "$done_count" -ge "$LIMIT" ]]; then
         echo "$(date +%H:%M:%S) stopping at --limit $LIMIT"
         break
     fi
 
-    # An episode already cut is on this list only because it has no video
-    # left on this disk (plan_month decides that). Fetch it, but do NOT cut
-    # it again: re-cutting renumbers every cue, and the delivered SRT's
-    # timings come from the numbering that is there now. Download, keep,
-    # move on -- the reread opens the file and that is all it needs.
-    #
-    # The verdict comes from plan_month, not from a `-f` test here: cues can
-    # be in `<slug>.work` or `<slug>.B.work`, and this script's own test
-    # asked only the first -- an episode cut straight into `.B.work` would
-    # have been cut a second time under a delivered SRT.
+    # Nothing on this list has been cut -- plan_month decides that, asking
+    # the work dirs *and* the store. So there is no "fetch but do not cut"
+    # case to handle here, and no way for this loop to renumber the cues of
+    # an episode that already has a timeline.
     dst="$WORK/$slug.work"
-    fetch_only=
-    if [[ "$state" = cut ]]; then
-        fetch_only=1
-    fi
 
     name=$(basename "$remote")
     folder=$(dirname "$remote")
@@ -184,8 +173,12 @@ while IFS=$'\t' read -r slug remote state <&3; do
 
     # Check the band once per folder, on the first file from it that gets
     # this far. A month can span folders, and layout follows the folder.
+    # niced like the other decode steps: it is short (a few minutes of row
+    # profiles, once per folder) but it is still ffmpeg, and the rule here
+    # is that nothing this script starts competes with the user's machine.
     if [[ "$verified_bands" != *" $folder "* ]]; then
-        if "$PY" -m scripts.news.verify_band "$local_file" --preset "$PRESET" --quiet; then
+        if nice -n 15 ionice -c 3 \
+           "$PY" -m scripts.news.verify_band "$local_file" --preset "$PRESET" --quiet; then
             verified_bands="$verified_bands$folder "
         else
             echo "$(date +%H:%M:%S) ABORT band does not match preset '$PRESET'."
@@ -194,14 +187,6 @@ while IFS=$'\t' read -r slug remote state <&3; do
             echo "  add a preset for this folder before continuing."
             rm -f "$local_file"; exit 1
         fi
-    fi
-
-    if [[ -n "$fetch_only" ]]; then
-        touch "$local_file.keep"
-        done_count=$((done_count + 1))
-        echo "$(date +%H:%M:%S) kept  $slug (already cut -- video only," \
-             "no re-cut)"
-        continue
     fi
 
     # nice/ionice 落去，佮 encode_master.sh 仝一套：一批走幾點鐘，

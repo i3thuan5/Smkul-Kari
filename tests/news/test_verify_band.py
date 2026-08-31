@@ -92,6 +92,26 @@ class TestLandmarks(unittest.TestCase):
         self.assertTrue(790 <= PROBE_Y + plateau_i <= 830)
 
 
+class TestLandmarkReport(unittest.TestCase):
+    """判「無紅帶」ê時，量著ê數字愛留佇輸出予人覆核。
+
+    「無紅帶」這个判定會**kā「紅帶袂使落佇 region 內」彼道檢查
+    閬過**——失敗ê方向是放過歹檔案，毋是擋著好ê。所以伊袂使恬恬
+    仔閬過：比值佮門檻攏愛講出來，人才有法度看這个判定是量著ê抑是
+    量無ê。門檻本身改過幾擺，數字留咧才有法度轉頭校。
+    """
+
+    def test_no_rule_line_carries_the_ratio_and_the_threshold(self):
+        line = verify_band.landmark_lines(None, 1.78)[0]
+        self.assertIn("1.78", line)
+        self.assertIn("%.2f" % verify_band.SPIKE, line)
+
+    def test_the_rule_line_carries_where_and_how_tall(self):
+        line = verify_band.landmark_lines(849, 2.15)[0]
+        self.assertIn("849", line)
+        self.assertIn("2.15", line)
+
+
 class TestJudge(unittest.TestCase):
     """The spec's two scenarios, as the executable rule."""
 

@@ -201,6 +201,28 @@ def judge(edge, plateau, lo, hi):
     return problems
 
 
+def landmark_lines(edge, ratio):
+    """What the spike measurement found, in the words the log carries.
+
+    "No lower third on screen" is not a neutral observation: it is the
+    branch that **skips** the check that the lower third must not sit
+    inside the region, and that check is the one standing between a batch
+    and cues cut across headline and name supers. Failing that way is
+    silent -- nothing downstream notices -- so the measurement that led to
+    it has to stay in the output where a person can weigh it.
+
+    The threshold goes in the line as well as the reading. It has been
+    re-measured more than once (the sample it stands on is recorded in
+    scripts/news/README.md), and a logged ratio whose threshold has to be
+    guessed at cannot be re-judged later.
+    """
+    if edge is None:
+        return ["no thin rule   (tallest spike only %.2fx its baseline, "
+                "under %.2f) <- no lower third on screen" % (ratio, SPIKE)]
+    return ["thin rule      y=%d  <- lower-third edge, %.2fx its baseline"
+            % (edge, ratio)]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("video")
@@ -244,12 +266,8 @@ def main():
     print("\npreset %s region y=%d..%d  (%d frames)"
           % (args.preset, lo, hi, frames))
     print("broad plateau  y=%d  <- dialogue" % plateau)
-    if edge is None:
-        print("no thin rule   (tallest spike only %.2fx its baseline, under "
-              "%.2f) <- no lower third on screen" % (ratio, SPIKE))
-    else:
-        print("thin rule      y=%d  <- lower-third edge, %.2fx its baseline"
-              % (edge, ratio))
+    for line in landmark_lines(edge, ratio):
+        print(line)
 
     # What actually has to hold:
     #

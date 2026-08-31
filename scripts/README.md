@@ -81,9 +81,11 @@
 | `add_episodes.py`／`resolve_slug.py` | 逐支指定路徑登記；目錄索引與命名 |
 | `fetch_sftp.sh`／`run_cues.sh`／`refine_fetch.sh`／`sftp.sh`／`sftp-askpass.sh` | 影像側抓檔與切 cue（吃播出月份，清單對 inventory 提；密碼只以檔案存在；`sftp.sh` 收動詞＋獨立參數，路徑不進指令字串） |
 | `refine_cues.py`／`verify_band.py` | cue 邊界精修、字幕帶前驗 |
+| `ocr/stripname.py` | Strip ê檔名：用 cue ê起始時間，因為序號會綴重新編號走 |
 | `blank_runs.py` | 掠 vision TSV 內底ê長連紲空白：字幕印佇帶外ê段會規段變空白 |
 | `rescan_band.py` | 用改正ê帶重切一段，接轉原本ê cue 排、規集重新編號 |
-| `line_height.py` | 量字懸掠新聞標題卡：伊佇帶內、字型嘛成，干焦懸度差一半 |
+| `split_cue.py` | 佇量出來ê時間點kā一條 cue 剖做兩條，後壁ê重新編號 |
+| `migrate_strips.py` | Strip ê檔名對 cue 序號換做起始時間（照磁碟頂ê檔案走，毋是照 cue）|
 | `gap_sheets.py`／`batches.py`／`ingest.py` | 視覺辨識批次的出題與收卷 |
 | `make_srt.py`／`make_all.py`／`publish.py`／`tracker.py`／`rebuild.py` | 組裝、定版、進度表、離線重建驗證 |
 | `name_catalogue.py` | kā `srt_name` 寫入目錄ê**產生欄**（`--check` 重算逐格、對袂起來就 exit 1；CRLF＋BOM 原樣保留） |
@@ -113,6 +115,7 @@
 | `make_srt.py` | 單集組裝：每條兩行帶標籤，走共用組裝鏈（0.5 秒留白仝款） |
 | `make_all.py`／`publish.py`／`tracker.py`／`rebuild.py` | 整批組裝、定版、九欄進度表、離線重建驗證 |
 | `presets.json` | `aiyalaeho-bilingual`（黃底雙列帶；本底寄佇 `news/presets.json`，這改搬轉來家己遮） |
+| `brief.md` | 視覺辨識讀者判準ê**正本**（逐批ê提示攏對這份提，判準才袂逐批走鐘） |
 
 news 有而遮無ê四支：`fetch_sftp.sh`（素材已經佇本機）、`plan_month.py`
 （無月份批次，登記併入 `catalogue.py`）、`gap_sheets.py`（無 `.B.work`

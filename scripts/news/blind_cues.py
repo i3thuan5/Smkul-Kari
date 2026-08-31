@@ -71,6 +71,34 @@ accident. 20210220_051 cue 527 read 你要分擔 (526's line) where the screen
 showed 你要分工; the fix pairs it with 528, which is what a line spanning two
 cues is supposed to look like.
 
+WHAT THESE TWO GATES CANNOT SEE
+-------------------------------
+Recall was measured on a sister programme (《開會了》083) against 25 cues
+with hard evidence of a missed split: **the two gates found 12**. The
+thirteen that escaped are not a threshold that needs nudging -- they are
+two shapes neither gate is built to see:
+
+  short straddling cues   0.8-1.3 s, shorter than the line they carry, and
+                          sitting across a line change. `frames` covers
+                          the whole cue so the unseen figure is ~0, and the
+                          cue is far too short for `LONG`.
+  three sentences in 5 s  unseen ~0 again, and the duration lands just
+                          under `LONG`, whatever `LONG` is set to -- lower
+                          it enough to catch these and most of the episode
+                          comes with it.
+
+A third gate was measured and rejected. `spread` -- the largest mask
+distance from a cue's first frame to any later one -- looks like it should
+catch a cue whose picture changes under a frozen mask. With the mask
+tightened (`max_spread` 20) it reaches 22 of the 25, **but false-positives
+38 of 60 (63%)**, against a real rate readers find of 8-10%. A gate that
+is wrong two times in three is not a gate; `spread` can rank a list, not
+decide one.
+
+So `--floor` and `--long` are parameters rather than constants: a new
+programme gets re-measured, not re-guessed. Recall on this corpus is what
+it is, and the number above is the honest one.
+
 This only says where to look. What the text actually is still comes from
 the video.
 """
@@ -94,6 +122,11 @@ FRAME_DT = 0.2
 FLOOR = 1.0
 
 # A cue this long is worth a second look whatever `frames` says. The
+# value is calibrated, not chosen: see WHAT THESE TWO GATES CANNOT SEE
+# below for the recall it was measured at and what escapes it. Both gates
+# are CLI parameters (`--floor`, `--long`) so a new programme can be
+# re-measured without editing this file.
+#
 # segmenter's other failure is the mirror of the jam: a *static* bright
 # background (a white document, snow) floods the mask, the subtitle is under
 # 7% of it, and a sentence change moves too little for either gate to notice.

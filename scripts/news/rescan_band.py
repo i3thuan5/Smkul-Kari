@@ -35,12 +35,17 @@ artefact at a time with the same mapping.
 
 THE REGION
 ----------
-`420,900,1500,135`, not `0,900,1920,135`: the red language badge and the
-programme's lower-third sit at x < 400 in exactly these rows, and a static
-graphic inflates the Jaccard denominator so real changes stop registering.
-Measured on 058晚: the full width found 220 cues of which 26 were shorter
-than half a second (the badge's own animation); the centred window found
-152, of which 7. The README's rule -- crop wide, analyse narrow -- again.
+`420,910,1500,122`. Two separate constraints, and both bite.
+
+**x >= 420**: the red language badge and the programme's lower-third sit at
+x < 400 in exactly these rows, and a static graphic inflates the Jaccard
+denominator so real changes stop registering. Measured on 058晚: the full
+width found 220 cues of which 26 were shorter than half a second (the
+badge's own animation); the centred window found 152, of which 7. The
+README's rule -- crop wide, analyse narrow -- again.
+
+**height <= 122**: see the note on REGION. Taller costs a third more
+contact sheets, and contact sheets are what the vision pass is billed by.
 """
 import argparse
 import glob
@@ -51,10 +56,39 @@ import subprocess
 import sys
 
 from scripts.errors import PipelineError
+from scripts import lowpri
 from scripts.news import paths
 from scripts.ocr import sheets
+from scripts.ocr import stripname
 
-REGION = "420,900,1500,135"
+# Height 122, not 135, and that is not cosmetic: the contact-sheet packer
+# fits `int(1.10e6 / sheet_width)` pixels of rows. A row costs
+# `10 + height + 2`, so four cues need `4 * (12 + h) <= budget`.
+#
+# **The budget comes from the widest strip in the whole work dir, not from
+# this region.** `sheets._sheet_width` takes `max(tile.width)` across every
+# block, and the recut strips share a work dir with the episode's other
+# ones. Sizing off this region's own 1500 px gives a budget of 677, which
+# `4 * 146 = 584` passes -- it would wave through exactly the mistake that
+# happened.
+#
+# Sheet width is **per episode**, not a constant: `_cue_blocks` trims each
+# strip to its ink bbox, so the width is that episode's longest subtitle.
+# Measured across all 74: 26 episodes at 2044 (budget 538, so h <= 122) and
+# 48 at 1320 (budget 833, h <= 196). All six episodes rescanned on
+# 2026-08-31 are 2044 ones, which is why 135 cost them a third more sheets.
+#
+# 122 is the worst case, so it is the one to build to -- anything that
+# fits a 2044 sheet fits a 1320 one. The standard band's 122 is not a round
+# number someone liked; it is exactly that ceiling, with 2 px to spare.
+#
+# The first six rescans used 135. It snapped to 134, the packer dropped to
+# three cues a sheet, and those segments cost 328 sheets where 243 would
+# have done: 85 extra sheets, about 180k tokens, for nothing. The dialogue
+# sits at y≈940-1010, so 122 rows starting at 910 cover it with room to
+# spare. (`tests/news/test_sheet_packing.py`, from a parallel session,
+# guards the presets against the same cliff.)
+REGION = "420,910,1500,122"
 
 
 def splice(cues, lo, hi, replacement):
@@ -152,44 +186,40 @@ def recut(video, start, duration, out, region=REGION, venv=None):
         return json.load(handle)["cues"]
 
 
-def move_strips(work, moves, fresh, lo, count):
-    """Rename surviving strips and drop the re-cut range's in from `fresh`.
+def move_strips(work, cues, fresh, lo, count):
+    """Keep the surviving strips, and cut the recut range's in from `fresh`.
 
-    Renames go through a temporary name first: cue 400 moving to 402 while
-    402 is still on disk would clobber it, and the safe order depends on
-    which way the numbering shifted.
+    Nothing is renamed any more. Strips carry their cue's **start time**
+    (`scripts/ocr/stripname.py`), and a start time does not move when some
+    other cue is split, so a renumber leaves every existing file exactly
+    where it belongs. What this does is copy in the fresh range's strips
+    under their own time names and point the new cues at them.
+
+    `cues` is the spliced list, so the recut cues are at `lo .. lo+count-1`
+    and carry the times the new names come from.
     """
     strips = os.path.join(work, "strips")
-    staging = os.path.join(work, "strips.new")
-    if os.path.exists(staging):
-        shutil.rmtree(staging)
-    os.makedirs(staging)
-    moved = 0
-    for old in sorted(moves):
-        source = os.path.join(strips, "%05d_han.png" % old)
-        if not os.path.exists(source):
-            continue
-        shutil.copy2(source, os.path.join(staging,
-                                          "%05d_han.png" % moves[old]))
-        moved += 1
     added = 0
     for number in range(count):
-        source = os.path.join(fresh, "strips",
-                              "%05d_line0.png" % (number + 1))
-        if not os.path.exists(source):
-            source = os.path.join(fresh, "strips",
-                                  "%05d_han.png" % (number + 1))
-        if not os.path.exists(source):
+        cue = cues[lo - 1 + number]
+        source = None
+        for name in sorted(glob.glob(os.path.join(fresh, "strips", "*"))):
+            if os.path.basename(name).startswith("%05d_" % (number + 1)) \
+                    or os.path.basename(name).startswith(
+                        stripname.of(cue["start"], "")[:-5]):
+                source = name
+                break
+        if source is None:
             continue
-        shutil.copy2(source, os.path.join(staging,
-                                          "%05d_han.png" % (lo + number)))
+        target = stripname.of(cue["start"], "han")
+        shutil.copy2(source, os.path.join(strips, target))
+        cue["images"] = {"han": os.path.join("strips", target)}
         added += 1
-    shutil.rmtree(strips)
-    os.rename(staging, strips)
-    return moved, added
+    return 0, added
 
 
 def main(argv=None):
+    lowpri.be_nice()   # 長時間ê重工，莫kā機器食牢去
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("stem", help="work-dir stem, e.g. 2021_058_..._排灣")
     ap.add_argument("lo", type=int)
@@ -235,8 +265,12 @@ def main(argv=None):
         print("（--dry-run，無寫）")
         return 0
 
-    for cue in spliced:
-        cue["images"] = {"han": "strips/%05d_han.png" % cue["index"]}
+    # `images` is NOT rewritten from the index. Strips are named by their
+    # cue's start time now (`scripts/ocr/stripname.py`), so writing
+    # `%05d_han.png` here would point every cue at a file that does not
+    # exist. `move_strips` fills the recut range in; everything else keeps
+    # the value it already had, which is the only thing that was ever
+    # right. (Caught by a parallel session reviewing the migration.)
     book["cues"] = spliced
     book["rescanned"] = book.get("rescanned", []) + [
         {"lo": args.lo, "hi": args.hi, "region": args.region,
@@ -244,7 +278,7 @@ def main(argv=None):
     with open(os.path.join(work, "cues.json"), "w", encoding="utf-8") as out:
         json.dump(book, out, ensure_ascii=False, indent=2)
 
-    moved, added = move_strips(work, moves, fresh, args.lo, len(new))
+    moved, added = move_strips(work, spliced, fresh, args.lo, len(new))
     print("strips：徙 %d 張、新 %d 張" % (moved, added))
 
     folder = os.path.join(paths.KARI_VISION,

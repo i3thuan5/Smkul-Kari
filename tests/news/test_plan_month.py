@@ -194,18 +194,17 @@ class TestTodo(Fixture):
         report = self._plan(month)
         plan_month.write(report, self.inventory)
         entries = plan_month.paths.load_inventory(self.inventory)
-        return plan_month.todo(month, entries, has_video=lambda e: True,
-                               has_cues=lambda s: False)
+        return plan_month.todo(month, entries, already_cut=lambda e: False)
 
     def test_lists_this_months_pending_episodes(self):
         rows = self._todo()
         self.assertEqual(len(rows), 2)
-        for slug, video, _cut in rows:
+        for slug, video in rows:
             self.assertTrue(slug)
             self.assertTrue(video.startswith("族語新聞/"))
 
     def test_the_path_is_corpus_relative_ready_for_the_server(self):
-        for _slug, video, _cut in self._todo():
+        for _slug, video in self._todo():
             self.assertFalse(video.startswith("/"))
             self.assertFalse(video.startswith("ilrdf-corpus/"))
 
@@ -216,91 +215,152 @@ class TestTodo(Fixture):
             entries.append(dict(entry, pending=False))
         return entries
 
-    def test_delivered_episodes_with_the_video_are_not_fetched_again(self):
-        entries = self._delivered()
-        got = plan_month.todo("2021-02", entries, has_video=lambda e: True,
-                              has_cues=lambda s: True)
-        self.assertEqual(got, [])
+    def test_a_delivered_episode_is_never_fetched(self):
+        """已交付ê免抓——連重讀嘛免（使用者裁定 2026-08-31）。
 
-    def test_delivered_episodes_without_the_video_are_fetched(self):
-        """重讀愛抽原生格，毋過影片佇 cues.json 落地彼時就刣掉矣。
-
-        使用者裁定 2026-08-31：有 cues.json 毋過無通讀ê影片，照抓。
-        1 月彼 11 集已交付ê就是按呢——圖條佮 strips 攏佇咧，干焦
-        mkv 無去。
+        本底彼條是「已交付、本機無影片就抓轉來予重讀用」，1 月 11 集
+        逐擺攏會排入清單。重讀家己有抓檔ê路（`refine_fetch.sh`：用著
+        才抓、做煞就刣），所以規月抓檔莫替伊先囤。
         """
         entries = self._delivered()
-        got = plan_month.todo("2021-02", entries, has_video=lambda e: False,
-                              has_cues=lambda s: True)
-        self.assertEqual(len(got), len(entries))
+        got = plan_month.todo("2021-02", entries, already_cut=lambda e: True)
+        self.assertEqual(got, [])
 
-    def test_only_the_ones_missing_a_video_are_fetched(self):
+    def test_a_delivered_episode_is_not_fetched_even_with_no_video_left(self):
+        # 「本機有無影片」這件代誌已經無算佇內底矣。
         entries = self._delivered()
-        keep = entries[0]["slug"]
+        got = plan_month.todo("2021-02", entries, already_cut=lambda e: True)
+        self.assertEqual(got, [])
 
-        def has_video(entry):
-            return entry["slug"] == keep
-
-        got = plan_month.todo("2021-02", entries, has_video=has_video,
-                              has_cues=lambda s: True)
-        self.assertEqual([slug for slug, _video, _cut in got],
-                         [e["slug"] for e in entries[1:]])
-
-    def test_pending_but_uncut_is_fetched_even_with_a_video_on_disk(self):
-        """猶未切 cue ê，影片佇咧嘛愛行完規套。"""
-        got = self._todo()
-        self.assertEqual(len(got), 2)
+    def test_pending_but_uncut_is_fetched(self):
+        self.assertEqual(len(self._todo()), 2)
 
     def test_pending_that_is_already_cut_is_not_downloaded(self):
         """登記矣、cue 嘛切好矣ê，莫閣抓一遍。
 
-        使用者裁定 2026-08-31（第二遍）：本底 pending 是無條件重抓ê，
-        所以先前 `--limit 2` 試跑抓ê 2.7 GB 兩支，其實 8/21 就切好矣，
-        抓落來干焦驗一下帶位就刣掉。切 cue 了後影片ê用途干焦賰重讀，
-        彼是 publish 了後ê代誌，到時 `has_video` 彼條家己會kā伊抓轉來。
+        影片ê最後一个用途就是切 cue：紲落來視覺辨識讀 `strips/`、
+        `sheets/`，SRT 對 `cues.json` 組。先前 `--limit 2` 試跑抓ê
+        2.7 GB 兩支，其實 8/21 就切好矣。
         """
         report = self._plan()
         plan_month.write(report, self.inventory)
         entries = plan_month.paths.load_inventory(self.inventory)
-        got = plan_month.todo("2021-02", entries, has_video=lambda e: False,
-                              has_cues=lambda s: True)
+        got = plan_month.todo("2021-02", entries, already_cut=lambda e: True)
         self.assertEqual(got, [])
 
-    def test_only_the_uncut_pending_ones_are_fetched(self):
+    def test_only_the_uncut_ones_are_fetched(self):
         report = self._plan()
         plan_month.write(report, self.inventory)
         entries = plan_month.paths.load_inventory(self.inventory)
         cut = entries[0]["slug"]
-        got = plan_month.todo("2021-02", entries, has_video=lambda e: False,
-                              has_cues=lambda s: s == cut)
-        self.assertEqual([slug for slug, _video, _cut in got],
+        got = plan_month.todo("2021-02", entries,
+                              already_cut=lambda e: e["slug"] == cut)
+        self.assertEqual([slug for slug, _video in got],
                          [e["slug"] for e in entries[1:]])
-
-    def test_each_row_says_whether_it_is_already_cut(self):
-        """第三欄是予 shell 判「抓就好，莫閣切」ê。
-
-        彼句判斷本底佇 shell 家己做，而且干焦問 `.work`——已交付ê集數
-        若干焦有 `.B.work`（054–059 彼批），就會予人重切，cue 規排重
-        編號，交付ê SRT 時間全走位。判斷提來遮做，兩爿就袂各講各話。
-        """
-        entries = self._delivered()
-        got = plan_month.todo("2021-02", entries, has_video=lambda e: False,
-                              has_cues=lambda s: True)
-        for _slug, _video, cut in got:
-            self.assertTrue(cut)
-
-        report = self._plan()
-        plan_month.write(report, self.inventory)
-        fresh = plan_month.paths.load_inventory(self.inventory)
-        got = plan_month.todo("2021-02", fresh, has_video=lambda e: False,
-                              has_cues=lambda s: False)
-        for _slug, _video, cut in got:
-            self.assertFalse(cut)
 
     def test_another_month_is_not_included(self):
         self._todo()
         entries = plan_month.paths.load_inventory(self.inventory)
         self.assertEqual(plan_month.todo("2021-07", entries), [])
+
+
+class TestAlreadyCut(Fixture):
+    """「切過矣未」愛連 store 嘛問，毋是干焦問 work dir。
+
+    `kithann/` 是 gitignore ê，devcontainer 重起就規个無去（實際發生
+    過兩擺）。彼陣已交付ê集數ê work dir 無矣，若干焦問 work dir，
+    in 就變做「猶未切」——**閣抓落來重切一遍**，cue 規排重編號，
+    交付ê SRT 時間全走位，而且無一个所在會報錯。時間軸ê正本佇
+    store（`1-cues/<月份>/<srt_name>.json`），問伊才問會著。
+    """
+
+    def _entry(self):
+        report = self._plan()
+        return report.entries[0]
+
+    def test_nothing_on_disk_is_not_finished(self):
+        entry = self._entry()
+        self.assertFalse(
+            plan_month.already_cut(entry, work=self.root, store=self.root))
+
+    def test_the_work_dir_counts_once_both_stages_are_there(self):
+        entry = self._entry()
+        self._work(entry, refined=True)
+        self.assertTrue(
+            plan_month.already_cut(entry, work=self.root, store=self.root))
+
+    def test_the_store_counts_on_its_own(self):
+        entry = self._entry()
+        self._store(entry, refined=True)
+        self.assertTrue(
+            plan_month.already_cut(entry, work=self.root, store=self.root))
+
+    def _store(self, entry, refined):
+        month = plan_month.paths.month_of(entry["srt_name"])
+        os.makedirs(os.path.join(self.root, month), exist_ok=True)
+        path = os.path.join(self.root, month, entry["srt_name"] + ".json")
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump({"refined": refined, "cues": []}, handle)
+        return path
+
+    def _work(self, entry, refined):
+        work = os.path.join(self.root, entry["slug"] + ".work")
+        os.makedirs(os.path.join(work, "1-cues"), exist_ok=True)
+        with open(os.path.join(work, "1-cues", "cues.json"), "w",
+                  encoding="utf-8") as handle:
+            json.dump({"cues": []}, handle)
+        if refined:
+            os.makedirs(os.path.join(work, "2-refined"), exist_ok=True)
+            with open(os.path.join(work, "2-refined", "cues.json"), "w",
+                      encoding="utf-8") as handle:
+                json.dump({"cues": []}, handle)
+        return work
+
+    def test_cut_but_not_refined_is_not_finished(self):
+        """切好毋過猶未精修ê，**猶原愛影片**——精修是上尾一步用著伊ê。
+
+        算做做煞ê話，彼集就對清單頂懸消失，永遠停佇 0.2 秒格。這毋是
+        假設：2021_006 03:31 切煞，refine hőng砍死，todo 隨對 59 掉做
+        58，若無人去看伊就按呢交出去矣。
+
+        使用者裁定 2026-08-31：按呢就**規集重切**，莫閣加一條「干焦
+        精修」ê路——這款情形無濟。
+        """
+        entry = self._entry()
+        self._work(entry, refined=False)
+        self.assertFalse(
+            plan_month.already_cut(entry, work=self.root, store=self.root))
+
+    def test_cut_and_refined_is_finished(self):
+        entry = self._entry()
+        self._work(entry, refined=True)
+        self.assertTrue(
+            plan_month.already_cut(entry, work=self.root, store=self.root))
+
+    def test_an_unrefined_store_timeline_is_not_finished_either(self):
+        # store 內底彼 14 集（054–059）就是按呢：已交付、毋過無 refined。
+        entry = self._entry()
+        self._store(entry, refined=False)
+        self.assertFalse(
+            plan_month.already_cut(entry, work=self.root, store=self.root))
+
+    def test_the_pre_split_layout_reports_refined_by_its_flag(self):
+        """舊版面（平ê `cues.json`）ê「精修過未」是看內底ê旗標。
+
+        遷移猶未做煞ê時，兩種版面會同時佇咧，兩爿攏愛應會出來。
+        """
+        entry = self._entry()
+        work = os.path.join(self.root, entry["slug"] + ".work")
+        os.makedirs(work, exist_ok=True)
+        path = os.path.join(work, "cues.json")
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump({"cues": []}, handle)
+        self.assertFalse(
+            plan_month.already_cut(entry, work=self.root, store=self.root))
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump({"cues": [], "refined": True}, handle)
+        self.assertTrue(
+            plan_month.already_cut(entry, work=self.root, store=self.root))
 
 
 class TestMerge(unittest.TestCase):

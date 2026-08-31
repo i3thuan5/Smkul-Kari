@@ -50,6 +50,7 @@ import sys
 
 import numpy as np
 
+from scripts import lowpri
 from scripts.errors import PipelineError
 from scripts.news import blind_cues, paths
 from scripts.ocr import cuelib
@@ -396,6 +397,7 @@ def _timeline(srt_name):
 
 
 def main(argv=None):
+    lowpri.be_nice()   # 規集重讀是長時間ê重工，莫kā機器食牢去
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("srt_name")
     ap.add_argument("--video", default=None)

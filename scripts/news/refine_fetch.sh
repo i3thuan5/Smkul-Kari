@@ -130,7 +130,11 @@ while IFS=$'\t' read -r -u 3 srt_name remote name; do
     fi
 
     echo "$(date +%H:%M:%S) refine $srt_name"
-    if "$PY" -m scripts.news.refine_cues "$local_file" \
+    # nice/ionice：佮 fetch_sftp.sh、encode_master.sh 仝一套。一批走
+    # 幾點鐘，袂使kā別人ê機器食牢去（使用者裁定）。`refine_cues`
+    # 家己嘛有叫 `lowpri.be_nice()`，毋過佇遮閣包一層較穩——`be_nice`
+    # 有防重複叫，袂變 30。
+    if nice -n 15 ionice -c 3 "$PY" -m scripts.news.refine_cues "$local_file" \
          "$KARI/cues/$srt_name.json" \
          > "$LOG/$srt_name.refine.log" 2>&1; then
         tail -n 1 "$LOG/$srt_name.refine.log" >> "$DELTA"
