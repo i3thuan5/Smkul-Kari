@@ -1,43 +1,62 @@
 ---
 description: Process one month of 族語新聞 from SFTP into SRTs
-argument-hint: 族語新聞/110.1-110.10/3月 [--limit N]
+argument-hint: 2021-03 [--limit N]
 ---
 
 Process one month of 原視族語新聞 from the SFTP server into SRT subtitles.
 
 Month to do: **$ARGUMENTS**
 
-If no month was given, list what is on the server and ask which one:
-`scripts/news/sftp.sh ls /docker/ilrdf-corpus/族語新聞/110.1-110.10`
+The month is a **broadcast month** (`2021-03`), not a source folder. They
+are not the same thing: six broadcast months are spread across two folders
+each, and `110.1-110.10/7月/` holds 140 files of which 66 are February's
+programmes. If no month was given, ask which one.
 
 Read `scripts/news/README.md` first — it holds the measured numbers and the
 traps. The short version of the procedure:
 
-## 1. Fetch and cut
+## 1. Plan the month, then fetch and cut
 
 ```bash
-bash scripts/news/fetch_sftp.sh '<月份>'          # add --limit 2 for a dry run
+python3 -m scripts.news.plan_month <月份> -n     # what it would do
+python3 -m scripts.news.plan_month <月份>        # register, pending
+bash    scripts/news/fetch_sftp.sh <月份>        # add --limit 2 for a dry run
 ```
+
+`plan_month` picks each episode's source from the catalogue by rule (master
+first, then the slot word in the file name, then same-name-two-folders) and
+writes the month's episodes into the inventory as `pending`, each carrying
+the path chosen for it. Registration has to come before the download: the
+video is deleted the moment its cues are cut, so nothing downstream could
+work out an episode's naming afterwards.
+
+Episodes the rules cannot decide are **skipped and reported**, never guessed
+— across the whole corpus that is 8 of 983, and none in 2021-01 or 2021-02.
+Show the user the skip list; once they have decided, `add_episodes.py` takes
+the chosen path. Episodes the catalogue marks as having no video are counted,
+not listed — there is nothing to decide.
 
 This downloads one video at a time, checks its byte count against the
 server's, verifies the subtitle band, cuts cues, refines the cue
 boundaries to ≤0.05s while the video is still on disk, and **deletes the
 video** before moving on. Never hold more than one video locally.
 
-Filling a gap rather than doing a month — a few named episodes scattered
-through a folder — takes `--only`, an extended regex matched against the file
-name, followed by `add_episodes.py` to name them in the inventory (the video
-is gone by then, so `build_inventory.py` has nothing to scan):
+Filling a gap rather than doing a month — a few named episodes — takes
+`--only`, an extended regex matched against the file name, or
+`add_episodes.py` with the paths spelled out (that is also how a skipped
+episode gets done once someone has judged it):
 
 ```bash
-bash scripts/news/fetch_sftp.sh '族語新聞/110.1-110.10/7月' \
+bash scripts/news/fetch_sftp.sh 2021-02 \
      --only '^(21NL005_37晨間|21NL004_37晚間)族語新聞\.mp4$'
 python3 -m scripts.news.add_episodes '族語新聞/110.1-110.10/7月/…mp4' …
 ```
 
-Before committing to a whole month, run it with `--limit 2` and look at a
-contact sheet (`kithann/out/mxf/<slug>.work/sheets/sheet_001.png`) to confirm
-the strips show the dialogue line and nothing else.
+Before committing to a whole month, run the fetch with `--limit 2` and look
+at a contact sheet (`kithann/out/mxf/<slug>.work/sheets/sheet_001.png`) to
+confirm the strips show the dialogue line and nothing else. A month can span
+folders, and layout follows the folder, so the band is verified once per
+folder, not once per month.
 
 ## 2. Contact sheets
 
@@ -62,8 +81,8 @@ python3 -m scripts.news.batches <slug> --size 24     # lists the sheet batches
 ```
 
 Farm each batch to a subagent, 24 sheets each, writing a TSV straight to
-`Kari-SRT/vision/<集>/bNN.tsv`. Two things the prompt must say, both learned
-the hard way:
+`Kari-SRT/news/1-ocr/3-vision/<年-月>/<srt_name>/bNN.tsv`. Two things the
+prompt must say, both learned the hard way:
 
 - **Cue numbers can JUMP.** When only part of an episode is being re-read the
   sheets carry a discontinuous set, so the reader must take the number printed
@@ -77,7 +96,7 @@ the hard way:
 Then per episode:
 
 ```bash
-python3 -m scripts.news.ingest <slug> Kari-SRT/vision/<集>
+python3 -m scripts.news.ingest <slug> Kari-SRT/news/1-ocr/3-vision/<年-月>/<srt_name>
 ```
 
 `ingest.py` refuses the whole batch if a TSV names a cue that was not on the
@@ -99,7 +118,23 @@ to keep running the verification while a batch is in progress.
 
 ## Scale — say this out loud before starting
 
-One month is about 71 episodes, ~154 GB of download, and roughly 3,000
-contact sheets ≈ 125 subagents. That is about 3× the February batch. Tell the
-user the estimate for the month they picked and get agreement before farming
-out the vision pass; step 1 alone is cheap and can go ahead.
+Measured on the February batch (35 episodes, `1-ocr/1-cues/` and
+`1-ocr/3-vision/` are the record): **835 cues, 178 contact sheets and 8.2
+reading batches per episode**, and the vision pass ran at about **10 batches
+an hour** (13 episodes ≈ 102 batches in a 10.5 h session). Fetch-and-cut costs
+6.3 min per episode including the download; the speech side (`asrmt_batch`,
+through `3-srt-raw`) costs 15 min per episode and can run alongside the vision
+pass.
+
+So a 71-episode month is roughly **154 GB of download, ~12,600 contact sheets
+≈ 580 subagents, ~7.5 h of fetch-and-cut and ~58 h of vision**. Scale from the
+per-episode figures above rather than from this paragraph — a short month or a
+gap-fill batch is proportionally smaller. (An earlier version of this file said
+3,000 sheets ≈ 125 subagents; that was written while cues supplied by the 文稿
+were left off the sheets, and is about 4× too low now that every cue is read.)
+
+The vision pass is the expensive part and it is farmed out to subagents, so it
+is not something to start quietly: **tell the user the episode count, the sheet
+and subagent count, and the rough hours for the month they picked, and wait for
+them to agree before farming it out.** Steps 1 and 2 are cheap and can go ahead
+without asking.

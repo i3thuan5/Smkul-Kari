@@ -8,8 +8,10 @@
 三個位置各司其職：
 
 - **這裡（`scripts/news/`）**：程式與 `presets.json`、`inventory.json`。
-- **`Kari-SRT/` submodule**：資料正本——交付 SRT、`smkul.csv`、每集時間軸
-  `cues/`、視覺逐字稿 `vision/`、`vision-rtf/`。僅靠主 repo + Kari-SRT
+- **`Kari-SRT/` submodule**：資料正本——交付 SRT（`news/1-ocr/6-srt/`）、
+  `news/smkul.csv`、每集時間軸 `news/1-ocr/1-cues/`、視覺逐字稿
+  `news/1-ocr/3-vision/`、`4-vision-rtf/`；逐集檔案都在階段目錄下的
+  **播出月份**一層（`1-cues/2021-02/<srt_name>.json`）。僅靠主 repo + Kari-SRT
   即可離線重建全部 SRT：`python3 -m scripts.news.rebuild --verify`
   （或 `tox -e rebuild`）。**每次程式修改完在本機跑一次**——
   Kari-SRT 是私有 repo，CI 抓不到 submodule，這條不進 CI。
@@ -32,26 +34,32 @@
 
 兩點容易誤會：原始影片不會留在這裡——`fetch_sftp.sh` 下載到 `kithann/out/stage/`（同名同位元組數會重用；放 `影片名.keep` 可留給別的 session，誰放誰刪），
 `cues.json` 一寫出來就刪片。視覺辨識的 TSV 也不會寫進這裡——`ingest.py`
-預設直接讀寫 `Kari-SRT/vision*/<slug>/`，`kithann/` 這邊的 `verified.json`
-只是本地追蹤「這個 work dir 核實到哪」的快取。
+預設直接讀寫 `Kari-SRT/news/1-ocr/3-vision/<年-月>/<srt_name>/`，
+`kithann/` 這邊的 `verified.json` 只是本地追蹤「這個 work dir 核實到哪」
+的快取。
 
-**現況：35 集全部完成，29,220 個 cue 100% 由 Claude 視覺辨識供字**，
-tesseract 與文稿都不供字。分兩批做的：
+**現況：交付的每一個 cue 都由 Claude 視覺辨識供字**，tesseract 與文稿都
+不供字。做到哪裡看正本，不要在這裡記數字（會隨批次變）：
 
-- **2 月母帶 22 集**（20,108 cue）：本機 mxf，24 個檔扣掉 2 個上傳不完整。
-- **補集 13 集**（9,112 cue）：從 SFTP 的 `110.1-110.10/7月/` 抓 mp4，
-  把 9 個族語從 0～1 集補到各 2 集。其中 037晚 排灣就是 2 月那兩個壞檔之一，
-  mp4 版本完整、救回來了；041午 鄒兩個來源都是同一份短檔，照做但標
-  `partial`。
+```bash
+python3 -m scripts.news.rebuild --verify   # 通過的集數＝已交付集數
+```
 
-族語涵蓋：16 族語各至少 2 集（午間 17、晚間 14、晨間 4）。
+集數、cue 數、族語涵蓋一律以 `Kari-SRT/news/smkul.csv` 與
+`Kari-SRT/news/inventory.json` 為準。第一批（2021-02）的來由值得記著：
+本機 24 個 mxf 母帶扣掉 2 個上傳不完整，另從 `110.1-110.10/7月/` 的 mp4
+補齊族語涵蓋——其中 037晚 排灣就是那兩個壞檔之一，mp4 版本完整、救回來
+了；041午 鄒兩個來源都是同一份短檔，照做但標 `partial`。
 
 ## 跑法
 
-**新的月份（從 SFTP 抓）**——一行指令，或用 `/smkul-news` 這個 slash command：
+**新的月份（從 SFTP 抓）**——兩行指令，或用 `/smkul-news` 這個 slash
+command。單位是**播出月份**，不是資料夾：
 
 ```bash
-bash scripts/news/fetch_sftp.sh '族語新聞/110.1-110.10/3月'   # 先加 --limit 2 試跑
+python3 -m scripts.news.plan_month 2021-03 -n   # 先看要做哪些、跳過哪些
+python3 -m scripts.news.plan_month 2021-03      # 登記（pending）
+bash    scripts/news/fetch_sftp.sh 2021-03      # 先加 --limit 2 試跑
 ```
 
 之後接第 3 步（視覺辨識）與第 4 步（組裝）。
@@ -59,7 +67,7 @@ bash scripts/news/fetch_sftp.sh '族語新聞/110.1-110.10/3月'   # 先加 --li
 **已在本機的影片**（2 月那批 mxf 就是這樣做的）：
 
 ```bash
-python3 -m scripts.news.build_inventory   # 1. 影片 → 節目資料 → SRT 檔名
+python3 -m scripts.news.add_episodes <路徑>… # 1. 影片 → 節目資料 → SRT 檔名
 bash    scripts/news/run_cues.sh                 # 2. 切 cue（約 2.5 小時，I/O 綁死）
 # 3. 視覺辨識：subagent 一批讀 24 張 sheet、直接把 TSV 寫進磁碟
 python3 -m scripts.news.ingest <slug> <tsv 目錄>   # 驗證＋匯入
@@ -72,9 +80,9 @@ python3 -m scripts.news.rebuild --verify  # 6. 驗離線重建
 
 ```bash
 # 1. 只抓指定的幾支：--only 是對「檔名」比對的 ERE
-bash scripts/news/fetch_sftp.sh '族語新聞/110.1-110.10/7月' \
+bash scripts/news/fetch_sftp.sh 2021-02 \
      --only '^(21NL005_37晨間|21NL004_37晚間)族語新聞\.mp4$'
-# 2. 把這幾集寫進 inventory（影片已經刪掉了，所以不能用 build_inventory）
+# 2. 把這幾集寫進 inventory（影片已經刪掉了，所以只能用檔名查目錄）
 python3 -m scripts.news.add_episodes '族語新聞/110.1-110.10/7月/21NL005_37晨間族語新聞.mp4' …
 # 3. 出 contact sheet（全部 cue 都上）
 python3 -m scripts.news.gap_sheets <slug> …
@@ -84,11 +92,11 @@ python3 -m scripts.news.publish
 python3 -m scripts.news.rebuild --verify
 ```
 
-`--only` 存在的理由是磁碟：一個資料夾動輒上百支、幾百 GB，補三支不該用
-`--limit` 從頭數。`add_episodes.py` 存在的理由是 `build_inventory.py` 掃的是
-**本機資料夾**，而 SFTP 這條一切完 cue 就把影片刪了，掃無可掃——它改成用
-檔名查 `ilrdf-corpus.csv`，跟 `resolve_slug.py` 命名 work dir 的方式同一套。
-已經在 inventory 裡的集數會跳過，只有標記 `truncated` 的會被新來源取代。
+`--only` 存在的理由是磁碟：一個月動輒上百支、幾百 GB，補三支不該用
+`--limit` 從頭數。`add_episodes.py` 存在的理由是**一集一集指定路徑**這條
+路仍然要有：`plan_month.py` 依規則挑不出來的集數（全語料 8 集）判定之後
+就走這條補做，被寫掉的來源找回來時也是。已經在 inventory 裡的集數會跳過，
+只有標記 `truncated` 的會被新來源取代。
 
 ### `pending`：登記了，但還沒做完
 
@@ -107,7 +115,7 @@ python3 -m scripts.news.rebuild --verify
 ### 兩份 `smkul.csv`
 
 `make_all.py` 寫 `kithann/out/smkul.csv`，列**全部**集數含還沒做完的，隨時可
-刷新，是給人看進度的。`publish.py` 寫 `Kari-SRT/srt/smkul.csv`，只列已交付
+刷新，是給人看進度的。`publish.py` 寫 `Kari-SRT/news/smkul.csv`，只列已交付
 的，而且整批做完才寫。分開的理由是可重建性：「待處理（尚未切cue）」這種狀態
 只存在 work dir，而 `rebuild` 沒有 work dir，重建不出來——交付版裡若有這種
 列，就永遠對不起來了。
@@ -291,6 +299,46 @@ mp4 是 1920×1080 h264，沒有 soft subtitle。region 一樣是
 2 月那 22 集裡最早的真實字幕出現在 5.8 秒，所以 `make_srt.py` 直接丟掉
 「start < 0.5 秒」的 cue。
 
+## 切 cue 失效時的補救：blind_cues → 視覺辨識重讀
+
+切 cue 是逐格比對遮罩（機制與失效模式寫在
+`.claude/skills/video-subtitle-srt/SKILL.md` 的 Cue segmentation）。它有兩種
+失效，都會把好幾句字幕併成一格，而且**圖條看起來完全正常**——中位數把
+其他句洗掉，讀者照抄，沒有任何地方會報錯：
+
+| 失效 | 成因 | 特徵 | 判準抓得到嗎 |
+|---|---|---|---|
+| 卡死 | 背景會動（碎石、水面、白衣），遮罩逐格全變，兩道閘門同時失效 | `frames` 極低、時長很長 | `blind_cues` 的差額判準 |
+| 靜態亮背景 | 白紙、雪地這種**不動**的亮背景灌爆遮罩，字幕只佔 7% 以下，換句看不出來 | `frames` 正常、時長很長 | **抓不到**，只能靠時長 |
+
+所以觸發條件是**兩個**：`blind_cues` 的差額 ≥1 秒，**或**時長 ≥6 秒。實測
+（59 集、53,582 條交付 cue）：
+
+```
+差額型      4,440 條，未見 16,036 秒
+時長 ≥6 秒  3,252 條，其中差額判準抓不到的 2,125 條，合計 17,664 秒
+```
+
+第二型比第一型還多，漏掉它等於漏掉一半。
+
+補救走**既有的視覺辨識**，不改切 cue：依 `blind_cues` 的清單，從 mkv 抽
+5 fps，用 0.5–0.6 秒的時間中位數合成遮罩再兩兩算 Jaccard 分段（實測真的
+換句 ≥0.68、雜訊 ≤0.33，分得很開），一段出一張圖條，走既有的批次。邊界
+要精修就交給 `refine_cues`——它的設計前提正是「兩側身分已知」。
+
+**改 TSV 的判準**（踩過兩次）：
+
+- 比對要用**整格相等**，不是子字串。`grep -F "老人家"` 會被別處那句
+  「老人家就會跟我們講說」命中而擋下，但那是不同時間的另一行。誤擋的
+  正好是短句，而短句本來就是中位數最容易洗掉的。
+- 「鄰居已承接」**只能擋補字，不能擋改寫**。一格裝著鄰居的句子就是錯的，
+  不管鄰居寫什麼。一句字幕跨好幾個 cue 是常態——全批 12,351 處相鄰
+  cue 文字完全相同——所以改寫造成的「重複」是這個語料的正常寫法。
+
+**補文字不等於修好。** 時間軸沒動，14 句會串成一條 27.58 秒的字幕，
+對閱讀是進步，對訓練語音辨識不見得——音檔和文字對不起來。全批這種
+「≥10 秒且 ≥40 字」的條目有 22 條，要真正修好得回頭重切那幾段 cue。
+
 ## 文字全部來自 Claude 視覺辨識
 
 成品裡沒有 tesseract 的字，也沒有文稿的字。過程中兩者都試過，結論寫在下面。
@@ -354,7 +402,7 @@ sheet 讀了一遍，還多花了建兩次 contact sheet 的工。真正的價�
 
 | | |
 |---|---|
-| `build_inventory.py` | 掃本機資料夾寫 inventory；**合併不覆蓋**（`--replace` 才整份重寫）|
+| `add_episodes.py` | 逐支指定路徑寫 inventory；**合併不覆蓋**，已在的跳過 |
 | `add_episodes.py` | 補登 SFTP 抓來的集數（影片已刪，只剩檔名可查）|
 | `run_cues.sh` | 複製到本機 → 切 cue |
 | `gap_sheets.py` | 把全部 cue 做成 contact sheet（`.B.work`）|
@@ -365,29 +413,34 @@ sheet 讀了一遍，還多花了建兩次 contact sheet 的工。真正的價�
 | `tracker.py` | `smkul.csv` 的欄位與單列組法，三方共用 |
 | `sftp.sh` | SFTP 包裝：密碼只以檔案存在，處理 BatchMode／askpass 兩個坑 |
 | `sftp-askpass.sh` | 給 OpenSSH 讀密碼檔的 hook（`SSH_ASKPASS`）|
-| `fetch_sftp.sh` | 逐集：下載 → 驗位元組 → 驗band → 切cue → 精修 → **刪影片** |
+| `fetch_sftp.sh` | 吃播出月份；逐集：下載 → 驗位元組 → 驗band → 切cue → 精修 → **刪影片** |
 | `refine_cues.py` | 邊界精修：0.2s 粗切 → 25fps 逐幀分類 → ≤0.05s |
 | `refine_fetch.sh` | 回頭精修已交付集：下載 → refine → 刪影片（可續跑）|
 | `verify_band.py` | 量列剖面，確認字幕帶真的在 preset 說的位置 |
-| `resolve_slug.py` | 用 `ilrdf-corpus.csv` 把檔名對成 work dir／SRT 名稱 |
-| `paths.py` | 全部路徑的單一出處；`--var` 供 shell 取值 |
+| `plan_month.py` | 一批＝一个播出月份：揀來源、登記 pending、出跳過報告 |
+| `sources.py` | 一集配一支檔的四條規則；揀袂出來就跳過並回報 |
+| `resolve_slug.py` | 用 `ilrdf-corpus.csv` 把路徑對成 work dir／SRT 名稱 |
+| `paths.py` | 全部路徑的單一出處；`stage_path()` 是階段目錄唯一出口；`--var` 供 shell 取值 |
 | `publish.py` | 整批把關→清 `pending`、遷 `cues`、定版 `smkul.csv` |
 | `rebuild.py` | 從 Kari-SRT 離線重建全部 SRT 並逐 byte 驗證 |
-| `Kari-SRT/vision/` | 第一輪視覺逐字稿 TSV（文稿沒蓋到的 cue）|
-| `Kari-SRT/vision-rtf/` | 第二輪視覺逐字稿 TSV（文稿蓋到的 cue）|
+| `Kari-SRT/news/1-ocr/3-vision/` | 第一輪視覺逐字稿 TSV（文稿沒蓋到的 cue）|
+| `Kari-SRT/news/1-ocr/4-vision-rtf/` | 第二輪視覺逐字稿 TSV（文稿蓋到的 cue）|
 
-`vision/` 與 `vision-rtf/` 加起來就是 29,220 個 cue 的完整逐字稿，
-是這批工作最可重複使用的成果，正本在 `Kari-SRT/`。
+`3-vision/` 與 `4-vision-rtf/` 加起來就是全部 cue 的完整逐字稿，是這批
+工作最可重複使用的成果，正本在 `Kari-SRT/`。
 
 ## 產出
 
 正本都在 `Kari-SRT/`（submodule，進版本控制）：
 
-- `Kari-SRT/srt/<播出日期>_<集數>_<時段>_<族語英>_<族語中>.srt` —— 35 集
-- `Kari-SRT/srt/smkul.csv` —— 進度表
-- `Kari-SRT/report/rtf-vs-vision.md` / `.json` —— 文稿 vs 視覺比對報告
-- `Kari-SRT/cues/`、`vision/`、`vision-rtf/`、`from_rtf/`、
-  `inventory.json` —— 重建 SRT 所需的全部過程資料
+逐集檔案都在階段目錄下的**播出月份**一層（`<年-月>/`），跨集的與總表
+不分層：
+
+- `news/1-ocr/6-srt/<年-月>/<播出日期>_<集數>_<時段>_<族語英>_<族語中>.srt`
+- `news/smkul.csv` —— 進度表（含影片長度欄，由時間軸推導）
+- `news/1-ocr/5-report/rtf-vs-vision.md` / `.json` —— 文稿 vs 視覺比對報告
+- `news/1-ocr/{1-cues,2-from_rtf,3-vision,4-vision-rtf}/<年-月>/`、
+  `news/inventory.json` —— 重建 SRT 所需的全部過程資料
 
 驗證離線閉環：`python3 -m scripts.news.rebuild --verify` 會只用
 Kari-SRT 的資料重組全部 SRT 並逐 byte 比對，缺件即指名失敗。
@@ -413,7 +466,7 @@ Kari-SRT 的資料重組全部 SRT 並逐 byte 比對，缺件即指名失敗。
 | | 怎麼辦 |
 |---|---|
 | `kithann/out/mxf/*.work/` | 純快取（strips/sheets 約 15 GB）。**不用搬**，`rebuild --verify` 保證正本可離線重生 |
-| `kithann/tongan/ilrdf-corpus.csv` | 節目目錄，`resolve_slug.py` 和 `build_inventory.py` 都要它 |
+| `Kari-SRT/ilrdf-corpus.csv` | 節目目錄正本，`resolve_slug.py`、`plan_month.py` 都要它 |
 | `.sftp-pass` | 故意不進 git。到新機器**自己在終端機重建**，不要叫 Claude 寫 |
 
 新機器上還要做的：

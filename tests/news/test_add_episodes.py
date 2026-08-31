@@ -6,6 +6,7 @@ import unittest
 from unittest import mock
 
 from scripts.news import add_episodes
+from scripts.news import resolve_slug
 
 
 ROW = {
@@ -19,7 +20,9 @@ ROW = {
     "文稿位置": "kithann/tongan/110年2月_族語新聞文稿/1100207 1800原視新聞_卑南",
 }
 REMOTE = "族語新聞/110.1-110.10/7月/21NL004_38晚間族語新聞.mp4"
-CATALOGUE = {"21NL004_38晚間族語新聞.mp4": ROW}
+ROW["影片檔案位置"] = "ilrdf-corpus/" + REMOTE
+CATALOGUE = resolve_slug.Catalogue([ROW])
+EMPTY = resolve_slug.Catalogue([])
 
 
 class TestEntry(unittest.TestCase):
@@ -42,9 +45,9 @@ class TestEntry(unittest.TestCase):
                          "110年2月_族語新聞文稿/1100207 1800原視新聞_卑南")
 
     def test_episode_missing_from_the_catalogue_is_reported_not_guessed(self):
-        entry, problem = add_episodes.entry_for(REMOTE, {})
+        entry, problem = add_episodes.entry_for(REMOTE, EMPTY)
         self.assertIsNone(entry)
-        self.assertIn("catalogue", problem)
+        self.assertIn("目錄", problem)
 
 
 # 一筆完整的 inventory 條目：load_inventory 會擋掉缺欄位的，

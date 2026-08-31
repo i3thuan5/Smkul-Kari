@@ -14,8 +14,8 @@ tests/
 ├── asrmt/        fixtures.py  test_project  test_bisrt
 │   └── align/    test_mtclient  test_claude_mt  test_dpalign  test_render
 │                 test_detect_blocks  test_detect_scores  test_detect_classify
-├── news/         編排層測試（asrmt_run、smkul、inventory、tracker、refine、
-│                 paths 保護、sftp.sh 介面…）
+├── news/         編排層測試（來源選擇、月份計畫、完整性、asrmt_run、
+│                 smkul、tracker、refine、paths 保護、sftp.sh 介面…）
 └── e2e/          fixture.py  test_roundtrip（合成影片端對端，tox -e e2etest）
 ```
 
@@ -67,8 +67,9 @@ tests/
 
 | spec | scenario | 測試檔 |
 |---|---|---|
-| srt-data-store | 交付物唯一正本／inventory 無第二份 | `news/test_paths.py`、`news/test_build_inventory_merge.py` |
-| srt-data-store | 命名鍵 srt_name | `news/test_inventory.py`、`news/test_add_episodes.py` |
+| srt-data-store | 交付物唯一正本／inventory 無第二份 | `news/test_paths.py`、`news/test_plan_month.py` |
+| srt-data-store | 命名鍵 srt_name；逐集資料在播出月份一層，跨集與總表不分層 | `news/test_resolve_slug.py`、`news/test_add_episodes.py`、`news/test_paths.py` |
+| srt-data-store | 進度表併記影片長度（由時間軸推導，尚無時間軸留白）| `news/test_tracker_row.py` |
 | srt-data-store | 缺件時明確失敗／工作目錄全毀後重建 | `news/test_make_srt.py` |
 | srt-data-store | pending 語意／整批完成才定版／進度表定版寫入 | `news/test_pending.py`、`news/test_tracker_home.py`、`news/test_tracker_row.py` |
 | srt-data-store | 語音側進度欄由 store 推導 | `news/test_smkul_asr.py` |
@@ -77,6 +78,16 @@ tests/
 | asr-bilingual-srt | 音檔時長不符指名中止／續跑跳過已完成步驟 | `news/test_asrmt_run.py` |
 | —（工作流防線） | 不覆蓋已校讀 work dir、批次 sheet 歸屬、TSV 整批拒收 | `news/test_gap_guard.py`、`news/test_batches.py`、`news/test_ingest.py` |
 | —（參數防線） | 名字不得帶路徑成分／路徑只准落在資料資料夾／sftp 路徑不得含引號換行 | `news/test_paths.py`、`news/test_sftp_cli.py` |
+
+## 一集配一支檔（tests/news/ ↔ scripts/news/）
+
+| spec | scenario | 測試檔 |
+|---|---|---|
+| episode-sourcing | 分號多來源逐條查得到／母帶優先／時段字樣決勝／無法辨識的時段不當成另一個時段／同名不同資料夾算同一份／一支檔不得歸屬兩集 | `news/test_sources.py` |
+| episode-sourcing | 選不出來只略過該集不中止／略過的不進 inventory／報告帶候選路徑／目錄標示無影片者只計數 | `news/test_sources.py`、`news/test_plan_month.py` |
+| episode-sourcing | 完整性不自動判定（`truncated`／`partial` 是人工註記）；影片長度只記錄 | `news/test_tracker_row.py` |
+| episode-sourcing | 一個月可跨資料夾／同資料夾別的月份不選入／登記先於下載／重跑不重複登記 | `news/test_plan_month.py` |
+| episode-sourcing | 抓檔清單來自 inventory 的 pending 條目，不是遠端 ls | `news/test_plan_month.py` |
 
 ## 端對端（tests/e2e/）
 

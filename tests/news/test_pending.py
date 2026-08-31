@@ -25,6 +25,10 @@ from scripts.news import rebuild
 from scripts.news import tracker
 
 
+DONE = "20210210_041_午間_Cou_鄒"
+NEW = "20210211_042_午間_Truku_太魯閣"
+
+
 def entry(name, **extra):
     base = {
         "節目名稱": "午間族語新聞", "年度": "2021", "集數": "41",
@@ -58,24 +62,29 @@ class TestRebuildSkipsPending(unittest.TestCase):
             patch.start()
             self.addCleanup(patch.stop)
 
+    def _write(self, base, name, suffix, text):
+        path = paths.stage_path(base, name, suffix)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(text)
+
     def _delivered(self, name):
         """Everything the store must hold for a delivered episode."""
-        with open(os.path.join(self.cues, name + ".json"), "w",
-                  encoding="utf-8") as handle:
-            json.dump({"cues": [{"index": 1, "start": 1.0, "end": 2.0}]},
-                      handle)
-        with open(os.path.join(self.srt, name + ".srt"), "w",
-                  encoding="utf-8") as handle:
-            handle.write("1\n00:00:01,000 --> 00:00:02,000\n測試\n")
-        os.makedirs(os.path.join(self.vision, name))
-        with open(os.path.join(self.vision, name, "b01.tsv"), "w",
+        self._write(self.cues, name, ".json", json.dumps(
+            {"duration": 2880.0,
+             "cues": [{"index": 1, "start": 1.0, "end": 2.0}]}))
+        self._write(self.srt, name, ".srt",
+                    "1\n00:00:01,000 --> 00:00:02,000\n測試\n")
+        folder = paths.stage_path(self.vision, name)
+        os.makedirs(folder)
+        with open(os.path.join(folder, "b01.tsv"), "w",
                   encoding="utf-8") as handle:
             handle.write("1\than\t測試\n")
 
     def test_a_pending_episode_is_not_reported_as_missing(self):
-        self._delivered("done")
+        self._delivered(DONE)
         problems = rebuild.check_inputs(
-            [entry("done"), entry("new", pending=True)])
+            [entry(DONE), entry(NEW, pending=True)])
         self.assertEqual(problems, [])
 
     def test_a_pending_episode_gets_no_tracker_row(self):
@@ -85,14 +94,14 @@ class TestRebuildSkipsPending(unittest.TestCase):
             return tracker.vision_status(1)
 
         rows = tracker.tracker_rows(
-            [entry("done"), entry("new", pending=True)], status)
+            [entry(DONE), entry(NEW, pending=True)], status)
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["集數"], "41")
 
     def test_a_non_pending_episode_still_has_to_be_there(self):
         # pending is a declaration, not an exemption: drop the flag and the
         # missing files are missing again.
-        problems = rebuild.check_inputs([entry("new")])
+        problems = rebuild.check_inputs([entry(NEW)])
         self.assertTrue(problems)
 
 

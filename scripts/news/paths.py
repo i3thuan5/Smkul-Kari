@@ -14,10 +14,8 @@ here so existing `paths.X` call sites keep working. What stays here is
 corpus-specific: which stage folder holds what.
 
 Everything is inside the checkout. The corpus mount used to be a
-deliberate exception; the pipeline no longer reads from it (episodes
-arrive over SFTP), so the only place that still names it is
-`build_inventory`, the one-off February scan, which keeps its own
-constant.
+deliberate exception; the pipeline no longer reads from it -- episodes
+arrive over SFTP and the video is deleted as soon as its cues are cut.
 
 Shell scripts read values through the CLI:
 
@@ -51,6 +49,38 @@ def check_srt_name(name):
     return name
 
 
+def month_of(srt_name):
+    """The broadcast month a srt_name belongs to: 20210201… -> "2021-02".
+
+    Derived from the name, not stored anywhere: the name already opens with
+    the broadcast date, and a second copy of the same truth is a thing that
+    has to be kept in step -- inventory used to exist twice and publish had
+    to overwrite one with the other to stop them drifting.
+
+    `check_srt_name` only knows the first eight characters are digits, not
+    that they are a date. Without the month check "2021-99/" would quietly
+    appear in the store, and nothing downstream looks for a folder it does
+    not expect, so nobody would find out.
+    """
+    name = check_srt_name(srt_name)
+    month = name[4:6]
+    if not "01" <= month <= "12":
+        raise PipelineError(
+            "srt_name %r 的月份 %r 不是 01–12" % (srt_name, month))
+    return name[:4] + "-" + month
+
+
+def stage_path(stage, srt_name, suffix=""):
+    """Where one episode's file sits in a stage folder: <stage>/<年-月>/<名>.
+
+    The single way to build a path inside a stage folder. Spread across the
+    eleven programs that index into the store, a change to the layout would
+    have to be made eleven times, and the symptom of missing one is an
+    episode that assembles with no text rather than an error.
+    """
+    return os.path.join(stage, month_of(srt_name), srt_name + suffix)
+
+
 WORK = os.path.join(KITHANN, "out", "mxf")
 LOGS = os.path.join(KITHANN, "out", "mxf-logs")
 
@@ -74,6 +104,12 @@ TRACKER_CACHE = os.path.join(KITHANN, "out", "smkul.csv")
 # corpus -> technique -> numbered stage (the numbers are the production
 # order): news/1-ocr/ is the picture side, news/2-asr/ the speech side.
 # kithann/ holds only sources and regenerable caches.
+#
+# These stage constants are *base* folders. One episode's file does not sit
+# directly in them -- it sits under the broadcast month, so ask stage_path()
+# for it. Flat, fifteen months of this corpus would be about 1,065 episodes
+# in one folder (twice that under 6-srt, which holds two files each); by
+# month, a batch is one folder you can read, diff and review.
 NEWS_STORE = os.path.join(KARI, "news")
 OCR_STORE = os.path.join(NEWS_STORE, "1-ocr")
 ASR_DIR = os.path.join(NEWS_STORE, "2-asr")
@@ -83,6 +119,11 @@ KARI_VISION = os.path.join(OCR_STORE, "3-vision")
 KARI_VISION_RTF = os.path.join(OCR_STORE, "4-vision-rtf")
 KARI_REPORT = os.path.join(OCR_STORE, "5-report")
 SRT_DIR = os.path.join(OCR_STORE, "6-srt")
+
+# Cross-episode, so not layered by month: the translation cache is keyed by
+# content and shared between episodes, and the rtf-vs-vision report compares
+# the whole batch at once.
+MT_CACHE = os.path.join(ASR_DIR, "mt-cache")
 
 # The delivered progress table sits at the corpus level: it lists both
 # techniques' per-episode state, so it belongs to neither directory.
@@ -97,7 +138,18 @@ TRACKER_STORE = os.path.join(NEWS_STORE, "smkul.csv")
 # nobody asked for.
 ENGINE_PRESETS = os.path.join(HERE, "presets.json")
 INVENTORY = os.path.join(NEWS_STORE, "inventory.json")
-CATALOGUE = os.path.join(KITHANN, "tongan", "ilrdf-corpus.csv")
+
+# The broadcaster's catalogue of the whole corpus -- which episode is which
+# language, and which file it is. It lives in the store, at the top rather
+# than under news/, because it lists 族語節目/開會了 as well as 族語新聞.
+#
+# It is source data, not a deliverable, and `rebuild --verify` never reads
+# it. It is here because it cannot be regenerated: the original is an xlsx
+# on the SFTP host, this CSV is what the pipeline was built to read, and it
+# is the source of every naming decision downstream. It used to sit under
+# kithann/, which is gitignored -- one rebuilt devcontainer and the thing
+# every future month is planned from would have been gone.
+CATALOGUE = os.path.join(KARI, "ilrdf-corpus.csv")
 
 VENV_PY = os.path.expanduser("~/.venvs/subs2srt/bin/python")
 
@@ -110,10 +162,10 @@ VENV_PY = os.path.expanduser("~/.venvs/subs2srt/bin/python")
 # KeyError deep inside whichever program noticed first.
 #
 # The order is load-bearing, not decoration: publish / add_episodes /
-# build_inventory write these entries straight back, so rebuilding them in
+# plan_month write these entries straight back, so rebuilding them in
 # any other order would turn one publish into a diff of the whole file.
 INVENTORY_FIELDS = (
-    "file",          # the master's own file name; build_inventory's report
+    "file",          # the source's own file name, as the report shows it
     "video",         # master's path, relative to the corpus root
     "slug",          # work-dir name: <年度>_<集數>_<日期>_<時段>_<族英>_<族中>
     "srt_name",      # deliverable: <日期8碼>_<集數3碼>_<時段>_<族英>_<族中>
@@ -149,7 +201,7 @@ def load_inventory(path=None):
     file held and what the pipeline works with stay separate things. The
     copy carries every field across: rebuilding from INVENTORY_REQUIRED
     would silently drop whatever is not on that list, and publish /
-    add_episodes / build_inventory write these entries straight back to
+    add_episodes / plan_month write these entries straight back to
     the store -- see INVENTORY_OPTIONAL.
 
     The checked value is assigned into the copy rather than merely

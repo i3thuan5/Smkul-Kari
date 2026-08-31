@@ -31,6 +31,51 @@ def profile_with(plateau_y=None, edge_y=None):
     return rows
 
 
+class TestProbeRegion(unittest.TestCase):
+    """量測愛閃過畫面倒爿彼塊**常駐**ê節目台標。
+
+    晨間新聞ê倒下角有一塊「<族語>／晨間新聞」ê圖卡，規集攏佇咧。伊蓋光
+    閣蓋定，逐列ê平均予伊拖懸，`landmarks()` 就kā彼塊當做「對白高原」，
+    真正ê對白（間歇才出現）反而輸伊。20210220_051_晨間_Thau_邵 就是按呢
+    予擋落來ê：量著 y=892（台標），毋是 y=799（對白）。
+
+    實測仝一支母帶，取樣ê倒爿邊界徙開了後：
+
+        x0=0    對白高原 y=892   <- 台標
+        x0=300  對白高原 y=799   <- 對白，佇 region 722..844 內底
+        x0=400  對白高原 y=799
+        x0=500  對白高原 y=799
+
+    午間、晚間彼款無這塊台標，閃這塊袂影響in：判準是「佗一**列**有字」，
+    毋是「偌濟字」，倒爿剪掉一塊，列ê位置袂振動。
+    """
+
+    def test_the_probe_skips_the_station_bug(self):
+        probe = verify_band.probe_region((0, 722, 1920, 122))
+        self.assertEqual(probe[0], verify_band.BUG_MARGIN)
+
+    def test_the_probe_keeps_the_rest_of_the_width(self):
+        probe = verify_band.probe_region((0, 722, 1920, 122))
+        self.assertEqual(probe[0] + probe[2], 1920)
+
+    def test_it_still_looks_above_and_below_the_region(self):
+        # 徙開ê是倒爿，懸低愛照原本：版型若徙位，愛看會著伊徙去佗
+        probe = verify_band.probe_region((0, 722, 1920, 122))
+        self.assertEqual(probe[1], PROBE_Y)
+        self.assertEqual(probe[3], PROBE_H)
+
+    def test_a_region_that_already_starts_right_is_not_moved_left(self):
+        probe = verify_band.probe_region((900, 722, 1020, 122))
+        self.assertEqual(probe[0], 900)
+        self.assertEqual(probe[0] + probe[2], 1920)
+
+    def test_a_narrow_region_is_left_alone(self):
+        # 若閃了賰無偌闊，就莫閃——寧可量著台標嘛毋通無夠資料通量
+        probe = verify_band.probe_region((0, 722, 400, 122))
+        self.assertEqual(probe[0], 0)
+        self.assertEqual(probe[2], 400)
+
+
 class TestLandmarks(unittest.TestCase):
     def test_plateau_and_thin_rule_are_told_apart(self):
         rows = profile_with(plateau_y=790, edge_y=848 - PROBE_Y + PROBE_Y)

@@ -42,6 +42,7 @@ from scripts.news import make_srt
 from scripts.news import paths
 from scripts.news import rebuild
 from scripts.srtlib import assemble
+from scripts import lowpri
 from scripts.errors import PipelineError
 
 JSON = ".json"
@@ -115,10 +116,17 @@ def verify_audio(srt_name, actual, expected, tolerance=1.0):
             % (srt_name, actual, expected, tolerance))
 
 
-def _stage(name):
-    folder = os.path.join(paths.ASR_DIR, name)
-    os.makedirs(folder, exist_ok=True)
-    return folder
+def _stage(name, srt_name, suffix=""):
+    """This episode's file in a speech-side stage folder, folder created.
+
+    The month layer comes from `paths.stage_path`, the same way the picture
+    side gets it -- both technique directories are laid out alike, so one
+    episode is one name in both.
+    """
+    path = paths.stage_path(os.path.join(paths.ASR_DIR, name),
+                            srt_name, suffix)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    return path
 
 
 def _workdir(srt_name):
@@ -141,8 +149,32 @@ def _probe_duration(path):
     return float(out.stdout.strip())
 
 
+def _cues_path(srt_name, slug):
+    """This episode's cue timeline, wherever it is right now.
+
+    The store holds it once `publish` has moved it in; before that it is
+    still in the work dir. Doing an episode end to end runs the speech side
+    first -- OCR, then 3-srt-raw, then publish -- so looking only in the
+    store would mean waiting for a step that is itself waiting for this one.
+
+    `.B.work` is the one that counts: `make_all` assembled the delivered SRT
+    from it and `publish` moves that same cues.json into the store, so both
+    sides read one timeline and the two SRTs stay line-for-line aligned.
+    """
+    stored = paths.stage_path(paths.KARI_CUES, srt_name, JSON)
+    if os.path.exists(stored):
+        return stored
+    pending = os.path.join(paths.WORK, paths.check_name(slug, "slug")
+                           + ".B.work", "cues.json")
+    if os.path.exists(pending):
+        return pending
+    raise PipelineError(
+        "%s 揣無時間軸：store 佮 work dir 攏無 cues.json（%s、%s）"
+        % (srt_name, stored, pending))
+
+
 def _cues_duration(srt_name):
-    with open(os.path.join(paths.KARI_CUES, srt_name + JSON),
+    with open(_cues_path(srt_name, _entry_of(srt_name)["slug"]),
               encoding="utf-8") as handle:
         manifest = json.load(handle)
     if manifest.get("duration"):
@@ -176,7 +208,7 @@ def _save(doc, path):
 
 
 def step_words(srt_name, ethnicity_en):
-    out = os.path.join(_stage("1-words"), srt_name + JSON)
+    out = _stage("1-words", srt_name, JSON)
     if not step_needed(out):
         print("1-words 已存在，跳過")
         return
@@ -196,7 +228,7 @@ def _chain_rows(srt_name):
     """The delivered SRT's chain rows, synthesised rebuild-style."""
     work = tempfile.mkdtemp(prefix="asrmt-entries-")
     try:
-        shutil.copy2(os.path.join(paths.KARI_CUES, srt_name + JSON),
+        shutil.copy2(_cues_path(srt_name, _entry_of(srt_name)["slug"]),
                      os.path.join(work, "cues.json"))
         _save(rebuild.episode_transcripts(srt_name),
               os.path.join(work, "transcripts.json"))
@@ -210,11 +242,11 @@ def _chain_rows(srt_name):
 
 
 def step_entries(srt_name):
-    out = os.path.join(_stage("2-entries"), srt_name + JSON)
+    out = _stage("2-entries", srt_name, JSON)
     if not step_needed(out):
         print("2-entries 已存在，跳過")
         return
-    words_doc = _load(os.path.join(_stage("1-words"), srt_name + JSON))
+    words_doc = _load(_stage("1-words", srt_name, JSON))
     rows = _chain_rows(srt_name)
     for row in rows:
         row["subtitle"] = row.pop("text")
@@ -230,11 +262,11 @@ def step_entries(srt_name):
 
 
 def _entries_path(srt_name):
-    return os.path.join(_stage("2-entries"), srt_name + JSON)
+    return _stage("2-entries", srt_name, JSON)
 
 
 def _client_cache():
-    cache = mtclient.MTCache(os.path.join(paths.ASR_DIR, "mt-cache"))
+    cache = mtclient.MTCache(paths.MT_CACHE)
     client = mtclient.MTClient(base_url=MT_URL)
     return client, cache
 
@@ -373,7 +405,7 @@ def step_claude_ingest(srt_name):
 
 def step_raw(srt_name):
     doc = _load(_entries_path(srt_name))
-    out = os.path.join(_stage("3-srt-raw"), srt_name + ".srt")
+    out = _stage("3-srt-raw", srt_name, ".srt")
     bisrt.write(out, bisrt.raw_body(doc["entries"]))
     print("3-srt-raw 寫出", out)
 
@@ -415,18 +447,18 @@ def step_seg_ingest(srt_name):
 def step_srt(srt_name):
     doc = _load(_entries_path(srt_name))
     classes = {}
-    align_path = os.path.join(_stage("5-align"), srt_name + JSON)
+    align_path = _stage("5-align", srt_name, JSON)
     if os.path.exists(align_path):
         for record in _load(align_path)["entries"]:
             classes[record["index"]] = record["class"]
-    out = os.path.join(_stage("4-srt-ai"), srt_name + ".srt")
+    out = _stage("4-srt-ai", srt_name, ".srt")
     bisrt.write(out, render.review_body(doc["entries"], classes))
     print("4-srt-ai 寫出", out)
 
 
 def step_detect(srt_name):
     doc = _load(_entries_path(srt_name))
-    words_doc = _load(os.path.join(_stage("1-words"), srt_name + JSON))
+    words_doc = _load(_stage("1-words", srt_name, JSON))
     sents = []
     for sent in words_doc["sents"]:
         text = []
@@ -446,9 +478,8 @@ def step_detect(srt_name):
                              loanwords=anchors["loanwords"],
                              numbers_by_entry=numbers)
     report["anchor_numbers"] = source
-    folder = _stage("5-align")
-    _save(report, os.path.join(folder, srt_name + JSON))
-    with open(os.path.join(folder, srt_name + ".md"), "w",
+    _save(report, _stage("5-align", srt_name, JSON))
+    with open(_stage("5-align", srt_name, ".md"), "w",
               encoding="utf-8") as handle:
         handle.write(detect.summary_md(report, doc["entries"]))
     print("5-align 寫出；摘要同名 .md")
@@ -456,7 +487,7 @@ def step_detect(srt_name):
 
 def step_complete(srt_name):
     doc = _load(_entries_path(srt_name))
-    align_path = os.path.join(_stage("5-align"), srt_name + JSON)
+    align_path = _stage("5-align", srt_name, JSON)
     if not os.path.exists(align_path):
         raise PipelineError("run --step detect first -- the complete render "
                             "merges by its verdicts and blocks")
@@ -465,7 +496,7 @@ def step_complete(srt_name):
     for record in align["entries"]:
         verdicts[record["index"]] = record["class"]
     groups = detect.merge_groups(align, doc["entries"])
-    out = os.path.join(_stage("6-srt-complete"), srt_name + ".srt")
+    out = _stage("6-srt-complete", srt_name, ".srt")
     bisrt.write(out, render.complete_body(doc["entries"], verdicts,
                                           groups))
     print("6-srt-complete 寫出", out)
@@ -521,6 +552,7 @@ STEPS = [("words", None), ("entries", None), ("raw", None)]
 
 
 def main(argv=None):
+    lowpri.be_nice()   # 長時間ê重工，莫kā機器食牢去
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("srt_name")
     ap.add_argument("--step", default="all",

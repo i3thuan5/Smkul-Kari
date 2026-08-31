@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """Register SFTP-fetched episodes in the store's inventory, as pending.
 
-`build_inventory.py` scans a local folder of .mxf masters, which is how the
-February batch arrived. Everything since comes over SFTP one file at a time
-and is deleted the moment its cues are cut, so by the time the inventory
-matters there is no folder left to scan. This names those episodes from the
-catalogue instead, using the file name alone -- exactly the way
-`resolve_slug.py` names their work dirs -- and appends them.
+A whole month is registered by `plan_month.py`, which picks each episode's
+source from the catalogue by rule. This is the other door: one named video
+at a time, path given by hand. That is how an episode the rules could not
+decide gets done once a person has decided it, and how a source recovered
+after being written off replaces the one that was.
 
     python3 -m scripts.news.add_episodes \\
         '族語新聞/110.1-110.10/7月/21NL004_38晚間族語新聞.mp4' ...
@@ -33,7 +32,6 @@ import json
 import os
 import sys
 
-from scripts.news import build_inventory
 from scripts.news import paths
 from scripts.news import resolve_slug
 
@@ -53,21 +51,24 @@ def transcript_of(row):
     return value
 
 
-def entry_for(remote_path, catalogue):
-    """One inventory entry, or a reason it cannot be made."""
-    name = os.path.basename(remote_path)
-    row = catalogue.get(name)
-    if row is None:
-        return None, "%s is not in the catalogue" % name
+def entry_for_row(row, video):
+    """One inventory entry from a catalogue row, or why it cannot be made.
+
+    `video` is stored corpus-root-relative whichever way it arrived: the
+    catalogue writes `ilrdf-corpus/…`, the server serves `/docker/…` and
+    `fetch_sftp.sh` passes the tail alone, and the inventory has always held
+    one form -- an absolute or a server-specific path there would make the
+    delivered table specific to one machine.
+    """
     try:
         episode = int(row["集數"])
     except (KeyError, ValueError):
-        return None, "%s has no usable 集數 in the catalogue" % name
+        return None, "%s has no usable 集數 in the catalogue" % video
     return {
-        "file": name,
-        "video": "ilrdf-corpus/" + remote_path.lstrip("/"),
-        "slug": build_inventory.slugify(row, episode),
-        "srt_name": build_inventory.srt_name(row, episode),
+        "file": os.path.basename(video),
+        "video": "ilrdf-corpus/" + resolve_slug.normalise(video),
+        "slug": resolve_slug.slugify(row, episode),
+        "srt_name": resolve_slug.srt_name(row, episode),
         "節目名稱": row["節目名稱"],
         "年度": row["年度"],
         "集數": row["集數"],
@@ -84,6 +85,14 @@ def entry_for(remote_path, catalogue):
         # the flag once the whole batch is finished.
         "pending": True,
     }, ""
+
+
+def entry_for(remote_path, catalogue):
+    """One inventory entry for a video named by path."""
+    row, problem = catalogue.row_for(remote_path)
+    if problem:
+        return None, problem
+    return entry_for_row(row, remote_path)
 
 
 def add(remote_paths):

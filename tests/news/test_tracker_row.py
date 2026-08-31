@@ -5,8 +5,12 @@ function, so a tracker rebuilt from Kari-SRT alone compares byte-for-byte
 with the delivered one. Anything that changes the status has to live there
 rather than at any of the three call sites.
 """
+import json
+import os
+import tempfile
 import unittest
 
+from scripts.news import paths
 from scripts.news import tracker
 from scripts.errors import PipelineError
 
@@ -65,6 +69,46 @@ class TestTrackerRow(unittest.TestCase):
         entry["video"] = "/home/vscode/ilrdf-corpus/2月/x.mxf"
         with self.assertRaises(PipelineError):
             tracker.tracker_row(entry, DONE)
+
+
+class TestVideoLength(unittest.TestCase):
+    """影片長度：只記錄，無參與判定。
+
+    值對 store 內底 `1-cues/` 的時間軸提——`rebuild --verify` 重算的時陣
+    干焦讀會著 store，手填的欄位永遠對袂起來。
+    """
+
+    def _cues(self, duration):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        path = paths.stage_path(tmp.name, ENTRY["srt_name"], ".json")
+        os.makedirs(os.path.dirname(path))
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump({"duration": duration, "cues": []}, handle)
+        return tmp.name
+
+    def test_length_comes_from_the_cue_timeline(self):
+        cues = self._cues(2880.0)
+        self.assertEqual(
+            tracker.video_length(ENTRY["srt_name"], cues), "00:48:00")
+
+    def test_seconds_are_rounded_not_truncated(self):
+        cues = self._cues(2949.9)
+        self.assertEqual(
+            tracker.video_length(ENTRY["srt_name"], cues), "00:49:10")
+
+    def test_an_episode_without_a_timeline_is_blank(self):
+        with tempfile.TemporaryDirectory() as empty:
+            self.assertEqual(
+                tracker.video_length(ENTRY["srt_name"], empty), "")
+
+    def test_the_row_carries_it(self):
+        cues = self._cues(673.8)
+        row = tracker.tracker_row(dict(ENTRY), DONE, cues_dir=cues)
+        self.assertEqual(row["影片長度"], "00:11:14")
+
+    def test_the_column_sits_in_the_declared_field_list(self):
+        self.assertIn("影片長度", tracker.FIELDS)
 
 
 if __name__ == "__main__":

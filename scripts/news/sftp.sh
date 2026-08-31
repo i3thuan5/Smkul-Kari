@@ -3,6 +3,8 @@
 # file that is never named on a command line.
 #
 # Usage:  scripts/news/sftp.sh get REMOTE LOCAL
+#         scripts/news/sftp.sh put LOCAL REMOTE
+#         scripts/news/sftp.sh mkdir REMOTE         (tolerates "already there")
 #         scripts/news/sftp.sh ls REMOTE            (long form, as parsed)
 #         printf 'ls\n' | scripts/news/sftp.sh -    (ad-hoc batch on stdin)
 #
@@ -37,7 +39,8 @@ SFTP_HOST="${SFTP_HOST:-ilrdf-corpus@192.168.35.10}"
 
 # 印用法、回傳離開碼；離開由呼叫端做，函式才有明確的出口
 usage() {
-    echo "usage: $0 {get REMOTE LOCAL | ls REMOTE | -}" >&2
+    echo "usage: $0 {get REMOTE LOCAL | put LOCAL REMOTE |" \
+         "mkdir REMOTE | ls REMOTE | -}" >&2
     return 2
 }
 
@@ -62,8 +65,10 @@ batch=$(mktemp)
 trap 'rm -f "$batch"' EXIT
 
 verb=${1:-}
-remote=${2:-}
-local_path=${3:-}
+# get/ls name the remote first; put is the other direction, so the two
+# operands are read per verb rather than positionally for all of them.
+arg2=${2:-}
+arg3=${3:-}
 
 case "$verb" in
     -)
@@ -71,16 +76,31 @@ case "$verb" in
         ;;
     get)
         [[ $# -eq 3 ]] || { usage; exit $?; }
-        check_path "$remote"
-        check_path "$local_path"
-        printf 'get "%s" "%s"\n' "$remote" "$local_path" > "$batch"
+        check_path "$arg2"
+        check_path "$arg3"
+        printf 'get "%s" "%s"\n' "$arg2" "$arg3" > "$batch"
+        ;;
+    put)
+        [[ $# -eq 3 ]] || { usage; exit $?; }
+        check_path "$arg2"
+        check_path "$arg3"
+        printf 'put "%s" "%s"\n' "$arg2" "$arg3" > "$batch"
+        ;;
+    mkdir)
+        # The leading "-" is sftp's own "carry on if this line fails". A
+        # folder that is already there makes mkdir return non-zero, which
+        # in a batch would abandon everything after it -- and "already
+        # there" is the normal case for every episode after the first.
+        [[ $# -eq 2 ]] || { usage; exit $?; }
+        check_path "$arg2"
+        printf -- '-mkdir "%s"\n' "$arg2" > "$batch"
         ;;
     ls)
         # every caller reads the byte count out of column 5, so the long
         # form is part of the contract, not a convenience
         [[ $# -eq 2 ]] || { usage; exit $?; }
-        check_path "$remote"
-        printf 'ls -l "%s"\n' "$remote" > "$batch"
+        check_path "$arg2"
+        printf 'ls -l "%s"\n' "$arg2" > "$batch"
         ;;
     *)
         usage

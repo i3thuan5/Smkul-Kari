@@ -10,12 +10,15 @@ import os
 import tempfile
 import unittest
 
+from scripts.news import paths
 from scripts.news import tracker
 
 
-def touch(root, folder, name):
-    os.makedirs(os.path.join(root, folder), exist_ok=True)
-    handle = open(os.path.join(root, folder, name), "w")
+def touch(root, folder, srt_name, suffix):
+    """A store file where the month layer puts it."""
+    path = paths.stage_path(os.path.join(root, folder), srt_name, suffix)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    handle = open(path, "w")
     handle.close()
 
 
@@ -46,31 +49,31 @@ class TestAsrModel(unittest.TestCase):
         self.assertEqual(tracker.asr_model(self.name, gone), "")
 
     def test_the_raw_srt_is_what_names_the_model(self):
-        touch(self.asr, "3-srt-raw", self.name + ".srt")
+        touch(self.asr, "3-srt-raw", self.name, ".srt")
         self.assertEqual(tracker.asr_model(self.name, self.asr), "Kaldi")
 
     def test_stages_before_the_raw_srt_stay_blank(self):
         # 逐詞辨識與投影是半路的中間檔，還不是交付
-        touch(self.asr, "1-words", self.name + ".json")
-        touch(self.asr, "2-entries", self.name + ".json")
+        touch(self.asr, "1-words", self.name, ".json")
+        touch(self.asr, "2-entries", self.name, ".json")
         self.assertEqual(tracker.asr_model(self.name, self.asr), "")
 
     def test_align_extension_files_alone_do_not_count(self):
         # 4-srt-ai／6-srt-complete 是試點集的 align 延伸產物，語意整併
         # 效果不佳、之後集數不產，所以不再是「比 raw 更高的一版」。
-        touch(self.asr, "4-srt-ai", self.name + ".srt")
-        touch(self.asr, "6-srt-complete", self.name + ".srt")
+        touch(self.asr, "4-srt-ai", self.name, ".srt")
+        touch(self.asr, "6-srt-complete", self.name, ".srt")
         self.assertEqual(tracker.asr_model(self.name, self.asr), "")
 
     def test_other_episodes_files_do_not_count(self):
-        touch(self.asr, "3-srt-raw", "20210208_039_晚間_Amis_阿美.srt")
+        touch(self.asr, "3-srt-raw", "20210208_039_晚間_Amis_阿美", ".srt")
         self.assertEqual(tracker.asr_model(self.name, self.asr), "")
 
 
 class TestRowCarriesTheColumn(unittest.TestCase):
     def test_field_exists_and_is_derived(self):
         with tempfile.TemporaryDirectory() as asr:
-            touch(asr, "3-srt-raw", entry()["srt_name"] + ".srt")
+            touch(asr, "3-srt-raw", entry()["srt_name"], ".srt")
             row = tracker.tracker_row(entry(), "狀態文字", asr_dir=asr)
         self.assertIn("語音辨識模型", tracker.FIELDS)
         self.assertEqual(row["語音辨識模型"], "Kaldi")

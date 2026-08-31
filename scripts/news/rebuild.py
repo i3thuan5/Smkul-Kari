@@ -51,7 +51,7 @@ def episode_transcripts(srt_name):
     """transcripts.json content, rebuilt from the episode's vision TSVs."""
     resolved = {}
     for source in (paths.KARI_VISION, paths.KARI_VISION_RTF):
-        folder = os.path.join(source, srt_name)
+        folder = paths.stage_path(source, srt_name)
         if not os.path.isdir(folder):
             continue
         for path in sorted(glob.glob(os.path.join(folder, "*.tsv"))):
@@ -73,11 +73,13 @@ def check_inputs(entries):
         if entry["truncated"] or tracker.is_pending(entry):
             continue
         name = entry["srt_name"]
-        if not os.path.exists(os.path.join(paths.KARI_CUES, name + ".json")):
+        if not os.path.exists(paths.stage_path(paths.KARI_CUES, name,
+                                               ".json")):
             problems.append("missing 1-cues/%s.json" % name)
         if not episode_transcripts(name):
             problems.append("no vision TSVs for %s" % name)
-        if not os.path.exists(os.path.join(paths.SRT_DIR, name + ".srt")):
+        if not os.path.exists(paths.stage_path(paths.SRT_DIR, name,
+                                               ".srt")):
             problems.append("missing delivered 6-srt/%s.srt to compare against"
                             % name)
     return problems
@@ -88,7 +90,7 @@ def rebuild_one(entry, tmp):
     name = entry["srt_name"]
     work = os.path.join(tmp, name + ".work")
     os.makedirs(work, exist_ok=True)
-    shutil.copy2(os.path.join(paths.KARI_CUES, name + ".json"),
+    shutil.copy2(paths.stage_path(paths.KARI_CUES, name, ".json"),
                  os.path.join(work, "cues.json"))
     with open(os.path.join(work, "transcripts.json"), "w",
               encoding="utf-8") as handle:
@@ -107,7 +109,8 @@ def _mismatches(tmp, entries):
             continue
         name = entry["srt_name"] + ".srt"
         built = open(os.path.join(tmp, "srt", name), "rb").read()
-        shipped = open(os.path.join(paths.SRT_DIR, name), "rb").read()
+        shipped = open(paths.stage_path(paths.SRT_DIR, entry["srt_name"],
+                                        ".srt"), "rb").read()
         if built != shipped:
             mismatched.append(name)
     built = open(os.path.join(tmp, "srt", SMKUL), "rb").read()

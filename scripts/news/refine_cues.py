@@ -33,6 +33,7 @@ import sys
 
 from scripts.news import paths
 from scripts.ocr import cuelib
+from scripts import lowpri
 from scripts.errors import PipelineError
 
 FPS = 25.0
@@ -308,6 +309,7 @@ def refine_episode(video, cues_path, dry_run=False):
 
 
 def main():
+    lowpri.be_nice()   # 長時間ê重工，莫kā機器食牢去
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("video")
     ap.add_argument("cues", help="cues.json to refine in place")

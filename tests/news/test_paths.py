@@ -26,6 +26,19 @@ class TestConstants(unittest.TestCase):
     def test_srt_dir_is_inside_kari(self):
         self.assertTrue(paths.SRT_DIR.startswith(paths.KARI + os.sep))
 
+    def test_the_catalogue_is_in_the_store_not_the_workspace(self):
+        # 目錄是外部予的來源資料、重生袂出來（正本是伺服器頂彼支
+        # xlsx），而且是規劃新月份的源頭。囥佇 gitignore 的 kithann/，
+        # 換一台機器就無去；伊愛綴資料走。
+        self.assertEqual(paths.CATALOGUE,
+                         os.path.join(paths.KARI, "ilrdf-corpus.csv"))
+        self.assertFalse(paths.CATALOGUE.startswith(paths.KITHANN + os.sep))
+
+    def test_the_catalogue_covers_more_than_one_corpus_so_it_sits_on_top(self):
+        # 內底有族語新聞（983 逝）嘛有開會了（46 逝），毋是 news/ 一个
+        # 語料的物件，所以囥 Kari-SRT 的頂層。
+        self.assertEqual(os.path.dirname(paths.CATALOGUE), paths.KARI)
+
     def test_store_layout_is_corpus_technique_stage(self):
         # Kari-SRT is layered corpus -> technique -> numbered stage; the
         # numbers are the production order (srt-data-store spec).
@@ -43,6 +56,71 @@ class TestConstants(unittest.TestCase):
         self.assertEqual(paths.TRACKER_STORE,
                          os.path.join(news, "smkul.csv"))
         self.assertEqual(paths.ASR_DIR, os.path.join(news, "2-asr"))
+
+    def test_the_catalogue_is_data_so_it_lives_in_the_store(self):
+        # 目錄是跨語料的資料（毋是這批新聞專屬），所以khǹg佇 Kari-SRT
+        # 頂層。伊本底佇 `kithann/`，毋過彼跡是 gitignore ê——換一台機器
+        # 就無去矣，而且 `plan_month` 無伊就選袂出來源。
+        self.assertEqual(paths.CATALOGUE,
+                         os.path.join(paths.KARI, "ilrdf-corpus.csv"))
+        self.assertFalse(paths.CATALOGUE.startswith(paths.KITHANN + os.sep))
+
+    def test_stage_constants_are_base_folders_not_file_locations(self):
+        # 逐集檔案住佇階段目錄下的月份一層，所以階段常數是「基底」，
+        # 毋是「檔案囥的所在」——組路徑一律行 stage_path()。
+        name = "20210201_032_午間_Atayal_泰雅"
+        for base in (paths.KARI_CUES, paths.KARI_FROM_RTF,
+                     paths.KARI_VISION, paths.KARI_VISION_RTF,
+                     paths.SRT_DIR):
+            self.assertEqual(paths.stage_path(base, name),
+                             os.path.join(base, "2021-02", name))
+
+    def test_cross_episode_folders_and_tables_are_not_layered(self):
+        # 跨集產物佮總表無分層：報告是跨集的比對，mt-cache 是跨集共用的
+        # 翻譯快取，兩份總表本來就一集一逝。
+        ocr = os.path.join(paths.KARI, "news", "1-ocr")
+        self.assertEqual(paths.KARI_REPORT, os.path.join(ocr, "5-report"))
+        self.assertEqual(paths.MT_CACHE,
+                         os.path.join(paths.ASR_DIR, "mt-cache"))
+
+
+class TestStagePath(unittest.TestCase):
+    """stage_path：階段目錄下的月份一層，是組路徑的唯一出口。
+
+    月份鍵對 `srt_name` 家己推，無另外囥一份對照表——兩份真相愛同步
+    的問題，inventory 已經踏過一擺矣。
+    """
+
+    NAME = "20210201_032_午間_Atayal_泰雅"
+
+    def test_month_comes_from_the_name_itself(self):
+        self.assertEqual(paths.month_of(self.NAME), "2021-02")
+        self.assertEqual(paths.month_of("19990101_001_午間_Test_測試"),
+                         "1999-01")
+
+    def test_path_is_stage_then_month_then_name(self):
+        got = paths.stage_path("/base", self.NAME)
+        self.assertEqual(got, os.path.join("/base", "2021-02", self.NAME))
+
+    def test_a_suffix_lands_on_the_file_not_the_folder(self):
+        got = paths.stage_path("/base", self.NAME, ".json")
+        self.assertEqual(got,
+                         os.path.join("/base", "2021-02",
+                                      self.NAME + ".json"))
+
+    def test_the_name_is_checked_before_it_becomes_a_path(self):
+        for bad in ("../../etc/passwd", "evil", "", None,
+                    "20210201_032_晚間/../x"):
+            with self.assertRaises(PipelineError):
+                paths.stage_path("/base", bad)
+
+    def test_an_impossible_month_stops_instead_of_making_a_junk_folder(self):
+        # check_srt_name 只認「8 碼數字」，無認彼 8 碼是毋是真正的日期。
+        # 若無擋，2021-99/ 這款資料夾會恬恬生出來、閣揣無人會發覺。
+        for bad in ("20219901_001_午間_Test_測試",
+                    "20210001_001_午間_Test_測試"):
+            with self.assertRaisesRegex(PipelineError, "月份"):
+                paths.month_of(bad)
 
 
 class TestVarCli(unittest.TestCase):

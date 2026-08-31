@@ -37,7 +37,8 @@ ENTRY = {
 }
 
 SRT = "1\n00:00:01,000 --> 00:00:02,000\n測試\n"
-CUES = {"cues": [{"index": 1, "start": 1.0, "end": 2.0}]}
+CUES = {"duration": 2880.0,
+        "cues": [{"index": 1, "start": 1.0, "end": 2.0}]}
 
 
 class Fixture(unittest.TestCase):
@@ -70,11 +71,15 @@ class Fixture(unittest.TestCase):
         os.makedirs(done)
         self._json(os.path.join(done, "cues.json"), CUES)
         self._json(os.path.join(done, "verified.json"), {"1": {"han": True}})
-        self._json(os.path.join(self.cues_dir, ENTRY["srt_name"] + ".json"),
-                   CUES)
-        with open(os.path.join(self.srt_dir, ENTRY["srt_name"] + ".srt"),
-                  "w", encoding="utf-8") as handle:
-            handle.write(SRT)
+        self._staged(self.cues_dir, ".json", json.dumps(CUES))
+        self._staged(self.srt_dir, ".srt", SRT)
+
+    def _staged(self, base, suffix, text):
+        """A store file where the month layer puts it."""
+        path = paths.stage_path(base, ENTRY["srt_name"], suffix)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(text)
 
     def _rows(self, path):
         with open(path, encoding="utf-8-sig", newline="") as handle:
@@ -155,20 +160,21 @@ class TestPublishWritesTheDeliverable(Fixture):
         # All-or-nothing: a second, finished episode must not be published
         # while the first is still being read, or the store ends up holding
         # inputs for a deliverable that is not there.
-        other = dict(ENTRY, slug="other", srt_name="other", pending=True)
+        other = dict(ENTRY, slug="9999_002_1999-01-02_午間_Test_測試",
+                     srt_name="19990102_002_午間_Test_測試", pending=True)
         self._json(self.inventory, [dict(ENTRY, pending=True), other])
         self._finished_episode()
         self.assertEqual(self._run(), 1)
-        self.assertEqual(os.listdir(self.cues_dir), [ENTRY["srt_name"]
-                                                     + ".json"])
+        month = os.path.join(self.cues_dir,
+                             paths.month_of(ENTRY["srt_name"]))
+        self.assertEqual(os.listdir(month),
+                         [ENTRY["srt_name"] + ".json"])
 
     def test_a_delivered_episode_needs_no_work_dir(self):
         # Work dirs are caches and get cleared away once published. Nothing
         # pending, nothing to copy -- but the tracker is still written.
-        self._json(self.cues_dir + "/" + ENTRY["srt_name"] + ".json", CUES)
-        with open(os.path.join(self.srt_dir, ENTRY["srt_name"] + ".srt"),
-                  "w", encoding="utf-8") as handle:
-            handle.write(SRT)
+        self._staged(self.cues_dir, ".json", json.dumps(CUES))
+        self._staged(self.srt_dir, ".srt", SRT)
         self.assertEqual(self._run(), 0)
         self.assertEqual(len(self._rows(self.store_tracker)), 1)
 

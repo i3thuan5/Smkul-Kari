@@ -8,8 +8,10 @@ interrupted run continues instead of redoing paid work.
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 from scripts.news import asrmt_run
+from scripts.news import paths
 from scripts.errors import PipelineError
 
 
@@ -89,6 +91,62 @@ class TestMp3Resolution(unittest.TestCase):
                  "音檔位置(mp3)": "ilrdf-corpus/a.mp3;ilrdf-corpus/b.mp3"}]
         got = asrmt_run.mp3_remote("20210206_037_晚間_Paiwan_排灣", rows)
         self.assertEqual(got, "/docker/ilrdf-corpus/a.mp3")
+
+
+class TestCuesPath(unittest.TestCase):
+    """時間軸對佗位提：交付了ê對 store，猶未交付ê對 work dir。
+
+    一集做到底ê流程，語音側是佇 publish **進前**跑ê（OCR → 3-srt-raw →
+    publish），而 cues.json 是 publish 才對 work dir 徙入 store ê。若干焦
+    看 store，語音側就永遠等袂著——publish 顛倒愛等伊。
+
+    `.B.work` 彼个才是準ê：make_all 就是對彼跡組出交付ê SRT，publish 嘛
+    是對彼跡kā cues.json 徙入 store。兩爿愛是仝一份，時間軸才對同。
+    """
+
+    NAME = "20210101_001_午間_Rukai_魯凱"
+    SLUG = "2021_001_2021-01-01_午間_Rukai_魯凱"
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = tmp.name
+        self.store = os.path.join(self.root, "1-cues")
+        self.work = os.path.join(self.root, "work")
+        os.makedirs(self.store)
+        os.makedirs(self.work)
+        patches = [mock.patch.object(paths, "KARI_CUES", self.store),
+                   mock.patch.object(paths, "WORK", self.work)]
+        for patch in patches:
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def _in_store(self):
+        path = paths.stage_path(self.store, self.NAME, ".json")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        open(path, "w").close()
+        return path
+
+    def _in_work(self):
+        folder = os.path.join(self.work, self.SLUG + ".B.work")
+        os.makedirs(folder, exist_ok=True)
+        path = os.path.join(folder, "cues.json")
+        open(path, "w").close()
+        return path
+
+    def test_the_store_wins_once_the_episode_is_published(self):
+        want = self._in_store()
+        self._in_work()
+        self.assertEqual(asrmt_run._cues_path(self.NAME, self.SLUG), want)
+
+    def test_the_work_dir_carries_a_pending_episode(self):
+        want = self._in_work()
+        self.assertEqual(asrmt_run._cues_path(self.NAME, self.SLUG), want)
+
+    def test_neither_place_says_so_by_name(self):
+        with self.assertRaises(PipelineError) as caught:
+            asrmt_run._cues_path(self.NAME, self.SLUG)
+        self.assertIn(self.NAME, str(caught.exception))
 
 
 if __name__ == "__main__":

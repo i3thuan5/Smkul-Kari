@@ -62,7 +62,8 @@ def make_one(entry):
     if not vision_complete(vision):
         return "待處理（已切cue，尚未校讀完）"
 
-    out = os.path.join(SRT_DIR, entry["srt_name"] + ".srt")
+    out = paths.stage_path(SRT_DIR, entry["srt_name"], ".srt")
+    os.makedirs(os.path.dirname(out), exist_ok=True)
     qc = make_srt.run(vision, out)
     return tracker.vision_status(qc["srt_lines"])
 

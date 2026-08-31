@@ -14,6 +14,7 @@ second copy of this logic at any call site would drift and only show up as a
 mismatch nobody can explain.
 """
 import csv
+import json
 import os
 
 from scripts.news import paths
@@ -23,7 +24,7 @@ ETH_EN = "族語別(英)"
 ETH_ZH = "族語別(中)"
 
 FIELDS = ["節目名稱", "年度", "集數", "播出日期", "播出時段",
-          ETH_EN, ETH_ZH, "影片檔案位置", "文稿位置",
+          ETH_EN, ETH_ZH, "影片檔案位置", "影片長度", "文稿位置",
           "字幕srt狀態", "語音辨識模型"]
 
 # The speech-side cell names the recogniser, not a revision: delivery stops
@@ -44,9 +45,37 @@ def asr_model(srt_name, asr_dir=None):
     if asr_dir is None:
         asr_dir = paths.ASR_DIR
     folder, ext = ASR_SRT
-    if os.path.exists(os.path.join(asr_dir, folder, srt_name + ext)):
+    if os.path.exists(paths.stage_path(os.path.join(asr_dir, folder),
+                                       srt_name, ext)):
         return ASR_MODEL
     return ""
+
+
+def video_length(srt_name, cues_dir=None):
+    """How long the video ran, as 時:分:秒, or "" if it has no timeline yet.
+
+    Recorded, never judged. The programme has more than one normal length --
+    48-minute editions, 24-minute ones in the Lunar New Year week, and
+    episodes in between, all with the same cue density -- so a threshold on
+    length mislabels normal episodes. A reader of the table can see the
+    number and decide for themselves.
+
+    Read from the stored timeline rather than written down anywhere, for the
+    same reason as the speech-side column: `rebuild --verify` recomputes this
+    table from the store alone, and a hand-written value could never survive
+    that comparison.
+    """
+    if cues_dir is None:
+        cues_dir = paths.KARI_CUES
+    path = paths.stage_path(cues_dir, srt_name, ".json")
+    if not os.path.exists(path):
+        return ""
+    with open(path, encoding="utf-8") as handle:
+        duration = json.load(handle).get("duration")
+    if not duration:
+        return ""
+    whole = int(round(float(duration)))
+    return "%02d:%02d:%02d" % (whole // 3600, whole % 3600 // 60, whole % 60)
 
 
 def corpus_path(path):
@@ -83,7 +112,7 @@ def skipped_status(reason):
     return "略過：" + reason
 
 
-def tracker_row(entry, status, asr_dir=None):
+def tracker_row(entry, status, asr_dir=None, cues_dir=None):
     """One smkul.csv row."""
     # An episode whose only surviving source is short still gets subtitled --
     # a partial transcript beats none -- but the tracker has to say so, or the
@@ -104,6 +133,7 @@ def tracker_row(entry, status, asr_dir=None):
         ETH_EN: entry[ETH_EN],
         ETH_ZH: entry[ETH_ZH],
         "影片檔案位置": corpus_path(entry["video"]),
+        "影片長度": video_length(entry["srt_name"], cues_dir),
         "文稿位置": script,
         "字幕srt狀態": status,
         "語音辨識模型": asr_model(entry["srt_name"], asr_dir),

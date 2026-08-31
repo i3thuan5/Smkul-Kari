@@ -44,6 +44,51 @@ class TestBatchBuilding(unittest.TestCase):
         self.assertEqual(proc.stdout, "ls /docker\n")
 
 
+class TestPut(unittest.TestCase):
+    """put：封存 mkv 送轉去伺服器。
+
+    佮 get 的方向倒反——本機 → 遠端——所以兩爿的路徑攏愛檢查，而且順序
+    愛照 sftp 的：`put LOCAL REMOTE`。
+    """
+
+    def test_put_builds_one_quoted_line(self):
+        proc = run("put", "/kithann/out/mkv/影片.mkv",
+                   "/home/news/mkv/2021-02/影片.mkv")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(
+            proc.stdout,
+            'put "/kithann/out/mkv/影片.mkv" '
+            '"/home/news/mkv/2021-02/影片.mkv"\n')
+
+    def test_both_sides_are_checked(self):
+        bad = '/home/news/a".mkv'
+        self.assertEqual(run("put", "/local/ok.mkv", bad).returncode, 2)
+        self.assertEqual(run("put", bad, "/home/news/ok.mkv").returncode, 2)
+
+    def test_put_needs_both_sides(self):
+        self.assertEqual(run("put", "/only-local").returncode, 2)
+
+
+class TestMkdir(unittest.TestCase):
+    """mkdir：上傳進前愛先有資料夾。
+
+    sftp 的 mkdir 拄著「已經有矣」會回非零，佇 batch 內底就會kā整批
+    做煞。頭前彼个 `-` 是 sftp 的「這逝失敗嘛繼續」記號，是刁工的。
+    """
+
+    def test_mkdir_tolerates_an_existing_folder(self):
+        proc = run("mkdir", "/home/news/mkv/2021-02")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stdout, '-mkdir "/home/news/mkv/2021-02"\n')
+
+    def test_mkdir_checks_its_path(self):
+        self.assertEqual(run("mkdir", '/home/a".mkv').returncode, 2)
+        self.assertEqual(run("mkdir", "").returncode, 2)
+
+    def test_mkdir_takes_exactly_one_path(self):
+        self.assertEqual(run("mkdir", "/a", "/b").returncode, 2)
+
+
 class TestUnsafePathsRefused(unittest.TestCase):
     def test_a_quote_would_break_out_of_the_batch_line(self):
         proc = run("get", '/docker/a".mxf', "/stage/x.mxf")
@@ -71,7 +116,8 @@ class TestUsageErrors(unittest.TestCase):
         self.assertEqual(run().returncode, 2)
 
     def test_unknown_verb_is_refused(self):
-        self.assertEqual(run("put", "/a", "/b").returncode, 2)
+        self.assertEqual(run("rm", "/a").returncode, 2)
+        self.assertEqual(run("rename", "/a", "/b").returncode, 2)
 
     def test_get_needs_both_sides(self):
         self.assertEqual(run("get", "/only-remote").returncode, 2)

@@ -78,7 +78,7 @@ def main():
         print("DIR %s/sheets/" % work)
         print("SHEETS %s" % " ".join(names))
         print("CUES %d..%d" % (cues[0], cues[-1]))
-        print("TSV %s/%s/b%02d.tsv" % (OUT, tag, made))
+        print("TSV %s/b%02d.tsv" % (paths.stage_path(OUT, tag), made))
 
 
 if __name__ == "__main__":

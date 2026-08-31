@@ -63,7 +63,7 @@ for job in "${JOBS[@]}"; do
 
     (
         echo "$(date +%H:%M:%S) cues  $slug"
-        "$PY" -m scripts.ocr.cli cues "$local_copy" \
+        nice -n 15 ionice -c 3 "$PY" -m scripts.ocr.cli cues "$local_copy" \
             -o "$WORK/$slug.work" --sheets \
             --presets "$PRESETS" --preset titv-news \
             > "$LOG/$slug.cues.log" 2>&1

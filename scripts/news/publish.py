@@ -87,8 +87,9 @@ def publish_one(entry, work):
             # that path was removed have none, and the store keeps the old
             # ones as the key to the rtf-vs-vision comparison report.
             continue
-        os.makedirs(folder, exist_ok=True)
-        shutil.copy2(source, os.path.join(folder, entry["srt_name"] + ".json"))
+        target = paths.stage_path(folder, entry["srt_name"], ".json")
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        shutil.copy2(source, target)
         written.append(os.path.basename(folder))
     return written
 
@@ -103,7 +104,7 @@ def delivered_status(entry):
     if entry["truncated"]:
         return tracker.skipped_status(entry["truncated"])
     name = entry["srt_name"]
-    with open(os.path.join(paths.SRT_DIR, name + ".srt"),
+    with open(paths.stage_path(paths.SRT_DIR, name, ".srt"),
               encoding="utf-8") as handle:
         srt_lines = handle.read().count("-->")
     return tracker.vision_status(srt_lines)

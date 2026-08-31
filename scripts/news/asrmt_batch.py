@@ -16,6 +16,7 @@ import sys
 
 from scripts.news import asrmt_run
 from scripts.news import paths
+from scripts import lowpri
 from scripts.errors import PipelineError
 
 
@@ -42,16 +43,29 @@ def _fetch(remote, local):
         raise PipelineError("sftp fetch failed: %s" % remote)
 
 
-def _todo(entries, worker, total, raw_dir):
-    """This worker's episodes still without a raw SRT, inventory order."""
+def _todo(entries, worker, total, raw_dir, only=""):
+    """This worker's episodes still without a raw SRT, inventory order.
+
+    `only` names a single episode and takes it even while it is pending.
+    Doing an episode end to end runs the speech side *before* `publish`
+    -- OCR, then 3-srt-raw, then publish -- so "pending" no longer means
+    "not ready"; naming the episode is the caller saying its cues and
+    vision transcripts are in. If they are not, `step_entries` fails and
+    says which file is missing.
+    """
     todo = []
     for position, entry in enumerate(entries):
         name = entry["srt_name"]
-        if not shard_ok(position, worker, total):
+        if only:
+            if name != only:
+                continue
+        elif not shard_ok(position, worker, total):
             continue
-        if entry.get("pending") or entry.get("truncated"):
+        elif entry.get("pending"):
             continue
-        if os.path.exists(os.path.join(raw_dir, name + ".srt")):
+        if entry.get("truncated"):
+            continue
+        if os.path.exists(paths.stage_path(raw_dir, name, ".srt")):
             continue
         todo.append(entry)
     return todo
@@ -76,7 +90,13 @@ def main(argv=None):
                     help="stop after N episodes (0 = all)")
     ap.add_argument("--shard", default="0/1",
                     help="i/n: run only this worker's partition")
+    ap.add_argument("--only", default="",
+                    help="干焦這一集（逐集流程用；pending 嘛做）")
     args = ap.parse_args(argv)
+    # vosk 解碼一集愛幾分鐘，一批走幾點鐘；降優先權才袂kā機器食牢，
+    # 佮 encode_master.sh 彼支 ffmpeg 仝一套。ffmpeg 是這爿生ê囝，
+    # 會 kè-sîng 這个 nice 值。
+    lowpri.be_nice()
     worker, total = parse_shard(args.shard)
 
     entries = paths.load_inventory()
@@ -84,7 +104,7 @@ def main(argv=None):
         catalogue = list(csv.DictReader(handle))
 
     raw_dir = os.path.join(paths.ASR_DIR, "3-srt-raw")
-    todo = _todo(entries, worker, total, raw_dir)
+    todo = _todo(entries, worker, total, raw_dir, only=args.only)
     if args.limit:
         todo = todo[:args.limit]
 

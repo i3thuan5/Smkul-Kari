@@ -63,8 +63,8 @@ from scripts.news import paths
 for entry in json.load(open(paths.INVENTORY, encoding="utf-8")):
     if entry.get("pending") or entry["truncated"]:
         continue
-    cues_path = os.path.join(paths.KARI_CUES,
-                             entry["srt_name"] + ".json")
+    cues_path = paths.stage_path(paths.KARI_CUES,
+                                 entry["srt_name"], ".json")
     manifest = json.load(open(cues_path, encoding="utf-8"))
     if manifest.get("refined"):
         continue

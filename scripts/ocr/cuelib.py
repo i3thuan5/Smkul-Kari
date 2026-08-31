@@ -329,6 +329,27 @@ class Segmenter(object):
     A frame only opens or closes a cue once it has repeated `min_stable`
     times. That hysteresis is what stops a cross-fade between two subtitles,
     or one noisy frame, from spawning a phantom cue.
+
+    TWO GATES, DIFFERENT REFERENCES
+    -------------------------------
+    `_extend_current` measures the frame against `current.mask`, which is
+    fixed when the cue opens and never updated. `_track_pending` measures it
+    against `pending.mask`, i.e. the previous frame. Failing the first is not
+    a boundary; a boundary needs `min_stable` consecutive frames that resemble
+    *each other*, which is a separate question.
+
+    Both jam together when the background moves. `text_mask` is a brightness
+    threshold, so gravel, water and white clothing enter the mask; if that
+    background also moves, no two frames resemble each other, the cue never
+    extends AND no change is ever confirmed, so the cue never closes.
+    Measured on 20210220_051 cue 735: 138 frames, distance to the frozen mask
+    median 0.938, to the previous frame 0.726, ink median 12751 against a
+    subtitle's 2000-4000 -- one cue holding sixteen sentences, `frames=2`.
+
+    The failure is an under-split, which is the lossy direction. Abundant ink
+    is not the signal -- cue 125 of the same episode segments cleanly at ink
+    38076 (a static document) -- unstable ink is. `scripts/news/blind_cues.py`
+    finds both this and the opposite static-bright case after the fact.
     """
 
     def __init__(self, frame_dt, min_ink=120, change=0.35, min_stable=2,

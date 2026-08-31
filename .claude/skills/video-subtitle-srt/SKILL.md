@@ -388,6 +388,54 @@ and the open cue's mask exceeds `--change` (default 0.35), and only after the
 change repeats `--min-stable` times (default 2). That hysteresis is what
 stops a cross-fade or one noisy frame from spawning a phantom cue.
 
+#### The two gates compare against different things
+
+This is the part that surprises people reading `Segmenter.feed`, and it is
+what decides whether a frame extends the open cue or starts a new one:
+
+| gate | compares this frame against | effect |
+|---|---|---|
+| `_extend_current` | `current.mask` — the mask captured when the cue **opened**, never updated afterwards | under `change` → extend, `frames++`, keep a sample for the composite |
+| `_track_pending` | `pending.mask` — the **previous** frame's (raised to the inkiest frame within the pending run) | under `change` → `count++`; over it → the pending is discarded and rebuilt at `count = 1` |
+
+So a frame that fails the first gate is not yet a cue boundary. Confirming a
+boundary needs `min_stable` **consecutive frames that resemble each other**,
+which is a separate question from whether they resemble the open cue.
+
+#### Failure mode: both gates jam on moving noise
+
+`text_mask` is a brightness threshold, so gravel, stone walls, water, white
+clothing and newsprint all enter the mask. When that background also *moves*,
+every frame's mask is different from every other frame's, and both gates fail
+at once:
+
+* `_extend_current` fails → the cue never extends, `frames` stays at its
+  opening value;
+* `_track_pending` fails → the pending resets every frame, `count` never
+  reaches `min_stable`, so no boundary is ever confirmed;
+* the cue therefore **never closes** and swallows everything until the
+  picture settles.
+
+Measured on `20210220_051_午間_Seediq_賽德克` cue 735 (33:00.22–33:27.80, 138
+frames): distance to the frozen cue mask median **0.938**, distance to the
+previous frame median **0.726**, mask ink median **12,751** where a line of
+subtitle is 2,000–4,000. One cue, sixteen sentences on screen, `frames=2`.
+
+Note the direction of the failure: it produces an **under-split**, the side
+the "prefer over-splitting" rule calls lossy. The protection violates the
+principle it exists to serve.
+
+Ink alone does not diagnose it — cue 125 of the same episode has ink 38,076
+(a static white document) and segments perfectly, distance to previous frame
+0.002. The signal is *unstable* ink, not abundant ink. That same static-bright
+case is a second, opposite failure: the subtitle is only ~2,500 of the 38,076,
+so a sentence change moves under 7% of the mask and no gate notices — six
+sentences in one cue with `frames=64`, which the jam indicator cannot see and
+only duration catches.
+
+Both are found rather than prevented, by `scripts/news/blind_cues.py`; see
+the recovery route in `scripts/news/README.md`.
+
 Prefer over-splitting to under-splitting: a split cue is repaired losslessly
 later, a merged one has lost text. `srt` therefore fuses neighbouring cues
 whose recognised text is *identical* (`--merge-repeats`, on by default) —

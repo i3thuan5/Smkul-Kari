@@ -48,7 +48,8 @@ def _tsvdir_of(slug):
     """Default TSV dir: news/1-ocr/3-vision/<srt_name>, from the slug."""
     for entry in paths.load_inventory():
         if entry["slug"] == slug:
-            return os.path.join(paths.KARI_VISION, entry["srt_name"])
+            return paths.stage_path(paths.KARI_VISION,
+                                    entry["srt_name"])
     raise PipelineError("slug %r not in inventory; pass a TSV dir "
                         "explicitly" % slug)
 

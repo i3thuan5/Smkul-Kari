@@ -20,6 +20,7 @@ import os
 
 from scripts.news import paths
 from scripts.ocr import sheets
+from scripts import lowpri
 from scripts.errors import PipelineError
 
 WORK = paths.WORK
@@ -71,6 +72,7 @@ def prepare(slug):
 
 
 def main(argv=None):
+    lowpri.be_nice()   # 長時間ê重工，莫kā機器食牢去
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("slugs", nargs="*", help="work-dir slugs; default all")
     args = ap.parse_args(argv)

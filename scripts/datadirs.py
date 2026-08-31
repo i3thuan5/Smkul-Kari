@@ -44,7 +44,7 @@ def check_name(name, kind="name"):
     stripped form being returned: a name that needed stripping stops the
     run. Silently rewriting one would be worse than the typo it came from
     -- the inventory is read, edited and written back by `publish`,
-    `add_episodes` and `build_inventory`, so a quietly corrected name
+    `add_episodes` and `plan_month`, so a quietly corrected name
     would be written into the store as if it had always said that.
     """
     # None is what a hand-edited `"slug": null` in the inventory hands over;

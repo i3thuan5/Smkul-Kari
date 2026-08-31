@@ -83,6 +83,13 @@ An edge below the region is fine and does happen: the February masters put
 one at y=848, four pixels under, and a January 卑南 episode at y=917. Only an
 edge landing within lo..hi is rejected.
 
+The table above was measured across the full frame width, before BUG_MARGIN
+existed. The plateau rows still read the same -- the dialogue is centred, so
+dropping a left margin cannot move which rows carry it -- but the spike
+ratios were not re-measured and may differ slightly. Re-measured with the
+margin: 21NL005_51晨間族語新聞.mxf, titv-news, plateau y=799, no spike (1.09),
+PASS; full width it read y=892 (the station bug) and refused the file.
+
 This is a measurement, not a proof. On the first file of any new folder, run
 WITHOUT --quiet, eyeball the printed profile, and open
 `kithann/out/mxf/<slug>.work/sheets/sheet_001.png` to see that the strips
@@ -144,6 +151,37 @@ def landmarks(rows):
     return edge, plateau, ratio
 
 
+# The left strip a persistent station bug sits in, skipped when measuring.
+# 晨間新聞 paints a "<族語>／晨間新聞" block into the bottom-left corner and
+# leaves it there for the whole programme. It is bright and it never moves,
+# so it outweighs the dialogue -- which is only on screen part of the time --
+# and `landmarks()` reads the bug's rows as the plateau. Measured on
+# 20210220_051_晨間_Thau_邵: skipping 300px or more moves the plateau from
+# y=892 (the bug) to y=799 (the dialogue). 480 is that with room to spare,
+# still a quarter of the frame. Skipping columns cannot move a row's
+# position, so the slots without a bug measure the same as before.
+BUG_MARGIN = 480
+
+# Below this there is not enough width left to measure, so keep the bug
+# rather than lose the sample.
+MIN_PROBE_WIDTH = 640
+
+
+def probe_region(want):
+    """Where to measure: the preset's region, widened and shifted right.
+
+    Grown 40 rows above and 120 below so a shifted layout shows up as a
+    plateau outside the region rather than one that merely looks odd, and
+    started past `BUG_MARGIN` so a corner graphic cannot pose as dialogue.
+    """
+    x = want[0]
+    right = want[0] + want[2]
+    if x < BUG_MARGIN and right - BUG_MARGIN >= MIN_PROBE_WIDTH:
+        x = BUG_MARGIN
+    return cuelib.normalize_region(
+        (x, want[1] - 40, right - x, want[3] + 120))
+
+
 def judge(edge, plateau, lo, hi):
     """The two rules that must hold before a batch may be cut.
 
@@ -182,9 +220,7 @@ def main():
     want = preset["region"]
     spec = cuelib.MaskSpec.from_dict(preset.get("mask", {}))
 
-    # Look well above and below the expected band so a shifted layout shows up
-    # as a plateau outside it rather than as a plateau that merely looks odd.
-    probe = cuelib.normalize_region((0, want[1] - 40, want[2], want[3] + 120))
+    probe = probe_region(want)
     rows, frames = profile(args.video, probe, spec, args.start, args.duration)
 
     if not args.quiet:

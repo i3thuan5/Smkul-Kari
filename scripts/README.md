@@ -26,6 +26,12 @@
 驗證，兩邊都不擁有；語料專屬的路徑（stage、inventory、catalogue）
 留在 `news/paths.py`。
 
+## lowpri.py——長時間工課ê優先權（頂層，兩側共用）
+
+轉檔、解碼這款走幾點鐘ê步數，`be_nice()` kā伊降去 nice 15，才袂kā
+互動ê工課拖牢。`os.nice()` 是**累加**ê，呼叫兩擺就變 30，所以內底
+有擋牢，仝一个行程叫幾擺攏仝款。
+
 ## ocr/——影像側引擎（燒印字幕抽取）
 
 | 檔 | 做什麼 |
@@ -66,17 +72,28 @@
 
 | 檔 | 做什麼 |
 |---|---|
-| `paths.py` | 語料路徑的單一出處（`--var` 供 shell 取值；版面與保護轉出自 `scripts/datadirs.py`） |
+| `paths.py` | 語料路徑的單一出處（`stage_path()` 是階段目錄唯一出口，逐集檔案囥佇月份一層；`--var` 供 shell 取值；版面與保護轉出自 `scripts/datadirs.py`） |
 | `asrmt_batch.py` | 語音側整批：逐集 抓音檔→解碼→投影→raw→刪音檔 |
 | `asrmt_run.py` | 語音側單集步驟（預設 words→entries→raw；align 延伸 `--step` 指名） |
 | `anchors_ami.json` | 阿美語錨點表（數詞＋借詞專名，拼法對照模型 lexicon） |
-| `build_inventory.py`／`add_episodes.py`／`resolve_slug.py` | 集數登記與命名 |
-| `fetch_sftp.sh`／`run_cues.sh`／`refine_fetch.sh`／`sftp.sh`／`sftp-askpass.sh` | 影像側抓檔與切 cue（密碼只以檔案存在；`sftp.sh` 收動詞＋獨立參數，路徑不進指令字串） |
+| `plan_month.py` | 一批＝一个播出月份：揀來源、寫 pending 條目、出跳過報告 |
+| `sources.py` | 一集配一支檔的規則（母帶優先→時段相符→同名不同夾→一檔一集） |
+| `add_episodes.py`／`resolve_slug.py` | 逐支指定路徑登記；目錄索引與命名 |
+| `fetch_sftp.sh`／`run_cues.sh`／`refine_fetch.sh`／`sftp.sh`／`sftp-askpass.sh` | 影像側抓檔與切 cue（吃播出月份，清單對 inventory 提；密碼只以檔案存在；`sftp.sh` 收動詞＋獨立參數，路徑不進指令字串） |
 | `refine_cues.py`／`verify_band.py` | cue 邊界精修、字幕帶前驗 |
 | `gap_sheets.py`／`batches.py`／`ingest.py` | 視覺辨識批次的出題與收卷 |
 | `make_srt.py`／`make_all.py`／`publish.py`／`tracker.py`／`rebuild.py` | 組裝、定版、進度表、離線重建驗證 |
+| `name_catalogue.py` | kā `srt_name` 寫入目錄ê**產生欄**（`--check` 重算逐格、對袂起來就 exit 1；CRLF＋BOM 原樣保留） |
+| `blind_cues.py` | 揀出 contact sheet 無真正看著ê cue（`frames × 0.2` 對 `end - start` ê差額），補查ê出題單 |
+| `evidence.py` | kā掠著ê問題切一段影片／對照圖，附母帶出處佮秒數，予人家己去核 |
 | `presets.json` | 版型知識（哪個節目哪種帶位） |
 
 ## aiyalaeho/、transcode/
 
-《開會了》編排預留位；母帶轉檔小工具（`encode_master.sh`）。
+《開會了》編排預留位。
+
+`transcode/` 是母帶封存：`encode_master.sh` 是編碼本身（CRF 23、
+yuv420p、flac、MKV），`archive_batch.py` 是整批流程——抓母帶落
+stage、編做 `*.partial.mkv`、ffmpeg 家己ê audio MD5 過了才改名就位、
+紲落去刣掉 stage 彼支。已經有封存ê集數直接跳過，所以斷去閣走接會
+起來。
