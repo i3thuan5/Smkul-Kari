@@ -58,16 +58,6 @@
 | `project.py` | 詞按真實窗 max-overlap 歸戶條目（2-entries） |
 | `bisrt.py` | raw render：「族語：／華語：」兩行（3-srt-raw，預設終點） |
 
-### asrmt/align/——align 延伸（指名才跑）
-
-| 檔 | 做什麼 |
-|---|---|
-| `mtclient.py` | ai-labs gradio 翻譯 client（session handshake、502 重試）＋內容定址 mt-cache |
-| `claude_mt.py` | Claude 批次翻譯：編號批次檔＋整批對帳 ingest |
-| `dpalign.py` | 時間帶限單調 DP（1-1／1-2／2-1／2-2 合併、sim 注入、純函式） |
-| `detect.py` | 語意句塊、內容分數、δ 偏移、CKIP 錨點對位、歸類矩陣、merge_groups |
-| `render.py` | 審查版六行＋偵測行（4-srt-ai）、語意整併版（6-srt-complete） |
-
 ## news/——族語新聞編排
 
 | 檔 | 做什麼 |
@@ -79,15 +69,17 @@
 | `plan_month.py` | 一批＝一个播出月份：揀來源、寫 pending 條目、出跳過報告 |
 | `sources.py` | 一集配一支檔的規則（母帶優先→時段相符→同名不同夾→一檔一集） |
 | `add_episodes.py`／`resolve_slug.py` | 逐支指定路徑登記；目錄索引與命名 |
-| `fetch_sftp.sh`／`run_cues.sh`／`refine_fetch.sh`／`sftp.sh`／`sftp-askpass.sh` | 影像側抓檔與切 cue（吃播出月份，清單對 inventory 提；密碼只以檔案存在；`sftp.sh` 收動詞＋獨立參數，路徑不進指令字串） |
+| `fetch_sftp.sh`／`run_cues.sh`／`sftp.sh`／`sftp-askpass.sh` | 影像側抓檔與切 cue（吃播出月份，清單對 inventory 提；密碼只以檔案存在；`sftp.sh` 收動詞＋獨立參數，路徑不進指令字串） |
 | `refine_cues.py`／`verify_band.py` | cue 邊界精修、字幕帶前驗 |
 | `ocr/stripname.py` | Strip ê檔名：用 cue ê起始時間，因為序號會綴重新編號走 |
 | `blank_runs.py` | 掠 vision TSV 內底ê長連紲空白：字幕印佇帶外ê段會規段變空白 |
 | `rescan_band.py` | 用改正ê帶重切一段，接轉原本ê cue 排、規集重新編號 |
 | `split_cue.py` | 佇量出來ê時間點kā一條 cue 剖做兩條，後壁ê重新編號 |
 | `migrate_strips.py` | Strip ê檔名對 cue 序號換做起始時間（照磁碟頂ê檔案走，毋是照 cue）|
+| `migrate_workdirs.py` | 舊 work dir ê平 `cues.json` 徙入階段目錄（看檔案家己有無 `refined` 決定入 `1-cues/` 抑 `2-refined/`）；冪等，做過矣 |
 | `gap_sheets.py`／`batches.py`／`ingest.py` | 視覺辨識批次的出題與收卷 |
 | `make_srt.py`／`make_all.py`／`publish.py`／`tracker.py`／`rebuild.py` | 組裝、定版、進度表、離線重建驗證 |
+| `coaxial.py` | 比影像側佮語音側交付ê (index, 起, 迄)——兩爿攏有ê時愛逐條仝款；干焦影像側ê免比（語音側是家己ê一條線）|
 | `name_catalogue.py` | kā `srt_name` 寫入目錄ê**產生欄**（`--check` 重算逐格、對袂起來就 exit 1；CRLF＋BOM 原樣保留） |
 | `blind_cues.py` | 揀出 contact sheet 無真正看著ê cue（`frames × 0.2` 對 `end - start` ê差額），補查ê出題單 |
 | `reread.py` | kā失敗ê cue 切做「一句一段」：時間中位數先洗掉會振動ê雜訊，才兩兩比。時間軸無振動，出來ê段是予視覺辨識重讀ê |
@@ -95,9 +87,7 @@
 | `reread_tools/prompt.py` | 印一批ê讀者提示；判準ê正本囥佇 `brief.md`，改一擺後壁逐批攏會著 |
 | `reread_tools/safe_resplit.py` | 規集做伙把關（`resplit.admit`），過ê才切，寫 cues.json ＋ TSV；閣會報「切袂開毋過讀者讀著無仝」ê（`resplit.unsplit_but_changed`） |
 | `reread_tools/regen_strips.py` | 照新編號重生 strips／sheets／sheets.json |
-| `reread_tools/fix_rtf.py` | kā `4-vision-rtf` 疊層重編號（無這步 `rebuild --verify` 會炸） |
 | `resplit.py` | kā `reread` 切出來ê段真正寫入時間軸：一條 cue 換做幾若條，TSV ê編號綴咧徙（兩爿做伙改，無就逐格ê字會歪去） |
-| `evidence.py` | kā掠著ê問題切一段影片／對照圖，附母帶出處佮秒數，予人家己去核 |
 | `presets.json` | 版型知識（哪個節目哪種帶位） |
 
 ## aiyalaeho/——《開會了》編排

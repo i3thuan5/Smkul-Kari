@@ -123,23 +123,22 @@ class TestRows(unittest.TestCase):
 
 
 class TestFolders(unittest.TestCase):
-    """兩个 vision 目錄攏愛徙，毋是干焦 `3-vision`。
+    """Cue 徙位ê時，逐个用號碼做鍵ê物件攏愛綴leh徙。
 
-    `rebuild` 是對 `3-vision` **佮** `4-vision-rtf` 兩爿組ê，rtf 彼爿
-    贏。剖開了後干焦徙 `3-vision`，rtf 彼爿ê號碼就差一號——而且
-    **`ingest` 袂出聲**（伊干焦看 `3-vision`），是 `rebuild --verify`
-    才掠著ê：036午 佮 049午 拄好就是有 rtf 檔彼兩集，另外兩集無
-    rtf 檔就無代誌。
+    本底有兩个 vision 目錄：`rebuild` 是對 `3-vision` **佮**
+    `4-vision-rtf` 兩爿組ê，rtf 彼爿贏。剖開了後干焦徙頭一个，rtf 彼
+    爿ê號碼就差一號——而且 **`ingest` 袂出聲**（伊干焦看 `3-vision`），
+    是 `rebuild --verify` 才掠著ê：036午 佮 049午 拄好就是有 rtf 檔彼
+    兩集。「五項用號碼做鍵ê物件」彼張清單算漏一項，就出這款代誌。
 
-    「五項用號碼做鍵ê物件」我算漏一項。
+    疊層量過是全然重複ê，已經提掉矣，所以chit-má賰一个目錄——彼類ê
+    失誤無所在通生。清單本身改用測試守（見 test_cue_key_registry）。
     """
 
-    def test_both_vision_folders_are_listed(self):
+    def test_the_one_vision_folder_is_listed(self):
         got = split_cue.vision_folders("20210205_036_午間_Rukai_魯凱")
-        self.assertEqual(len(got), 2)
-        self.assertTrue(got[0].endswith("3-vision/2021-02/"
-                                        "20210205_036_午間_Rukai_魯凱"))
-        self.assertTrue(got[1].endswith("4-vision-rtf/2021-02/"
+        self.assertEqual(len(got), 1)
+        self.assertTrue(got[0].endswith("2-vision/2021-02/"
                                         "20210205_036_午間_Rukai_魯凱"))
 
 

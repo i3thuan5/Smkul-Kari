@@ -8,9 +8,9 @@
 三個位置各司其職：
 
 - **這裡（`scripts/news/`）**：程式與 `presets.json`、`inventory.json`。
-- **`Kari-SRT/` submodule**：資料正本——交付 SRT（`news/1-ocr/6-srt/`）、
+- **`Kari-SRT/` submodule**：資料正本——交付 SRT（`news/1-ocr/3-srt/`）、
   `news/smkul.csv`、每集時間軸 `news/1-ocr/1-cues/`、視覺逐字稿
-  `news/1-ocr/3-vision/`、`4-vision-rtf/`；逐集檔案都在階段目錄下的
+  `news/1-ocr/2-vision/`；逐集檔案都在階段目錄下的
   **播出月份**一層（`1-cues/2021-02/<srt_name>.json`）。僅靠主 repo + Kari-SRT
   即可離線重建全部 SRT：`python3 -m scripts.news.rebuild --verify`
   （或 `tox -e rebuild`）。**每次程式修改完在本機跑一次**——
@@ -34,7 +34,7 @@
 
 兩點容易誤會：原始影片不會留在這裡——`fetch_sftp.sh` 下載到 `kithann/out/stage/`（同名同位元組數會重用；放 `影片名.keep` 可留給別的 session，誰放誰刪），
 `cues.json` 一寫出來就刪片。視覺辨識的 TSV 也不會寫進這裡——`ingest.py`
-預設直接讀寫 `Kari-SRT/news/1-ocr/3-vision/<年-月>/<srt_name>/`，
+預設直接讀寫 `Kari-SRT/news/1-ocr/2-vision/<年-月>/<srt_name>/`，
 `kithann/` 這邊的 `verified.json` 只是本地追蹤「這個 work dir 核實到哪」
 的快取。
 
@@ -52,6 +52,19 @@ python3 -m scripts.news.rebuild --verify   # 通過的集數＝已交付集數
 了；041午 鄒兩個來源都是同一份短檔，照做但標 `partial`。
 
 ## 跑法
+
+流程是**三個階段**，各自吃的資源不同——排時間、看卡在哪，都是照這
+個分：
+
+| 階段 | 入口 | 吃什麼 | 一集約略 |
+|---|---|---|---|
+| **一、cues** | `fetch_sftp.sh`（下載 → 驗字幕帶 → 切 cue → 精修） | 本機 CPU＋網路 | 下載 5 分、切 cue 6 分、精修 8.5 分 |
+| **二、OCR** | `/smkul-news` 的視覺辨識 → `ingest` → `make_all` → `publish` | **Claude 視覺辨識**（模型呼叫）；前後的匯入與組裝是秒級 CPU | 約 50 分（178 張 sheet、8.2 批）|
+| **三、asr** | `asrmt_batch`（抓音檔 → vosk → 投影 → render） | 本機 CPU | 約 15 分 |
+
+**時間的大頭在第二階段**：一個月 71 集 ≈ 58 小時視覺辨識，而第一階段
+整月約 7.5 小時。第三階段跟第二階段可以並行。封存 mkv
+（`transcode/archive_batch.py`）是平行支線，不在交付的關鍵路徑上。
 
 **新的月份（從 SFTP 抓）**——兩行指令，或用 `/smkul-news` 這個 slash
 command。單位是**播出月份**，不是資料夾：
@@ -191,7 +204,7 @@ size，不符就重抓、不進解碼。
 - 原本 `pending` 是**無條件**重抓。先前 `--limit 2` 試跑抓的兩支其實
   8/21 就切好了，下載 2.7 GB 只為了驗一次帶位再刪掉。
 - 原本已交付但本機沒影片的也抓，用意是先把原生格備著給重讀用。重讀自己
-  有抓檔的路（`refine_fetch.sh`：要用才抓、做完就刪），整月抓檔不必替它
+  有抓檔的路（要用才抓、做完就刪），整月抓檔不必替它
   先囤。
 
 於是清單上不會再有已經切過的集數，這條路徑也就**沒有辦法**去重切任何一
@@ -440,13 +453,13 @@ mp4 是 1920×1080 h264，沒有 soft subtitle。region 一樣是
 | 物件 | 路徑 |
 |---|---|
 | 圖條佮 strips | `kithann/out/mxf/<slug>.B.work/` |
-| 視覺辨識 TSV | `Kari-SRT/news/1-ocr/3-vision/<月份>/<srt_name>/b*.tsv` |
-| 交付ê SRT | `Kari-SRT/news/1-ocr/6-srt/<月份>/<srt_name>.srt` |
+| 視覺辨識 TSV | `Kari-SRT/news/1-ocr/2-vision/<月份>/<srt_name>/b*.tsv` |
+| 交付ê SRT | `Kari-SRT/news/1-ocr/3-srt/<月份>/<srt_name>.srt` |
 | Cue 時間 | `Kari-SRT/news/1-ocr/1-cues/<月份>/<srt_name>.json` |
 
 ## 重讀ê判讀判準（重讀全批 49 集實測積起來ê）
 
-彼 49 集是 `Kari-SRT/news/1-ocr/6-srt/2021-02/` 內底 032 到 053 這區間（`20210201_032_午間_Atayal_泰雅` … `20210222_053_晚間_Amis_阿美`）。下底逐條攏有講是佇佗一集踏著ê，愛追就對彼个檔名去揣。
+彼 49 集是 `Kari-SRT/news/1-ocr/3-srt/2021-02/` 內底 032 到 053 這區間（`20210201_032_午間_Atayal_泰雅` … `20210222_053_晚間_Amis_阿美`）。下底逐條攏有講是佇佗一集踏著ê，愛追就對彼个檔名去揣。
 
 重讀ê圖條是**該段影格ê逐像素中位數**，佮頭一擺辨識ê圖條仝款會騙人，
 干焦尺度較細。下底逐條攏是佇具體案例頂懸踏出來ê，順序就是判定順序。
@@ -1222,11 +1235,12 @@ cue 291（畫面 `Cacepo’an` 用ê是彎ê U+2019，既有寫直ê U+0027；�
 伊比對ê是**檔案**，毋是報告。重讀頭前彼幾集我攏干焦看報告，這擺是
 把關擋落來才發現。（實例：`20210206_037_晨間_Thau_邵` cue 498、`20210219_050_午間_Rukai_魯凱` cue 1115／1116。）
 
-### 六、判「查無」ài對兩爿
+### 六、判「查無」進前愛看清楚逐字稿ê範圍
 
-`3-vision/`（視覺辨識）佮 `4-vision-rtf/`（新聞稿供字）攏愛對。有ê
-cue 視覺辨識本底就無讀、由文稿供字，干焦對頭一爿會kā in 誤報做漏字
-——20210207_038 頭一擺算出 36 句，過濾了賰 3 句。
+彼陣逐字稿有兩爿（視覺辨識佮新聞稿供字ê疊層），干焦對頭一爿就會kā
+文稿供字彼寡誤報做漏字——20210207_038 頭一擺算出 36 句，過濾了賰
+3 句。疊層已經提掉矣（量過是全然重複ê），這馬 `2-vision/` 就是全部，
+毋過教示留咧：**判「查無」進前，先確定家己對ê是規个逐字稿。**
 
 ## 文字全部來自 Claude 視覺辨識
 
@@ -1243,8 +1257,8 @@ cue 視覺辨識本底就無讀、由文稿供字，干焦對頭一爿會kā in 
 > **程式已移除。** `align.py`／`rtf.py`／`rtf_sheets.py`／`compare_rtf.py`／
 > `check_align.py`（894 行）與其測試（375 行）都刪掉了。要看它們，
 > checkout **`da2f0b3`**——那是最後一個含這批程式的 commit。比對結果本身留著：
-> `Kari-SRT/report/rtf-vs-vision.md`／`.json`、以及
-> `Kari-SRT/from_rtf/<srt_name>.json`（哪些 cue 曾由文稿供字）。
+> 比對結果本身也已經從 store 刪除（結論寫在
+> `Kari-SRT/news/1-ocr/README.md`）；要看檔案本體翻 git 歷史。
 
 `.rtf` 新聞稿的內容確實就是字幕的來源，`align.py` 也真的能把 cue 對回稿子
 （3-gram 投票找位置，再解一次最長遞增子序列強迫單調）。但**逐字忠實於畫面
@@ -1304,23 +1318,22 @@ sheet 讀了一遍，還多花了建兩次 contact sheet 的工。真正的價�
 | `sftp-askpass.sh` | 給 OpenSSH 讀密碼檔的 hook（`SSH_ASKPASS`）|
 | `fetch_sftp.sh` | 吃播出月份；逐集：下載 → 驗位元組 → 驗band → 切cue → 精修 → **刪影片** |
 | `refine_cues.py` | 邊界精修：0.2s 粗切 → 25fps 逐幀分類 → ≤0.05s |
-| `refine_fetch.sh` | 回頭精修已交付集：下載 → refine → 刪影片（可續跑）|
 | `verify_band.py` | 量列剖面，確認字幕帶真的在 preset 說的位置 |
 | `blank_runs.py` | 掠 vision TSV 內底ê長連紲空白——字幕若印佇帶外，規段會變空白（離線，免影片）|
 | `rescan_band.py` | kā一段用毋著帶切ê cue 重切、接轉去、規集重新編號（五項用號碼做鍵ê物件做伙徙）|
 | `split_cue.py` | 一條 cue 內底有兩句ê時，佇量出來ê彼點kā伊剖開（`images` 留原本ê，strip 免改名）|
 | `migrate_strips.py` | Strip 檔名對序號換做起始時間；`scripts/ocr/stripname.py` 是號名ê所在 |
+| `migrate_workdirs.py` | 舊 work dir ê平 `cues.json` 徙入階段目錄（帶 `refined` ê入 `2-refined/`，無ê入 `1-cues/`）；冪等，做過矣（news 75 个、《開會了》40 个）|
 | `plan_month.py` | 一批＝一个播出月份：揀來源、登記 pending、出跳過報告 |
 | `sources.py` | 一集配一支檔的四條規則；揀袂出來就跳過並回報 |
 | `resolve_slug.py` | 用 `ilrdf-corpus.csv` 把路徑對成 work dir／SRT 名稱 |
 | `paths.py` | 全部路徑的單一出處；`stage_path()` 是階段目錄唯一出口；`--var` 供 shell 取值 |
 | `publish.py` | 整批把關→清 `pending`、遷 `cues`、定版 `smkul.csv` |
 | `rebuild.py` | 從 Kari-SRT 離線重建全部 SRT 並逐 byte 驗證 |
-| `Kari-SRT/news/1-ocr/3-vision/` | 第一輪視覺逐字稿 TSV（文稿沒蓋到的 cue）|
-| `Kari-SRT/news/1-ocr/4-vision-rtf/` | 第二輪視覺逐字稿 TSV（文稿蓋到的 cue）|
+| `Kari-SRT/news/1-ocr/2-vision/` | 視覺逐字稿 TSV（全部 cue，文字唯一來源）|
 
-`3-vision/` 與 `4-vision-rtf/` 加起來就是全部 cue 的完整逐字稿，是這批
-工作最可重複使用的成果，正本在 `Kari-SRT/`。
+`2-vision/` 就是全部 cue 的完整逐字稿，是這批工作最可重複使用的成果，
+正本在 `Kari-SRT/`。
 
 ## 產出
 
@@ -1329,10 +1342,9 @@ sheet 讀了一遍，還多花了建兩次 contact sheet 的工。真正的價�
 逐集檔案都在階段目錄下的**播出月份**一層（`<年-月>/`），跨集的與總表
 不分層：
 
-- `news/1-ocr/6-srt/<年-月>/<播出日期>_<集數>_<時段>_<族語英>_<族語中>.srt`
+- `news/1-ocr/3-srt/<年-月>/<播出日期>_<集數>_<時段>_<族語英>_<族語中>.srt`
 - `news/smkul.csv` —— 進度表（含影片長度欄，由時間軸推導）
-- `news/1-ocr/5-report/rtf-vs-vision.md` / `.json` —— 文稿 vs 視覺比對報告
-- `news/1-ocr/{1-cues,2-from_rtf,3-vision,4-vision-rtf}/<年-月>/`、
+- `news/1-ocr/{1-cues,2-vision}/<年-月>/`、
   `news/inventory.json` —— 重建 SRT 所需的全部過程資料
 
 驗證離線閉環：`python3 -m scripts.news.rebuild --verify` 會只用
@@ -1343,7 +1355,7 @@ Kari-SRT 的資料重組全部 SRT 並逐 byte 比對，缺件即指名失敗。
 - **邊界精度**：`cues` 粗切在 0.2s 格點（5fps）；`refine_cues.py` 在每個
   邊界 ±0.24s 窗內以 25fps 逐幀分類（不重切、不動 cue 集合與文字），
   精修到 ≤0.05s，manifest 記 `refined` 與 `duration`。新月份由
-  `fetch_sftp.sh` 在刪影片前自動跑；舊集用 `refine_fetch.sh` 回頭補。
+  `fetch_sftp.sh` 在刪影片前自動跑。
 - **SRT 留白**：組裝時每句前後各延伸至多 0.5s（CLAUDE.md 規定，對齊
   Kaldi `--max-edge-silence-length` 預設）；間隔不足在中點相接，
   截短於 `[0, duration]`。留白只在 SRT 輸出，`cues.json` 是真實切換點。
@@ -1527,10 +1539,24 @@ checkpoint hőng蓋去，改用家己ê context 重起。**兩爿攏靠讀者細
 新ê舊ê攏換。
 
 - 號名ê所在：`scripts/ocr/stripname.py`
-- 遷移：`scripts/news/migrate_strips.py`（改名 70,401 張，做過矣）
-- 護欄：`tests/news/test_images_exist.py`——全批 `images` 指ê檔案
-  愛真正有。**`rebuild --verify` 掠袂著這款**（伊是對 store ê TSV
-  重建 SRT，無去開 strip 檔案），所以這條愛家己顧。
+- 遷移：`scripts/news/migrate_strips.py`（改名 70,401 張，做過矣；
+  136 个 work dir 全部時間命名，0 个舊序號、0 个濫做伙）
+
+**Contact sheet 嘛仝款矣**（2026-09-03）。`sheet_003.png` 是「這批
+內底第幾張」，毋是識別碼——cue 一剖開，sheet 重生，第三張就是別段
+節目矣。改做 `t<毫秒八碼>.png`，用該張頭一格 cue ê起始時間。
+
+    python3 -m scripts.news.migrate_workdirs --sheets --write
+
+改名佮 `sheets.json` ê鍵是**做伙改ê**：彼份對照ê鍵就是檔名，干焦改
+一爿對照就斷去。實跑：news 7,191 張、《開會了》9,029 張，攏改煞，
+舊命名賰 0 張，檔案總數無變。讀 sheet ê程式（`batches.py`、
+`aiyalaeho/ingest.py`）本底就是讀 `sheets.json` ê對照，無看檔名，
+所以無受影響。
+
+遷移期間有過一條護欄，掃規批ê `images` 看指ê檔案有無真正佇磁碟頂。
+遷移做煞就提掉矣：**伊斷言ê對象是 `kithann/` ê暫存內容**——別條線
+重生圖條ê時伊就紅，毋是程式歹去。快取ê內容毋是測試通顧ê物件。
 
 **猶原ê規矩**：欲對 strip 揣 cue，讀 `cues.json` ê `images` 欄。
 換名了後檔名袂閣騙人，毋過 `images` 猶原是唯一ê正解——一條 cue

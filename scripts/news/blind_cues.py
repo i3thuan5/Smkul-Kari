@@ -122,11 +122,6 @@ FRAME_DT = 0.2
 FLOOR = 1.0
 
 # A cue this long is worth a second look whatever `frames` says. The
-# value is calibrated, not chosen: see WHAT THESE TWO GATES CANNOT SEE
-# below for the recall it was measured at and what escapes it. Both gates
-# are CLI parameters (`--floor`, `--long`) so a new programme can be
-# re-measured without editing this file.
-#
 # segmenter's other failure is the mirror of the jam: a *static* bright
 # background (a white document, snow) floods the mask, the subtitle is under
 # 7% of it, and a sentence change moves too little for either gate to notice.
@@ -135,6 +130,11 @@ FLOOR = 1.0
 # sentences with frames=64 and only 1.04s unseen. Duration is the only
 # handle on that one. Measured: 2,125 cues clear `LONG` that `FLOOR` misses,
 # 17,664 seconds, more than the jam type's 16,036.
+#
+# The value is calibrated, not chosen: see WHAT THESE TWO GATES CANNOT SEE
+# above for the recall it was measured at and what escapes it. Both gates
+# are CLI parameters (`--floor`, `--long`) so a new programme can be
+# re-measured without editing this file.
 LONG = 6.0
 
 # What `batches.py --size` is called with everywhere in this pipeline.
@@ -196,8 +196,7 @@ def batch_of(index, size=BATCH_SIZE):
 
 def load(srt_name):
     """The delivered cue timeline for one episode."""
-    path = os.path.join(paths.KARI, "news", "1-ocr", "1-cues",
-                        paths.month_of(srt_name), srt_name + ".json")
+    path = paths.stage_path(paths.KARI_CUES, srt_name, ".json")
     if not os.path.exists(path):
         raise PipelineError("揣無時間軸：%s" % path)
     with open(path, encoding="utf-8") as handle:
@@ -207,7 +206,7 @@ def load(srt_name):
 
 def delivered():
     """Every episode with a cue timeline in the store, in name order."""
-    root = os.path.join(paths.KARI, "news", "1-ocr", "1-cues")
+    root = paths.KARI_CUES
     out = []
     for path in sorted(glob.glob(os.path.join(root, "*", "*.json"))):
         out.append(os.path.basename(path)[:-len(".json")])

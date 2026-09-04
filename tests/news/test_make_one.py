@@ -45,11 +45,13 @@ class TestMakeOne(unittest.TestCase):
         return tmp.name
 
     def _cues(self, work):
-        self._write(work, "cues.json",
+        self._write(work, os.path.join("1-cues", "cues.json"),
                     {"cues": [{"index": 1, "start": 1.0, "end": 2.0}]})
 
     def _write(self, work, name, value):
-        with open(os.path.join(work, name), "w", encoding="utf-8") as handle:
+        path = os.path.join(work, name)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as handle:
             json.dump(value, handle)
 
     def _status(self, **state):

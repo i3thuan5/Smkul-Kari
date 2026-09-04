@@ -185,7 +185,7 @@ def todo(month, entries, already_cut=already_cut):
       verify the band and delete them again;
     - delivered episodes with no video left on this disk used to be fetched
       too, to have native frames ready for a reread. Rereads fetch their own
-      video when they actually run (`refine_fetch.sh`: download, work,
+      video when they actually run (download, work,
       delete), so a month's fetch has no reason to stock up for them.
 
     Which leaves nothing on this list that is already cut, so nothing here

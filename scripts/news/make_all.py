@@ -30,9 +30,9 @@ def vision_complete(work):
     total, and hide real cues that nobody has read. The episode would then be
     assembled and published with subtitles simply missing from it.
     """
-    cues = os.path.join(work, "cues.json")
+    cues = paths.cues_to_read(work)
     verified = os.path.join(work, "verified.json")
-    if not (os.path.exists(cues) and os.path.exists(verified)):
+    if not (cues and os.path.exists(verified)):
         return False
     with open(cues, encoding="utf-8") as handle:
         wanted = set()

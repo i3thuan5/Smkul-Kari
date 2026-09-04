@@ -264,6 +264,34 @@ def _check_result(result, cues, problems):
                             % cues[i]["index"])
 
 
+def refined_target(cues_path):
+    """Where this episode's refined timeline belongs, given what we read.
+
+    The **input's layout decides**, which is what lets the split land while
+    older work dirs are still around. A timeline read out of `1-cues/` is
+    the new shape, so the refinement goes beside it in `2-refined/` and the
+    coarse one is never touched again. A flat `<work>/cues.json` is the
+    pre-split shape, and its readers -- the migration has not swept them,
+    and the 開會了 side names that path directly -- expect the refinement
+    in that same file, so it keeps being rewritten in place. Guessing the
+    other way round would leave those episodes silently delivering coarse
+    0.2s boundaries with nothing reporting it.
+    """
+    folder = os.path.dirname(cues_path)
+    if os.path.basename(folder) == paths.COARSE_STAGE:
+        return paths.refined_cues(os.path.dirname(folder))
+    return cues_path
+
+
+def write_refined(cues_path, manifest):
+    """Write the refined timeline where `refined_target` says; return it."""
+    target = refined_target(cues_path)
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    with open(target, "w", encoding="utf-8") as handle:
+        json.dump(manifest, handle, ensure_ascii=False)
+    return target
+
+
 def refine_episode(video, cues_path, dry_run=False):
     with open(cues_path, encoding="utf-8") as handle:
         manifest = json.load(handle)
@@ -303,8 +331,7 @@ def refine_episode(video, cues_path, dry_run=False):
             cue["start"], cue["end"] = result[i]
         manifest["refined"] = True
         manifest["duration"] = round(duration, 3)
-        with open(cues_path, "w", encoding="utf-8") as handle:
-            json.dump(manifest, handle, ensure_ascii=False)
+        write_refined(cues_path, manifest)
     return stats
 
 

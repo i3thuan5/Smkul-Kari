@@ -37,7 +37,10 @@ ENTRY = {
 }
 
 SRT = "1\n00:00:01,000 --> 00:00:02,000\n測試\n"
-CUES = {"duration": 2880.0,
+# `refined` is not decoration: publish only takes a refined timeline into
+# the store, so a fixture without it is an episode publish is right to
+# refuse. 見 tests/news/test_publish_refined_only.py。
+CUES = {"duration": 2880.0, "refined": True,
         "cues": [{"index": 1, "start": 1.0, "end": 2.0}]}
 
 
@@ -69,7 +72,8 @@ class Fixture(unittest.TestCase):
         """The state publish accepts: cues cut, all checked, SRT built."""
         done = os.path.join(self.work, ENTRY["slug"] + ".B.work")
         os.makedirs(done)
-        self._json(os.path.join(done, "cues.json"), CUES)
+        os.makedirs(os.path.join(done, "1-cues"))
+        self._json(paths.coarse_cues(done), CUES)
         self._json(os.path.join(done, "verified.json"), {"1": {"han": True}})
         self._staged(self.cues_dir, ".json", json.dumps(CUES))
         self._staged(self.srt_dir, ".srt", SRT)
@@ -126,8 +130,6 @@ class TestPublishWritesTheDeliverable(Fixture):
         with mock.patch.object(paths, "INVENTORY", self.inventory), \
              mock.patch.object(paths, "SRT_DIR", self.srt_dir), \
              mock.patch.object(paths, "KARI_CUES", self.cues_dir), \
-             mock.patch.object(paths, "KARI_FROM_RTF",
-                               self._dir("store/from_rtf")), \
              mock.patch.object(paths, "KARI", self.store), \
              mock.patch.object(paths, "TRACKER_STORE",
                                self.store_tracker), \

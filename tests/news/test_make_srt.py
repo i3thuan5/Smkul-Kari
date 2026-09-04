@@ -52,7 +52,6 @@ class TestRebuildMissingInputs(unittest.TestCase):
             os.makedirs(empty)
             with mock.patch.object(paths, "KARI_CUES", empty), \
                     mock.patch.object(paths, "KARI_VISION", empty), \
-                    mock.patch.object(paths, "KARI_VISION_RTF", empty), \
                     mock.patch.object(paths, "SRT_DIR", empty):
                 problems = rebuild.check_inputs([dict(self.ENTRY)])
         text = "\n".join(problems)
@@ -64,7 +63,6 @@ class TestRebuildMissingInputs(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             with mock.patch.object(paths, "KARI_CUES", tmp), \
                     mock.patch.object(paths, "KARI_VISION", tmp), \
-                    mock.patch.object(paths, "KARI_VISION_RTF", tmp), \
                     mock.patch.object(paths, "SRT_DIR", tmp):
                 problems = rebuild.check_inputs([entry])
         self.assertEqual(problems, [])

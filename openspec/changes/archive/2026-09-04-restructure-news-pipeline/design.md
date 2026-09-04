@@ -125,6 +125,24 @@
 
 寫入端（`ocr/cli.py` 寫 `1-cues/cues.json`、`refine_cues.py` 寫 `2-refined/cues.json`）趕在 2021-01 切 cue 前落地，新 work dir 直接是新版面。讀取端 11 支改走 `cues_to_read()` 等 helper（已存在、測試綠）。既有 work dir 的遷移工具等 a9 通知《開會了》切完才掃（邊搬邊生會漏）；掃完拿掉 `cues_to_read()` 的舊版面 fallback。「cue 號碼當鍵」的物件清單（`cues.json`、`sheets.json`、`transcripts.json`、`2-vision/b*.tsv`）從 docstring 升級成測試守——清單寫在 docstring 擋不住漏改，`split_cue` 漏 rtf 那次已經證明。
 
+### D4-1：`Kari-SRT/` 只收精修過的時間軸，關口設在 publish
+
+`publish` 目前是「有就複製、沒有就 `continue`」——**找不到時間軸不會出聲**。這個分支本來是寫給 `from_rtf.json` 的（那份本來就多數集數沒有），cues 只是共用了同一個迴圈。task 群 1 把寫入端改成 `1-cues/` 之後，這個沉默分支會直接咬人：新版面的 work dir 在舊 publish 眼中「沒有 cues.json」，於是那一集入庫時**沒有時間軸，而且沒有人會知道**。
+
+所以這一步同時做兩件事：讀取端改走 `cues_to_read()`，以及把沉默分支換成三個明確的結果：
+
+| work dir 的狀態 | publish 的反應 |
+|---|---|
+| 有精修過的時間軸 | 照常複製進 `1-cues/` |
+| 只有粗切的 | 指名該集、說「尚未精修」，非零離開 |
+| 完全沒有 | 指名該集、說「找不到時間軸」，非零離開 |
+
+後兩種分開講，因為補救不一樣：一個是去跑 `refine_cues`，一個是要重切（或那集根本還沒做）。
+
+**收益是 `1-cues/` 得到一個可以直接宣告的性質**：裡面每一份都是精修過的。粗切與精修差一個數量級（0.2 秒 vs 0.05 秒），而從檔案本身看不出某一集是哪一種——今天全部 74 份都帶精修旗標是靠人記得跑那一步，不是靠任何東西擋著。使用者裁定 2026-09-03。
+
+與 D4-3 的 `cues` 欄的關係：關口一設，**store 那份 `smkul.csv` 的 `cues` 欄就恆為「已精修」**。那不代表這欄白做——它在**工作區那份**才是活的（批次中哪幾集切了還沒精修），而 store 那份是這條關口的紀錄。
+
 ### D4-2：contact sheet 改時間命名，跟 strips 同一個道理
 
 `sheets/sheet_NNN.png` 目前是流水號。這正是 strips 改名前的病：**看起來像編號，其實不是識別碼**——cue 一被重編（`safe_resplit`、`rescan_band`、`split_cue`），磁碟上的檔名不動而它代表的內容變了。strips 那次量到全 store 46,665/75,290（62%、48 集）的 strip 檔名不是它的 cue 號，README 曾把 strip 號當 cue 號記，照著改會改到一百列以外的 cue。

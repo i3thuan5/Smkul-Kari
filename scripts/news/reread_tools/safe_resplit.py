@@ -18,8 +18,7 @@ from scripts.news import paths, resplit
 
 NAME = sys.argv[1]
 WRITE = "--write" in sys.argv
-D = os.path.join(paths.KARI, "news", "1-ocr", "3-vision",
-                 paths.month_of(NAME), NAME)
+D = paths.stage_path(paths.KARI_VISION, NAME)
 RD = os.path.join("kithann/out/reread", NAME)
 
 # 正本是 transcripts.json，毋是 TSV。

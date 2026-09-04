@@ -11,6 +11,7 @@ import subprocess
 
 import numpy as np
 
+from scripts import datadirs
 from scripts.ocr import cli as subs2srt
 from scripts.srtlib import srt
 
@@ -106,7 +107,7 @@ def run_end_to_end(tmpdir, band, entries, lang, label, fps=5.0):
         sheet_megapixels=1.1, progress=False)
     subs2srt.stage_cues(args)
 
-    with open(os.path.join(work, "cues.json"), encoding="utf-8") as handle:
+    with open(datadirs.cues_to_read(work), encoding="utf-8") as handle:
         manifest = json.load(handle)
 
     tolerance = 1.0 / fps + 0.05

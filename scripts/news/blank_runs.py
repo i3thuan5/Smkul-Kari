@@ -287,7 +287,7 @@ def review(srt_name, floor=EDGE_INK, share=EDGE_SHARE, rows=EDGE_ROWS):
 
 def when(name, first, last):
     """Seconds covered by cues `first`..`last`, off the store's cues.json."""
-    path = os.path.join(paths.KARI_CUES, paths.month_of(name), name + ".json")
+    path = paths.stage_path(paths.KARI_CUES, name, ".json")
     if not os.path.exists(path):
         return None
     cues = json.load(open(path, encoding="utf-8"))["cues"]

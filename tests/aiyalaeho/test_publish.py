@@ -12,6 +12,7 @@ import shutil
 import tempfile
 import unittest
 
+from scripts import datadirs
 from scripts.aiyalaeho import make_all
 from scripts.aiyalaeho import paths
 from scripts.aiyalaeho import publish
@@ -74,7 +75,8 @@ class Batch(unittest.TestCase):
             manifest["cues"].append({"index": index,
                                      "start": 10.0 * index,
                                      "end": 10.0 * index + 4.0})
-        self._json(os.path.join(work, "cues.json"), manifest)
+        os.makedirs(os.path.join(work, "1-cues"), exist_ok=True)
+        self._json(datadirs.coarse_cues(work), manifest)
 
         if read is None:
             read = range(1, cues + 1)

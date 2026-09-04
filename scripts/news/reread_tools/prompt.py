@@ -16,9 +16,9 @@ rows already written are worth keeping. `safe_resplit` globs `read*.tsv`,
 so the offcut goes in its own file and needs no merging.
 
 Batches are cut evenly over `segments.tsv`; `a` is the first half. The
-episode's own numbers (segment count, sheet range, work dir, whether it
-has a 4-vision-rtf overlay) are read off disk, so a new criterion is
-added once, here, and every later batch gets it.
+episode's own numbers (segment count, sheet range, work dir) are read off
+disk, so a new criterion is added once, here, and every later batch gets
+it.
 """
 import glob
 import os
@@ -44,15 +44,11 @@ def work_dir(name):
 def sources(name):
     """The places a sentence has to be absent from to count as new."""
     month = paths.month_of(name)
-    out = ["  - `Kari-SRT/news/1-ocr/3-vision/%s/%s/b*.tsv`（第三欄）"
-           % (month, name),
-           "  - `%s/transcripts.json`（數字 key ê `han` 欄）" % work_dir(name)]
-    rtf = os.path.join(paths.KARI, "news", "1-ocr", "4-vision-rtf",
-                       month, name)
-    if os.path.isdir(rtf):
-        out.append("  - `Kari-SRT/news/1-ocr/4-vision-rtf/%s/%s/`"
-                   "（**這集有**，是文稿供字ê疊層）" % (month, name))
-    return out
+    return ["  - `%s/%s/%s/b*.tsv`（第三欄）"
+            % (os.path.relpath(paths.KARI_VISION, os.path.dirname(paths.KARI)),
+               month, name),
+            "  - `%s/transcripts.json`（數字 key ê `han` 欄）"
+            % work_dir(name)]
 
 
 def brief(name, tag, halves=2, span=None):

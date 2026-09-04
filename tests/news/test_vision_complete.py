@@ -23,7 +23,9 @@ class TestVisionComplete(unittest.TestCase):
         listed = []
         for index in cues:
             listed.append({"index": index, "start": 1.0, "end": 2.0})
-        self._write(tmp.name, "cues.json", {"cues": listed})
+        os.makedirs(os.path.join(tmp.name, "1-cues"), exist_ok=True)
+        self._write(tmp.name, os.path.join("1-cues", "cues.json"),
+                    {"cues": listed})
         marked = {}
         for index in verified:
             marked[str(index)] = {"han": True}

@@ -13,6 +13,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 from scripts.ocr import cuelib
+from scripts.ocr import stripname
 
 LABEL_FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
@@ -51,13 +52,13 @@ def _cue_blocks(workdir, manifest, spec):
             # lands each transcription on the wrong subtitle.
             clock = "%d:%02d" % (int(cue["start"]) // 60,
                                  int(cue["start"]) % 60)
-            blocks.append((cue["index"], clock, tiles))
+            blocks.append((cue["index"], clock, tiles, cue["start"]))
     return blocks
 
 
 def _sheet_width(blocks, gutter):
     max_tile = 0
-    for _, _, tiles in blocks:
+    for _, _, tiles, _start in blocks:
         for tile in tiles:
             max_tile = max(max_tile, tile.width)
     return gutter + max_tile + 16
@@ -89,21 +90,21 @@ def build_sheets(workdir, manifest, megapixels=1.10):
     made = 0
     batch = []
     height = 0
-    for index, clock, tiles in blocks:
+    for index, clock, tiles, start in blocks:
         block_h = gap
         for tile in tiles:
             block_h += tile.height + 2
         if batch and height + block_h > budget_h:
-            name, covered = flush_sheet(sheets_dir, made + 1, batch,
+            name, covered = flush_sheet(sheets_dir, batch,
                                         sheet_w, height, gutter, gap, font)
             index_map[name] = covered
             made += 1
             batch = []
             height = 0
-        batch.append((index, clock, tiles, block_h))
+        batch.append((index, clock, tiles, block_h, start))
         height += block_h
     if batch:
-        name, covered = flush_sheet(sheets_dir, made + 1, batch, sheet_w,
+        name, covered = flush_sheet(sheets_dir, batch, sheet_w,
                                     height, gutter, gap, font)
         index_map[name] = covered
         made += 1
@@ -117,7 +118,7 @@ def build_sheets(workdir, manifest, megapixels=1.10):
     return made
 
 
-def flush_sheet(sheets_dir, number, batch, width, height, gutter, gap, font):
+def flush_sheet(sheets_dir, batch, width, height, gutter, gap, font):
     sheet = Image.new("RGB", (width, max(height, 1)), (250, 250, 250))
     draw = ImageDraw.Draw(sheet)
     small = font
@@ -126,7 +127,7 @@ def flush_sheet(sheets_dir, number, batch, width, height, gutter, gap, font):
     except OSError:
         pass
     y = 0
-    for index, clock, tiles, block_h in batch:
+    for index, clock, tiles, block_h, _start in batch:
         draw.line([(0, y), (width, y)], fill=(190, 190, 190), width=1)
         draw.text((10, y + 6), "%d" % index, font=font, fill=(0, 0, 0))
         draw.text((10, y + 44), clock, font=small, fill=(120, 120, 120))
@@ -135,9 +136,12 @@ def flush_sheet(sheets_dir, number, batch, width, height, gutter, gap, font):
             sheet.paste(tile, (gutter, cursor))
             cursor += tile.height + 2
         y += block_h
-    path = os.path.join(sheets_dir, "sheet_%03d.png" % number)
+    # Named for where it begins, not for its place in the batch: cue
+    # numbers move when a cue is split and the sheets are rebuilt, so an
+    # ordinal names a different piece of programme than it did before.
+    path = os.path.join(sheets_dir, stripname.sheet_of(batch[0][4]))
     sheet.save(path)
     covered = []
-    for index, _clock, _tiles, _bh in batch:
+    for index, _clock, _tiles, _bh, _start in batch:
         covered.append(index)
     return os.path.basename(path), covered

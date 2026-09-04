@@ -130,7 +130,8 @@ class TestCuesPath(unittest.TestCase):
     def _in_work(self):
         folder = os.path.join(self.work, self.SLUG + ".B.work")
         os.makedirs(folder, exist_ok=True)
-        path = os.path.join(folder, "cues.json")
+        os.makedirs(os.path.join(folder, "1-cues"), exist_ok=True)
+        path = paths.coarse_cues(folder)
         open(path, "w").close()
         return path
 

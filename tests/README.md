@@ -56,13 +56,12 @@ tests/
 |---|---|---|
 | asr-bilingual-srt | 跨界詞歸戶／中間過程可追溯／辨識文字忠實（詞文字零改動） | `asrmt/test_project.py` |
 | asr-bilingual-srt | raw 兩行（僅原始材料）／無語音條目／同軸時間戳 | `asrmt/test_bisrt.py` |
-| asr-bilingual-srt | 審查版六行＋偵測行／語意整併正式版／不覆蓋 | `asrmt/align/test_render.py` |
-| asr-bilingual-srt | 翻譯快取續跑／同鍵不重打／單併發間隔／族別 handshake | `asrmt/align/test_mtclient.py` |
-| asr-bilingual-srt | Claude 批次編號歸屬（幽靈 id／缺行／重複 id 整批拒收） | `asrmt/align/test_claude_mt.py` |
-| speech-subtitle-alignment | 交錯句二對二合併恢復／拆併／帶外不配／錨點軟加分 | `asrmt/align/test_dpalign.py` |
-| speech-subtitle-alignment | 連通塊（句跨條目綁塊／停頓斷塊／無語音自成塊） | `asrmt/align/test_detect_blocks.py` |
-| speech-subtitle-alignment | 同義改寫高分／語序免疫／斷詞差異不影響 LCS／系統性 lead-lag 現形／平移不重譯／數字與借詞錨點 | `asrmt/align/test_detect_scores.py` |
-| speech-subtitle-alignment | 歸因矩陣五類／塊級救回條目級／引擎互證／未校準自我聲明／matched_entries | `asrmt/align/test_detect_classify.py` |
+| srt-data-store | 兩側都有交付時時間戳愛逐條仝；干焦影像側ê免比嘛免警告 | `news/test_coaxial.py` |
+| srt-data-store | 只有精修過ê時間軸會使入 store；「揣無」佮「未精修」各講各ê | `news/test_publish_refined_only.py` |
+| srt-data-store | 進度表十二欄佮順序；`成果檔名`＝srt_name；`cues` 對 store 推導 | `news/test_tracker_columns.py` |
+| srt-data-store | 逐字稿干焦一个來源（疊層提掉了後） | `news/test_single_vision_source.py` |
+| cue-timing | 時間軸寫一擺就唯讀：cues 寫 `1-cues/`、refine 寫 `2-refined/` | `news/test_workdir_writers.py` |
+| cue-timing | 用 cue 號碼做鍵ê物件清單（清單改一位就好） | `news/test_cue_key_registry.py` |
 | —（vosk 呼叫層） | 無法離線測——實模型煙霧測試把關；忠實性由投影與 render 測試守恆 | （無單元測試檔） |
 
 ## 編排（tests/news/ ↔ scripts/news/）

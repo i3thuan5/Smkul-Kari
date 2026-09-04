@@ -10,6 +10,7 @@ import shutil
 import tempfile
 import unittest
 
+from scripts import datadirs
 from scripts.aiyalaeho import ingest
 from scripts.ocr import transcripts
 from scripts.errors import PipelineError
@@ -32,7 +33,8 @@ class Fixture(unittest.TestCase):
                       {"name": "han", "y": 72, "h": 64}],
             "cues": cues,
         }
-        self._write_json(os.path.join(self.work, "cues.json"), manifest)
+        os.makedirs(os.path.join(self.work, "1-cues"), exist_ok=True)
+        self._write_json(datadirs.coarse_cues(self.work), manifest)
         self._write_json(os.path.join(self.work, "sheets.json"),
                          {"sheet_001.png": [1, 2], "sheet_002.png": [3, 4]})
         self._write_json(os.path.join(self.work, "transcripts.json"), {})

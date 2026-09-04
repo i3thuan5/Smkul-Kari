@@ -160,18 +160,17 @@ def holding(folder, index):
 
 
 def vision_folders(name):
-    """Both places a cue's text can live, in the order `rebuild` reads them.
+    """Where a cue's text lives -- one folder, since the overlay went.
 
-    `rebuild` merges `3-vision` and `4-vision-rtf`, the rtf side winning.
-    Renumbering only the first leaves the second off by one -- and
-    **`ingest` does not notice**, because it only walks `3-vision`. It was
-    `rebuild --verify` that caught it: of the four episodes split on
-    2026-08-31, exactly the two with rtf files came out wrong.
+    There used to be two, `3-vision` and `4-vision-rtf`, merged with the
+    rtf side winning. Renumbering only the first left the second off by
+    one and **`ingest` did not notice**, because it only walks the vision
+    folder; `rebuild --verify` was what caught it, and of the four
+    episodes split on 2026-08-31 exactly the two with rtf files came out
+    wrong. The overlay was measured to be entirely redundant and deleted,
+    which is what makes that class of mistake unreachable.
     """
-    out = []
-    for root in (paths.KARI_VISION, paths.KARI_VISION_RTF):
-        out.append(os.path.join(root, paths.month_of(name), name))
-    return out
+    return [os.path.join(paths.KARI_VISION, paths.month_of(name), name)]
 
 
 def apply(stem, index, at, first, second):
@@ -201,10 +200,8 @@ def apply(stem, index, at, first, second):
     if name is None:
         raise PipelineError("inventory 內底揣無 %s" % stem)
     folders = vision_folders(name)
-    # The two halves are written into `3-vision` only: that is where a
-    # reader's own words go. `4-vision-rtf` is renumbered but never gains
-    # a row -- it is a record of what the 文稿 once supplied, and nothing
-    # new belongs in it.
+    # The two halves are written into the vision folder -- that is where a
+    # reader's own words go, and now the only place they can go.
     target = holding(folders[0], index)
     for folder in folders:
         for one in sorted(glob.glob(os.path.join(folder, "b*.tsv"))):

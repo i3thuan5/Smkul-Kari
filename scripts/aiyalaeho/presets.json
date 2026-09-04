@@ -33,5 +33,40 @@
         "ocr_scale": 1
       }
     ]
+  },
+  "aiyalaeho-bilingual-low": {
+    "note": "Same programme, same band, but sitting about 14px lower in the frame: measured over 750 frames each, 087 puts its Formosan row at 918..943 and its Chinese row at 966..1003, and 094 at 923..951 and 974..1011. `aiyalaeho-bilingual` splits its two slots at y=948, which lands inside 094's Formosan row, so `verify_band` refused both episodes -- correctly: cue boundaries taken from ink changes in the wrong rows have nothing to do with where the subtitles change. The valley between the two rows measures y=962 on 087, so this preset splits there: Formosan 902..962, Chinese 962..1014. The Chinese slot runs to the region's foot because 094's glyph bottoms reach 1011. Row heights are 60 and 52, which is a shorter block than the standard preset's, so the contact sheets pack the same four cues or better. SELECT THIS WITH `--preset`: like the standard one it deliberately carries no `match`, because the file names in this corpus share no reliable substring.",
+    "region": [
+      0,
+      876,
+      1920,
+      138
+    ],
+    "mask": {
+      "outline": false,
+      "white_min": 180,
+      "max_spread": 50,
+      "band_probe": {
+        "x": 0,
+        "w": 60,
+        "min_saturation": 60
+      }
+    },
+    "lines": [
+      {
+        "name": "formosan",
+        "y": 26,
+        "h": 60,
+        "lang": "eng",
+        "ocr_scale": 2
+      },
+      {
+        "name": "han",
+        "y": 86,
+        "h": 52,
+        "lang": "chi_tra",
+        "ocr_scale": 1
+      }
+    ]
   }
 }

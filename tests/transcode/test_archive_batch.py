@@ -87,7 +87,7 @@ class TestVideoRemote(unittest.TestCase):
     def test_feb_mxf_shorthand_expands_to_the_real_sftp_directory(self):
         # smkul.csv 對 2 月 mxf 批次記的是舊本機掛載遺留下來的簡寫
         # "ilrdf-corpus/2月/<檔名>"；SFTP 上真正的路徑多一層
-        # "族語新聞/110.1-110.10/2月原始mxf檔/"（見 refine_fetch.sh 的
+        # "族語新聞/110.1-110.10/2月原始mxf檔/"（見 fetch_sftp.sh 的
         # 同一個註記），簡寫路徑在 SFTP 上找不到檔案。
         rows = [{"播出日期": "2021-02-01", "播出時段": "晚間",
                  "影片檔案位置":

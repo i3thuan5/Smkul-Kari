@@ -85,29 +85,98 @@ class TestPresetPacking(unittest.TestCase):
     SHEET_WIDTH = 1970
     WIDEST_POSSIBLE = 1920 + 108 + 16
 
-    def test_four_cues_fit_on_a_sheet(self):
+    def _blocks(self):
+        """(preset name, block height) for every preset in the file.
+
+        Every preset, not just the first one: a second layout added for
+        the episodes whose band sits lower has the same budget to meet,
+        and nothing else would notice it missing it.
+        """
         with open(paths.ENGINE_PRESETS, encoding="utf-8") as handle:
-            preset = json.load(handle)["aiyalaeho-bilingual"]
-        block = self.GUTTER
-        for line in preset["lines"]:
-            block += line["h"] + self.PER_TILE
+            presets = json.load(handle)
+        out = []
+        for name in sorted(presets):
+            block = self.GUTTER
+            for line in presets[name]["lines"]:
+                block += line["h"] + self.PER_TILE
+            out.append((name, block))
+        return out
+
+    def test_four_cues_fit_on_a_sheet(self):
         budget = int(self.MEGAPIXELS * 1000000 / self.SHEET_WIDTH)
-        self.assertLessEqual(
-            block * self.WANT_PER_SHEET, budget,
-            "一个 cue ê block %d px，%d 條就 %d px，超過每張 %d px ê預算"
-            "——sheet 數會加三成，而且袂報錯"
-            % (block, self.WANT_PER_SHEET, block * self.WANT_PER_SHEET,
-               budget))
+        for name, block in self._blocks():
+            self.assertLessEqual(
+                block * self.WANT_PER_SHEET, budget,
+                "%s：一个 cue ê block %d px，%d 條就 %d px，超過每張 %d px"
+                "ê預算——sheet 數會加三成，而且袂報錯"
+                % (name, block, self.WANT_PER_SHEET,
+                   block * self.WANT_PER_SHEET, budget))
 
     def test_even_a_full_width_line_keeps_three_cues_a_sheet(self):
         """The worst case, recorded so the next height change sees it."""
-        with open(paths.ENGINE_PRESETS, encoding="utf-8") as handle:
-            preset = json.load(handle)["aiyalaeho-bilingual"]
-        block = self.GUTTER
-        for line in preset["lines"]:
-            block += line["h"] + self.PER_TILE
         worst = int(self.MEGAPIXELS * 1000000 / self.WIDEST_POSSIBLE)
-        self.assertGreaterEqual(worst // block, 3)
+        for name, block in self._blocks():
+            self.assertGreaterEqual(worst // block, 3, name)
+
+
+class TestLowBandPreset(unittest.TestCase):
+    """The band does not sit at the same height in every episode.
+
+    Measured over 750 frames each: 087 puts its rows at 918..943 and
+    966..1003, 094 at 923..951 and 974..1011 -- both about 14px below
+    `aiyalaeho-bilingual`'s slots (888..948 / 948..1012), so the split at
+    948 lands inside 094's Formosan row. `verify_band` refused both, which
+    is the gate working: the cue timings would have come from ink changes
+    in the wrong rows.
+
+    The valley between the two rows measures y=962 on 087, so that is
+    where this preset splits.
+    """
+
+    # (episode, formosan row, han row) as measured off the masters.
+    MEASURED = (
+        ("087", (918, 943), (966, 1003)),
+        ("094", (923, 951), (974, 1011)),
+    )
+    NAME = "aiyalaeho-bilingual-low"
+
+    def setUp(self):
+        with open(paths.ENGINE_PRESETS, encoding="utf-8") as handle:
+            self.presets = json.load(handle)
+
+    def test_the_low_band_preset_exists(self):
+        self.assertIn(self.NAME, self.presets)
+
+    def test_each_measured_row_sits_inside_its_slot(self):
+        preset = self.presets[self.NAME]
+        top = preset["region"][1]
+        slots = {}
+        for line in preset["lines"]:
+            slots[line["name"]] = (top + line["y"],
+                                   top + line["y"] + line["h"])
+        for episode, formosan, han in self.MEASURED:
+            for name, row in (("formosan", formosan), ("han", han)):
+                lo, hi = slots[name]
+                self.assertLessEqual(
+                    lo, row[0],
+                    "%s ê %s 逝對 y=%d 起，佇槽 %d..%d 頂懸"
+                    % (episode, name, row[0], lo, hi))
+                self.assertGreaterEqual(
+                    hi, row[1],
+                    "%s ê %s 逝到 y=%d，超出槽 %d..%d"
+                    % (episode, name, row[1], lo, hi))
+
+    def test_it_stays_inside_the_region(self):
+        preset = self.presets[self.NAME]
+        top, height = preset["region"][1], preset["region"][3]
+        for line in preset["lines"]:
+            self.assertLessEqual(line["y"] + line["h"], height,
+                                 "%s 超出 region（%d..%d）"
+                                 % (line["name"], top, top + height))
+
+    def test_it_has_no_match_so_it_must_be_chosen_explicitly(self):
+        # 檔名無通用ê字頭，選毋著 preset 就是切毋著——愛用 --preset。
+        self.assertNotIn("match", self.presets[self.NAME])
 
 
 class TestSrtName(unittest.TestCase):

@@ -31,7 +31,7 @@ REMOTE_ROOT = "/docker"
 # smkul.csv abbreviates the Feb mxf batch's location to "ilrdf-corpus/2月/
 # <檔名>" -- a leftover from when those masters were mounted locally at
 # that path. On the SFTP host the real directory is one level deeper (see
-# scripts/news/refine_fetch.sh's identical note); the short form 404s.
+# the same note in scripts/news/fetch_sftp.sh); the short form 404s.
 FEB_MXF_SHORTHAND = "ilrdf-corpus/2月/"
 FEB_MXF_REAL_DIR = "ilrdf-corpus/族語新聞/110.1-110.10/2月原始mxf檔/"
 HERE = os.path.dirname(os.path.abspath(__file__))

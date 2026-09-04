@@ -10,6 +10,7 @@ import shutil
 import tempfile
 import unittest
 
+from scripts import datadirs
 from scripts.aiyalaeho import make_srt
 
 
@@ -29,7 +30,8 @@ class Fixture(unittest.TestCase):
         }
         if duration is not None:
             manifest["duration"] = duration
-        with open(os.path.join(self.work, "cues.json"), "w",
+        os.makedirs(os.path.join(self.work, "1-cues"), exist_ok=True)
+        with open(datadirs.coarse_cues(self.work), "w",
                   encoding="utf-8") as handle:
             json.dump(manifest, handle, ensure_ascii=False)
         with open(os.path.join(self.work, "transcripts.json"), "w",
@@ -144,7 +146,7 @@ class TestPadding(Fixture):
         self.build([cue(1, 10.0, 14.0)], {"1": {"formosan": "a",
                                                 "han": "甲"}},
                    duration=100.0)
-        with open(os.path.join(self.work, "cues.json"),
+        with open(datadirs.cues_to_read(self.work),
                   encoding="utf-8") as handle:
             manifest = json.load(handle)
         self.assertEqual(manifest["cues"][0]["start"], 10.0)

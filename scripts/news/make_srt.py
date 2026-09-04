@@ -37,7 +37,7 @@ def load_transcripts(work):
 
 def build(work):
     """One record per cue: its timing and its text."""
-    with open(os.path.join(work, "cues.json"), encoding="utf-8") as handle:
+    with open(paths.cues_to_read(work), encoding="utf-8") as handle:
         manifest = json.load(handle)
 
     texts = load_transcripts(work)

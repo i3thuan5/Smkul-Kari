@@ -17,6 +17,7 @@ import json
 import os
 import sys
 
+from scripts import datadirs
 from scripts.aiyalaeho import make_srt
 from scripts.aiyalaeho import paths
 from scripts.aiyalaeho import tracker
@@ -34,9 +35,9 @@ def vision_complete(work):
     demands at least one cue and would hold such an episode -- and with it
     the whole batch -- open forever.
     """
-    cues = os.path.join(work, "cues.json")
+    cues = datadirs.cues_to_read(work)
     verified = os.path.join(work, "verified.json")
-    if not (os.path.exists(cues) and os.path.exists(verified)):
+    if not (cues and os.path.exists(verified)):
         return False
     with open(cues, encoding="utf-8") as handle:
         wanted = set()
@@ -54,7 +55,7 @@ def vision_complete(work):
 def make_one(entry):
     """Build one episode's SRT; return its status line."""
     work = paths.work_dir(entry["srt_name"])
-    if not os.path.exists(os.path.join(work, "cues.json")):
+    if not datadirs.cues_to_read(work):
         return "待處理（尚未切cue）"
     if not vision_complete(work):
         return "待處理（已切cue，尚未校讀完）"

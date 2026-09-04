@@ -45,7 +45,7 @@ def normalise(path):
 
 
 def _tsvdir_of(slug):
-    """Default TSV dir: news/1-ocr/3-vision/<srt_name>, from the slug."""
+    """Default TSV dir: news/1-ocr/2-vision/<srt_name>, from the slug."""
     for entry in paths.load_inventory():
         if entry["slug"] == slug:
             return paths.stage_path(paths.KARI_VISION,
@@ -84,7 +84,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("slug")
     ap.add_argument("tsvdir", nargs="?", default="",
-                    help="TSV dir; default news/1-ocr/3-vision/<srt_name> "
+                    help="TSV dir; default news/1-ocr/2-vision/<srt_name> "
                          "looked up from the slug")
     args = ap.parse_args()
 

@@ -143,6 +143,22 @@ def _feed_frames(video, region, spec, seg, args, total):
     return last_ts, seen
 
 
+def write_manifest(workdir, manifest):
+    """Put the coarse timeline in its stage folder; return where it went.
+
+    Written once and then read-only: `refine_cues` puts its result beside
+    it in `2-refined/` rather than over the top of it, so a refine killed
+    midway costs the refinement and not the cut. Regenerating a damaged
+    coarse timeline means cutting the episode again, which means fetching
+    the video again -- the reason the stages are separate at all.
+    """
+    path = datadirs.coarse_cues(workdir)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(manifest, handle, ensure_ascii=False, indent=1)
+    return path
+
+
 def stage_cues(args):
     video = args.video
     # Read plainly, not through getattr(..., None). A caller that fails to
@@ -232,9 +248,7 @@ def stage_cues(args):
         },
         "cues": records,
     }
-    path = os.path.join(workdir, "cues.json")
-    with open(path, "w", encoding="utf-8") as handle:
-        json.dump(manifest, handle, ensure_ascii=False, indent=1)
+    path = write_manifest(workdir, manifest)
     print("wrote %s" % path)
 
     if args.sheets:

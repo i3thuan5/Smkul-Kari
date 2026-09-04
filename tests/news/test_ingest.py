@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from unittest import mock
 
+from scripts.news import paths
 from scripts.news import ingest
 from scripts.errors import PipelineError
 
@@ -93,7 +94,8 @@ class TestOnlyBatchFiles(unittest.TestCase):
         cues = []
         for n in (1, 2):
             cues.append({"index": n, "start": n * 1.0, "end": n * 1.0 + 0.8})
-        with open(os.path.join(work, "cues.json"), "w",
+        os.makedirs(os.path.join(work, "1-cues"), exist_ok=True)
+        with open(paths.coarse_cues(work), "w",
                   encoding="utf-8") as handle:
             json.dump({"cues": cues,
                        "lines": [{"name": "han"}]}, handle)

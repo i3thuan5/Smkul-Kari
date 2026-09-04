@@ -4,11 +4,11 @@
     python3 -m scripts.news.publish            # every finished episode
     python3 -m scripts.news.publish --check    # report, write nothing
 
-`make_all.py` writes the deliverable SRTs straight into news/1-ocr/6-srt/, and
+`make_all.py` writes the deliverable SRTs straight into news/1-ocr/3-srt/, and
 the vision TSVs are written there by the readers themselves. What is left is
 the per-episode data that `rebuild.py` needs to put an SRT back together
-without touching a video: `cues/<srt_name>.json`, `from_rtf/<srt_name>.json`,
-and the inventory it walks. A one-off migration script did this once for
+without touching a video: `cues/<srt_name>.json` and the inventory it
+walks. A one-off migration script did this once for
 the February batch; this does it for every batch after.
 
 This is also where the store smkul.csv is written. make_all keeps a work
@@ -32,6 +32,7 @@ import sys
 from scripts.news import make_all
 from scripts.news import paths
 from scripts.news import tracker
+from scripts.errors import PipelineError
 
 WORK = paths.WORK
 
@@ -49,7 +50,10 @@ def publishable(entry):
     # The .B.work dir is the one make_all assembled the SRT from, so it is
     # the one whose cues.json the store must hold.
     work = os.path.join(WORK, entry["slug"] + ".B.work")
-    if not os.path.exists(os.path.join(work, "cues.json")):
+    # Asked through the helper, so every layout the timeline can arrive in
+    # counts. Spelling `<work>/cues.json` out here reads a staged work dir
+    # as uncut, and the batch is then held back for the wrong reason.
+    if paths.cues_to_read(work) is None:
         return "", "尚未切cue"
     if not make_all.vision_complete(work):
         return "", "視覺辨識尚未讀完"
@@ -91,23 +95,43 @@ def gate(entries, month=None):
     return blocked
 
 
-def publish_one(entry, work):
-    """Copy this episode's inputs into the store; return what was written."""
-    written = []
-    for name, folder in (("cues.json", paths.KARI_CUES),
-                         ("from_rtf.json", paths.KARI_FROM_RTF)):
-        source = os.path.join(work, name)
-        if not os.path.exists(source):
-            # from_rtf.json is a historical index: which cues the 文稿 once
-            # supplied, back when it supplied any. Episodes prepared since
-            # that path was removed have none, and the store keeps the old
-            # ones as the key to the rtf-vs-vision comparison report.
-            continue
-        target = paths.stage_path(folder, entry["srt_name"], ".json")
-        os.makedirs(os.path.dirname(target), exist_ok=True)
-        shutil.copy2(source, target)
-        written.append(os.path.basename(folder))
-    return written
+def refined_timeline(entry, work):
+    """This episode's timeline, or say which of the two things is wrong.
+
+    The store only takes refined timelines. Every delivered timestamp is
+    derived from this one file, and the two grades differ by an order of
+    magnitude -- 0.2s against 0.05s -- so once both are in `1-cues/`
+    nothing tells them apart. Gating here is what lets that folder state
+    outright that everything in it has been refined.
+
+    The two refusals are worded apart because the fixes are: a coarse
+    timeline wants `refine_cues`, a missing one wants the episode cut.
+    """
+    source = paths.cues_to_read(work)
+    if source is None:
+        raise PipelineError("%s：%s 內底揣無時間軸，袂使定版"
+                            % (entry["srt_name"], work))
+    if not paths.timeline_is_refined(source):
+        raise PipelineError(
+            "%s：時間軸猶未精修（%s），袂使入 store——先走 refine_cues"
+            % (entry["srt_name"], source))
+    return source
+
+
+def publish_one(entry, work, cues_dir=None):
+    """Copy this episode's inputs into the store; return what was written.
+
+    Cues used to share a loop with `from_rtf.json` whose "missing? carry
+    on" arm was written for that file, which legitimately is absent for
+    most episodes. A timeline is never optional, and sharing that arm is
+    what made a missing one silent.
+    """
+    folder = paths.KARI_CUES if cues_dir is None else cues_dir
+    source = refined_timeline(entry, work)
+    target = paths.stage_path(folder, entry["srt_name"], ".json")
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    shutil.copy2(source, target)
+    return [os.path.basename(folder)]
 
 
 def delivered_status(entry):

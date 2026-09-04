@@ -21,26 +21,33 @@ import os
 # "跟轉 mkv 一樣" is the whole point.
 NICE = 15
 
-_applied = False
 
-
-def be_nice(step=NICE):
-    """Lower this process's priority by `step`; return the new value.
+def be_nice(target=NICE):
+    """Top this process up to nice `target`; return the level it is at.
 
     Returns None when the platform or the policy will not allow it -- a
     job that cannot be niced should still run, just less politely.
 
-    Only the first call does anything. `os.nice` is *cumulative*, and
-    there are two entry points into the speech side (`asrmt_batch` calls
-    into `asrmt_run`), so without this guard a batch run would land on 30
-    instead of 15.
+    **A target, not an increment.** `os.nice` is cumulative, and this
+    pipeline nices in two places: the shell wrappers start their heavy
+    steps under `nice -n 15`, and the Python entry points call this. Two
+    entry points into the speech side (`asrmt_batch` calls into
+    `asrmt_run`) add a third way to arrive here twice. Adding 15 each
+    time reaches 30, which the kernel clamps to 19 -- the job lands at
+    the very bottom instead of the level that was chosen.
+
+    A module flag used to guard that, and it could not: a flag is
+    per-process, and the shell's nice happened before this process
+    existed. Reading the current value and topping up handles both, and
+    is idempotent by nature, so the flag is gone.
+
+    A process already below the target is left alone -- somebody set that
+    deliberately, and this is not the place to overrule them.
     """
-    global _applied
-    if _applied:
-        return None
     try:
-        level = os.nice(step)
+        current = os.nice(0)
+        if current >= target:
+            return current
+        return os.nice(target - current)
     except (OSError, AttributeError):
         return None
-    _applied = True
-    return level

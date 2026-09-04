@@ -28,6 +28,7 @@ import argparse
 import json
 import os
 
+from scripts import datadirs
 from scripts.aiyalaeho import paths
 from scripts.srtlib import assemble
 from scripts.srtlib import srt
@@ -48,7 +49,7 @@ def load_transcripts(work):
 
 def build(work):
     """One record per cue: its timing and each row's text."""
-    with open(os.path.join(work, "cues.json"), encoding="utf-8") as handle:
+    with open(datadirs.cues_to_read(work), encoding="utf-8") as handle:
         manifest = json.load(handle)
 
     texts = load_transcripts(work)

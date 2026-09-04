@@ -28,6 +28,7 @@ import shutil
 import sys
 import tempfile
 
+from scripts import datadirs
 from scripts.aiyalaeho import make_srt
 from scripts.aiyalaeho import paths
 from scripts.aiyalaeho import tracker
@@ -98,8 +99,9 @@ def rebuild_one(entry, tmp):
     name = entry["srt_name"]
     work = os.path.join(tmp, name + ".work")
     os.makedirs(work, exist_ok=True)
-    shutil.copy2(paths.stage_path(paths.KARI_CUES, name, ".json"),
-                 os.path.join(work, "cues.json"))
+    timeline = datadirs.coarse_cues(work)
+    os.makedirs(os.path.dirname(timeline), exist_ok=True)
+    shutil.copy2(paths.stage_path(paths.KARI_CUES, name, ".json"), timeline)
     with open(os.path.join(work, "transcripts.json"), "w",
               encoding="utf-8") as handle:
         json.dump(episode_transcripts(name), handle, ensure_ascii=False)

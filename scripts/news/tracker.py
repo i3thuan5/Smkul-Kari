@@ -23,15 +23,31 @@ from scripts.errors import PipelineError
 ETH_EN = "族語別(英)"
 ETH_ZH = "族語別(中)"
 
-FIELDS = ["節目名稱", "年度", "集數", "播出日期", "播出時段",
-          ETH_EN, ETH_ZH, "影片檔案位置", "影片長度", "文稿位置",
+# Read left to right: which episode this is, where its material lives,
+# how far it has got. Every column is derived from the store -- nothing
+# here is typed in, because `rebuild --verify` recomputes the whole table
+# and compares it byte for byte.
+#
+# `播出時段` is not a column: it is inside `成果檔名`, and dropping it
+# without adding that one would leave the identity columns ambiguous --
+# 74 rows carry only 33 distinct broadcast dates, 31 of them shared by
+# two or three episodes. `文稿位置` is gone with the 文稿 route itself.
+# 使用者裁定 2026-09-03.
+FIELDS = ["年度", "集數", "播出日期", "節目名稱", ETH_EN, ETH_ZH,
+          "影片檔案位置", "影片長度", "成果檔名", "cues",
           "字幕srt狀態", "語音辨識模型"]
+
+# What the `cues` column says about the delivered timeline. Publish only
+# takes refined ones into the store, so the delivered table reads the
+# same all the way down; the working copy is where 粗切 shows up, on the
+# episodes that are cut but not yet refined.
+CUES_REFINED = "已精修"
+CUES_COARSE = "粗切"
 
 # The speech-side cell names the recogniser, not a revision: delivery stops
 # at 3-srt-raw, so that file existing is what says the audio was recognised.
-# The align extension above it (4-srt-ai, 6-srt-complete) was a pilot whose
-# semantic merge did not work out and is not produced for later episodes, so
-# it no longer counts as a higher version of the same thing.
+# There is nothing above it: the align extension that once sat there was a
+# pilot whose semantic merge did not work out, and it has been removed.
 #
 # Derived from the store rather than hand-written: a written value could not
 # survive `rebuild --verify`, which recomputes this table from the store
@@ -49,6 +65,25 @@ def asr_model(srt_name, asr_dir=None):
                                        srt_name, ext)):
         return ASR_MODEL
     return ""
+
+
+def cue_grade(srt_name, cues_dir=None):
+    """Is this episode's delivered timeline refined, or still coarse?
+
+    Read off the store's own file, never written by hand: any recompute
+    has to give the same answer or the table stops being rebuildable.
+
+    In the delivered table this reads 已精修 all the way down, because
+    publish refuses a coarse timeline. That is the point of having it --
+    it is where that guarantee shows. The working copy is the one where
+    粗切 appears, on episodes cut but not yet refined.
+    """
+    if cues_dir is None:
+        cues_dir = paths.KARI_CUES
+    path = paths.stage_path(cues_dir, srt_name, ".json")
+    if not os.path.exists(path):
+        return ""
+    return CUES_REFINED if paths.timeline_is_refined(path) else CUES_COARSE
 
 
 def video_length(srt_name, cues_dir=None):
@@ -121,20 +156,17 @@ def tracker_row(entry, status, asr_dir=None, cues_dir=None):
     # cannot drift apart on it.
     if entry.get("partial"):
         status = "%s；來源不完整：%s" % (status, entry["partial"])
-    script = ""
-    if entry["文稿位置"]:
-        script = "ilrdf-corpus/" + entry["文稿位置"]
     return {
-        "節目名稱": entry["節目名稱"],
         "年度": entry["年度"],
         "集數": entry["集數"],
         "播出日期": entry["播出日期"],
-        "播出時段": entry["播出時段"],
+        "節目名稱": entry["節目名稱"],
         ETH_EN: entry[ETH_EN],
         ETH_ZH: entry[ETH_ZH],
         "影片檔案位置": corpus_path(entry["video"]),
         "影片長度": video_length(entry["srt_name"], cues_dir),
-        "文稿位置": script,
+        "成果檔名": entry["srt_name"],
+        "cues": cue_grade(entry["srt_name"], cues_dir),
         "字幕srt狀態": status,
         "語音辨識模型": asr_model(entry["srt_name"], asr_dir),
     }

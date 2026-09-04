@@ -33,7 +33,9 @@ class TestImportTsv(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.work = tmp.name
-        self._write("cues.json", json.dumps(MANIFEST, ensure_ascii=False))
+        os.makedirs(os.path.join(self.work, "1-cues"), exist_ok=True)
+        self._write(os.path.join("1-cues", "cues.json"),
+                    json.dumps(MANIFEST, ensure_ascii=False))
 
     def _write(self, name, text):
         path = os.path.join(self.work, name)

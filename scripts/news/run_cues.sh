@@ -46,7 +46,7 @@ echo "$(date +%H:%M:%S) ${#JOBS[@]} episodes to process"
 for job in "${JOBS[@]}"; do
     slug=${job%%$'\t'*}
     video=${job#*$'\t'}
-    if [[ -f "$WORK/$slug.work/cues.json" ]]; then
+    if [[ -n "$("$PY" -m scripts.news.paths --cues-of "$WORK/$slug.work")" ]]; then
         echo "$(date +%H:%M:%S) skip  $slug (done)"
         continue
     fi

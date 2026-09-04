@@ -15,6 +15,21 @@ programmes. If no month was given, ask which one.
 Read `scripts/news/README.md` first — it holds the measured numbers and the
 traps. The short version of the procedure:
 
+**Three stages, and they cost different things.** Say which one you are in;
+it is how anyone reading along knows what the machine is busy with and how
+long it should take.
+
+| Stage | Entry point | Resource | Per episode |
+|---|---|---|---|
+| **1. cues** | `fetch_sftp.sh` (download → verify band → cut → refine) | local CPU + network | ~5 min download, 6 min cut, 8.5 min refine |
+| **2. OCR** | vision subagents → `ingest` → `make_all` → `publish` | **Claude vision** (the ingest and assembly around it are seconds of CPU) | **~50 min** |
+| **3. asr** | `asrmt_batch` (audio → vosk → project → render) | local CPU | ~15 min |
+
+Stage 2 is where the month goes: 71 episodes ≈ **58 hours of vision**,
+against ~7.5 hours for all of stage 1. Stage 3 can run alongside stage 2.
+Archival mkv encoding (`transcode/archive_batch.py`) is a side line and is
+not on the delivery path.
+
 ## 1. Plan the month, then fetch and cut
 
 ```bash
@@ -81,7 +96,7 @@ python3 -m scripts.news.batches <slug> --size 24     # lists the sheet batches
 ```
 
 Farm each batch to a subagent, 24 sheets each, writing a TSV straight to
-`Kari-SRT/news/1-ocr/3-vision/<年-月>/<srt_name>/bNN.tsv`. Two things the
+`Kari-SRT/news/1-ocr/2-vision/<年-月>/<srt_name>/bNN.tsv`. Two things the
 prompt must say, both learned the hard way:
 
 - **Cue numbers can JUMP.** When only part of an episode is being re-read the
@@ -96,7 +111,7 @@ prompt must say, both learned the hard way:
 Then per episode:
 
 ```bash
-python3 -m scripts.news.ingest <slug> Kari-SRT/news/1-ocr/3-vision/<年-月>/<srt_name>
+python3 -m scripts.news.ingest <slug> Kari-SRT/news/1-ocr/2-vision/<年-月>/<srt_name>
 ```
 
 `ingest.py` refuses the whole batch if a TSV names a cue that was not on the
@@ -116,10 +131,33 @@ the whole batch is done. Until then the store keeps the previous batch's
 `smkul.csv` and `rebuild --verify` stays green — which is what makes it safe
 to keep running the verification while a batch is in progress.
 
+`publish` also refuses an episode whose timeline is **not refined**, naming
+it and stopping: `1-ocr/1-cues/` states outright that everything in it has
+been through the 25fps pass, and that only holds if the door is watched.
+"No timeline at all" and "cut but not refined" are reported as different
+things, because the fixes are different (cut it again, or run
+`refine_cues`).
+
+**The two sides must agree about time.** `rebuild --verify` compares the
+(index, start, end) sequence of `1-ocr/3-srt/` against `2-asr/3-srt-raw/`
+for every episode where **both** exist, and a mismatch is an error to fix,
+not a warning — two files claiming different timings for one episode is a
+contradiction. The fix costs nothing but CPU: reproject and re-render off
+`2-entries`, no recognition again:
+
+```bash
+python3 -m scripts.news.asrmt_run <srt_name> --step entries --redo
+python3 -m scripts.news.asrmt_run <srt_name> --step raw --redo
+```
+
+An episode with **only** the picture side delivered is fine and draws no
+warning: the speech side runs at its own pace and `smkul.csv` already says
+how far it has got.
+
 ## Scale — say this out loud before starting
 
 Measured on the February batch (35 episodes, `1-ocr/1-cues/` and
-`1-ocr/3-vision/` are the record): **835 cues, 178 contact sheets and 8.2
+`1-ocr/2-vision/` are the record): **835 cues, 178 contact sheets and 8.2
 reading batches per episode**, and the vision pass ran at about **10 batches
 an hour** (13 episodes ≈ 102 batches in a 10.5 h session). Fetch-and-cut costs
 6.3 min per episode including the download; the speech side (`asrmt_batch`,

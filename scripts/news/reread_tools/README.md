@@ -13,7 +13,6 @@ scratchpad，彼是 session 專屬ê，會無去。
 | `allsheets.py` | 逐集切段出圖條，會跳過做過ê（可續跑） |
 | `safe_resplit.py` | 逐條把關（`resplit.survives`），過ê才切，寫 cues.json ＋ TSV |
 | `regen_strips.py` | 照新編號重生 strips／sheets／sheets.json（**兩个參數：NAME SLUG**，閣愛 numpy，用 `.tox/rebuild/bin/python` 走） |
-| `fix_rtf.py` | kā `4-vision-rtf` 疊層重編號（**無做這步 `rebuild --verify` 會炸**） |
 
 ## 一集ê順序
 
@@ -22,7 +21,6 @@ set -o pipefail                       # 無這逝，`| tail` 會kā `&&` 廢掉
 N=<srt_name>; SLUG=<slug>             # slug 對 Kari-SRT/news/inventory.json 提
 PYTHONPATH=. python3 scripts/news/reread_tools/safe_resplit.py "$N" --write && \
 PYTHONPATH=. .tox/rebuild/bin/python scripts/news/reread_tools/regen_strips.py "$N" "$SLUG" && \
-PYTHONPATH=. python3 scripts/news/reread_tools/fix_rtf.py "$N" && \
 PYTHONPATH=. python3 -m scripts.news.ingest "$SLUG" && \
 PYTHONPATH=. python3 -m scripts.news.make_all && \
 PYTHONPATH=. python3 -m scripts.news.publish && \
@@ -44,13 +42,12 @@ PYTHONPATH=. python3 scripts/news/reread_tools/prompt.py <srt_name> b
 PYTHONPATH=. python3 scripts/news/reread_tools/prompt.py <srt_name> a2 101-120
 ```
 
-判準ê正本是 `brief.md`；集數家己ê數字（段數、圖條範圍、work dir、有
-無 `4-vision-rtf`）攏對磁碟讀，批次切佇**圖條ê邊界**。判準一改，改
+判準ê正本是 `brief.md`；集數家己ê數字（段數、圖條範圍、work dir）
+攏對磁碟讀，批次切佇**圖條ê邊界**。判準一改，改
 `brief.md` 一擺，後壁逐批攏會著。手改提示是判準會恬恬走鐘ê所在——
 漏去彼批讀出來佮厝邊無仝，煞無人會講。
 
-`allsheets`（一擺跑規批）佮派視覺辨識佇這條ê頭前。`fix_rtf` 彼步干焦
-該集有 `4-vision-rtf` 才做。
+`allsheets`（一擺跑規批）佮派視覺辨識佇這條ê頭前。
 
 **`ingest` 是這條線ê守門ê。** 伊會kā TSV 內底ê 編號佮 `sheets.json` 對，
 無合就規个擋落來、一字都無寫（`PROBLEM ... was not on any sheet given to
@@ -63,12 +60,10 @@ a reader`）。所以 `regen_strips` 若倒去，ingest 會替你掠著——毋
 
 ```
 cues.json           時間軸
-b*.tsv              3-vision，視覺辨識讀ê
-transcripts.json    **正本**（`ingest` 是合併毋是取代——有 16 集ê TSV
-                    無涵蓋規模ê cue，彼寡是 RTF 供字ê，字干焦佇遮）
+b*.tsv              2-vision，視覺辨識讀ê
+transcripts.json    **正本**（`ingest` 是合併毋是取代）
 sheets.json         `ingest` 提伊驗編號
-4-vision-rtf/*.tsv  文稿疊層，`rebuild` ê時**贏過** 3-vision
-strips/ 檔名        照編號號名
+strips/ 檔名        照起始時間號名（`t<毫秒八碼>_<列>.png`）
 ```
 
 **2 月 054–059 這 14 集是對頭做起ê，切 cue 愛指定 `--preset titv-news`。**
@@ -84,13 +79,13 @@ PYTHONPATH=. .tox/rebuild/bin/python -m scripts.ocr.cli cues \
   --presets scripts/news/presets.json --preset titv-news --sheets --progress
 ```
 
-**兩集ê鏈袂使做伙走。** `safe_resplit`、`regen_strips`、`fix_rtf`、
-`ingest` 是**逐集**ê，`make_all`、`publish`、`rebuild --verify` 是
+**兩集ê鏈袂使做伙走。** `safe_resplit`、`regen_strips`、`ingest`
+是**逐集**ê，`make_all`、`publish`、`rebuild --verify` 是
 **規批**ê。兩條鏈平行走，尾彼三步就相踏：2026-08-30 按呢走ê時
 `publish` 講「published 59 of 60」、`rebuild --verify` 報 smkul.csv
 無仝。資料無損著，毋過愛閣走一擺尾段。
 
-**做法：逐集ê頭四步會使平行，規批ê尾三步等攏做完才走一擺。**
+**做法：逐集ê頭幾步會使平行，規批ê尾三步等攏做完才走一擺。**
 
 **`ingest` 佮 `rebuild` 這馬干焦提 `b*.tsv`。** 進前兩爿攏 glob
 `*.tsv`，store 內底彼一个 `sample.tsv`（20210209_040，逐 72 條抽 4
@@ -99,7 +94,8 @@ PYTHONPATH=. .tox/rebuild/bin/python -m scripts.ocr.cli cues \
 伊現形**（彼集ê SRT 差 1,070 逝，ingest 嘛規批擋落來）。兩爿ê glob
 攏收斂做 `b*.tsv` 矣，各有測試。
 
-上危險ê是 `4-vision-rtf`：伊照舊編號索引，閣贏過 3-vision，所以編號
-一改伊會kā舊字蓋去毋著ê所在。**干焦 `rebuild --verify` 掠會著**——
-TSV、work transcripts、store cues.json 三爿攏一致，其他檢查全綠，
-差 1760 逝。
+本底閣較危險ê是 `4-vision-rtf` 彼个疊層：伊照舊編號索引，閣贏過
+vision 彼爿，所以編號一改伊會kā舊字蓋去毋著ê所在，**干焦
+`rebuild --verify` 掠會著**（TSV、work transcripts、store cues.json
+三爿攏一致，其他檢查全綠，差 1760 逝）。彼个疊層量過是全然重複ê，
+已經提掉矣——這馬逐字稿干焦一个來源，這類ê失誤無所在通生。

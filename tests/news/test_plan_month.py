@@ -12,6 +12,7 @@ import os
 import tempfile
 import unittest
 
+from scripts.news import paths
 from scripts.news import plan_month
 from scripts.news import resolve_slug
 
@@ -219,7 +220,7 @@ class TestTodo(Fixture):
         """已交付ê免抓——連重讀嘛免（使用者裁定 2026-08-31）。
 
         本底彼條是「已交付、本機無影片就抓轉來予重讀用」，1 月 11 集
-        逐擺攏會排入清單。重讀家己有抓檔ê路（`refine_fetch.sh`：用著
+        逐擺攏會排入清單。重讀家己有抓檔ê路（用著
         才抓、做煞就刣），所以規月抓檔莫替伊先囤。
         """
         entries = self._delivered()
@@ -352,7 +353,8 @@ class TestAlreadyCut(Fixture):
         entry = self._entry()
         work = os.path.join(self.root, entry["slug"] + ".work")
         os.makedirs(work, exist_ok=True)
-        path = os.path.join(work, "cues.json")
+        os.makedirs(os.path.join(work, "1-cues"), exist_ok=True)
+        path = paths.coarse_cues(work)
         with open(path, "w", encoding="utf-8") as handle:
             json.dump({"cues": []}, handle)
         self.assertFalse(

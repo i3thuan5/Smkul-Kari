@@ -45,12 +45,8 @@ class TestConstants(unittest.TestCase):
         news = os.path.join(paths.KARI, "news")
         ocr = os.path.join(news, "1-ocr")
         self.assertEqual(paths.KARI_CUES, os.path.join(ocr, "1-cues"))
-        self.assertEqual(paths.KARI_FROM_RTF,
-                         os.path.join(ocr, "2-from_rtf"))
-        self.assertEqual(paths.KARI_VISION, os.path.join(ocr, "3-vision"))
-        self.assertEqual(paths.KARI_VISION_RTF,
-                         os.path.join(ocr, "4-vision-rtf"))
-        self.assertEqual(paths.SRT_DIR, os.path.join(ocr, "6-srt"))
+        self.assertEqual(paths.KARI_VISION, os.path.join(ocr, "2-vision"))
+        self.assertEqual(paths.SRT_DIR, os.path.join(ocr, "3-srt"))
         self.assertEqual(paths.INVENTORY,
                          os.path.join(news, "inventory.json"))
         self.assertEqual(paths.TRACKER_STORE,
@@ -69,19 +65,16 @@ class TestConstants(unittest.TestCase):
         # 逐集檔案住佇階段目錄下的月份一層，所以階段常數是「基底」，
         # 毋是「檔案囥的所在」——組路徑一律行 stage_path()。
         name = "20210201_032_午間_Atayal_泰雅"
-        for base in (paths.KARI_CUES, paths.KARI_FROM_RTF,
-                     paths.KARI_VISION, paths.KARI_VISION_RTF,
-                     paths.SRT_DIR):
+        for base in (paths.KARI_CUES, paths.KARI_VISION, paths.SRT_DIR):
             self.assertEqual(paths.stage_path(base, name),
                              os.path.join(base, "2021-02", name))
 
-    def test_cross_episode_folders_and_tables_are_not_layered(self):
-        # 跨集產物佮總表無分層：報告是跨集的比對，mt-cache 是跨集共用的
-        # 翻譯快取，兩份總表本來就一集一逝。
-        ocr = os.path.join(paths.KARI, "news", "1-ocr")
-        self.assertEqual(paths.KARI_REPORT, os.path.join(ocr, "5-report"))
-        self.assertEqual(paths.MT_CACHE,
-                         os.path.join(paths.ASR_DIR, "mt-cache"))
+    def test_the_retired_stages_are_gone(self):
+        # 文稿供字彼條路線佮 align 延伸攏裁掉矣，常數留咧就是閣有人
+        # 會去指——階段目錄本身嘛已經對 store 提掉。
+        for name in ("KARI_FROM_RTF", "KARI_VISION_RTF", "KARI_REPORT",
+                     "MT_CACHE"):
+            self.assertFalse(hasattr(paths, name), name)
 
 
 class TestStagePath(unittest.TestCase):
@@ -375,26 +368,19 @@ class TestStageLayout(unittest.TestCase):
     def test_reading_nothing_is_none_not_a_guess(self):
         self.assertIsNone(paths.cues_to_read(self.work))
 
-    def test_a_work_dir_from_before_the_split_still_reads(self):
-        """舊版面（平的 `<work>/cues.json`）愛照常讀會著。
+    def test_the_pre_split_layout_is_no_longer_read(self):
+        """舊版面（平ê `<work>/cues.json`）已經無人捌矣。
 
-        遷移袂當一睏做煞：換這个版面ê時，《開會了》彼條線咧走一批
-        7 點鐘ê切 cue，一直咧生舊版面ê work dir。若讀ê程式干焦捌新
-        版面，伊彼批做到一半就斷去矣。
+        過渡期間伊排佇第三位讀會著，因為遷移袂當一睏做煞——換版面
+        彼陣《開會了》彼條線咧走一批 7 點鐘ê切 cue，一直咧生舊版面ê
+        work dir，讀ê程式若干焦捌新版面，彼批做到一半就斷去。
 
-        所以過渡期間三種攏讀會著，順序是精修 → 粗切 → 舊版面。
-        `migrate_cues_layout` 掃過了後這條就無人用矣。
+        `migrate_workdirs` 掃過矣（news 75 个、《開會了》40 个，兩爿
+        攏賰 0 个平版面），所以這條路提掉。留咧ê代價是：有人手動
+        khǹg一份平ê落去，程式會恬恬讀伊，而且無人知影彼份是佗位來ê。
         """
         self._write("cues.json")
-        self.assertEqual(paths.cues_to_read(self.work),
-                         os.path.join(self.work, "cues.json"))
-
-    def test_the_new_layout_wins_over_the_old_one(self):
-        # 兩種攏佇咧ê時（遷移做一半），新ê贏——舊ê是遺留，毋是正本。
-        self._write("cues.json")
-        self._write("1-cues/cues.json")
-        self.assertEqual(paths.cues_to_read(self.work),
-                         paths.coarse_cues(self.work))
+        self.assertIsNone(paths.cues_to_read(self.work))
 
     def test_refined_asks_the_file_not_the_flag(self):
         # 「敢精修過矣」是問彼个檔案佇無，毋是去剖粗切彼份內底ê旗標

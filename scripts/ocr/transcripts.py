@@ -8,12 +8,13 @@ records which rows a human actually looked at.
 import json
 import os
 import sys
+from scripts import datadirs
 from scripts.errors import PipelineError
 
 
 def read_manifest(workdir):
-    path = os.path.join(workdir, "cues.json")
-    if not os.path.exists(path):
+    path = datadirs.cues_to_read(workdir)
+    if path is None:
         raise PipelineError("no cues.json in %s -- run the `cues` stage first"
                             % workdir)
     with open(path, "r", encoding="utf-8") as handle:

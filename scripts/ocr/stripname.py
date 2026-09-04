@@ -50,3 +50,28 @@ def is_ordinal(path):
     of the change.
     """
     return bool(ORDINAL.match(os.path.basename(path)))
+
+
+ORDINAL_SHEET = re.compile(r"^sheet_\d+\.png$")
+
+
+def sheet_of(start):
+    """`t<milliseconds>.png` for a contact sheet starting at `start`.
+
+    A sheet holds several cues and both lines, so the only thing it can
+    be named after is where it begins -- no line suffix, unlike a strip.
+
+    Same reason as strips: `sheet_003.png` reads like an identifier and
+    is not one. Splitting a cue renumbers everything after it, the sheets
+    are rebuilt from the new numbering, and sheet three is then a
+    different piece of programme. `sheets.json` stays the one place that
+    maps a sheet to its cues, under either naming.
+    """
+    if start < 0:
+        raise PipelineError("起始時間袂使是負ê：%r" % start)
+    return "t%08d.png" % round(start * 1000)
+
+
+def is_ordinal_sheet(path):
+    """Was this sheet named the old way, off its position in the batch?"""
+    return bool(ORDINAL_SHEET.match(os.path.basename(path)))

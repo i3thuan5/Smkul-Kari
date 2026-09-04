@@ -21,6 +21,7 @@ import os
 import shutil
 import sys
 
+from scripts import datadirs
 from scripts.aiyalaeho import make_all
 from scripts.aiyalaeho import paths
 from scripts.aiyalaeho import tracker
@@ -34,7 +35,7 @@ def publishable(entry):
     nothing to do, which is exactly why the work dir was safe to delete.
     """
     work = paths.work_dir(entry["srt_name"])
-    if not os.path.exists(os.path.join(work, "cues.json")):
+    if not datadirs.cues_to_read(work):
         return "", "尚未切cue"
     if not make_all.vision_complete(work):
         return "", "視覺辨識尚未讀完"
@@ -60,7 +61,7 @@ def publish_one(entry, work):
     """Copy this episode's timeline into the store."""
     target = paths.stage_path(paths.KARI_CUES, entry["srt_name"], ".json")
     os.makedirs(os.path.dirname(target), exist_ok=True)
-    shutil.copy2(os.path.join(work, "cues.json"), target)
+    shutil.copy2(datadirs.cues_to_read(work), target)
     return target
 
 

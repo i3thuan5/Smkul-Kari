@@ -25,7 +25,6 @@ from scripts.errors import PipelineError
 
 WORK = paths.WORK
 WORK_EXT = ".work"
-CUES = "cues.json"
 
 
 def already_read(dst):
@@ -52,7 +51,7 @@ def prepare(slug):
             "overwrite" % dst)
     os.makedirs(dst, exist_ok=True)
 
-    with open(os.path.join(src, CUES), encoding="utf-8") as handle:
+    with open(paths.cues_to_read(src), encoding="utf-8") as handle:
         manifest = json.load(handle)
 
     # Point at the original strips rather than copying gigabytes of PNG.
@@ -60,7 +59,9 @@ def prepare(slug):
     if not os.path.islink(link):
         os.symlink(os.path.join("..", slug + WORK_EXT, "strips"), link)
 
-    with open(os.path.join(dst, CUES), "w", encoding="utf-8") as handle:
+    copied = paths.coarse_cues(dst)
+    os.makedirs(os.path.dirname(copied), exist_ok=True)
+    with open(copied, "w", encoding="utf-8") as handle:
         json.dump(manifest, handle, ensure_ascii=False)
     made = sheets.build_sheets(dst, manifest)
 
@@ -85,7 +86,7 @@ def main(argv=None):
         slug = entry["slug"]
         if args.slugs and slug not in args.slugs:
             continue
-        if not os.path.exists(os.path.join(WORK, slug + WORK_EXT, CUES)):
+        if not paths.cues_to_read(os.path.join(WORK, slug + WORK_EXT)):
             print("skip %s (not decoded)" % slug)
             continue
         dst = os.path.join(WORK, slug + ".B.work")

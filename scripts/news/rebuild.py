@@ -4,16 +4,15 @@
     python3 -m scripts.news.rebuild --verify
 
 This is the executable form of the srt-data-store spec's core guarantee:
-main repo (code) + Kari-SRT (news/1-ocr/ 1-cues + 3-vision + 4-vision-rtf,
-plus news/inventory.json) suffice to rebuild every delivered SRT and
+main repo (code) + Kari-SRT (news/1-ocr/ 1-cues + 2-vision, plus
+news/inventory.json) suffice to rebuild every delivered SRT and
 smkul.csv byte-identical to the committed deliverables in
-news/1-ocr/6-srt/ -- offline, no video, calling no model. If that
+news/1-ocr/3-srt/ -- offline, no video, calling no model. If that
 holds, everything under kithann/ really is a regenerable cache.
 
 How it stays byte-identical: it does not reimplement assembly. For each
-episode it synthesises a work dir (cues.json copied from Kari-SRT, a
-transcripts.json rebuilt from the vision TSVs, vision-rtf winning where both
-read a cue -- the order ingest applied them in) and then runs the very same
+episode it synthesises a work dir (the timeline copied from Kari-SRT, a
+transcripts.json rebuilt from the vision TSVs) and then runs the very same
 `scripts.news.make_srt` that built the deliverables, followed by the same
 tracker-row code make_all uses for smkul.csv.
 
@@ -29,6 +28,7 @@ import shutil
 import sys
 import tempfile
 
+from scripts.news import coaxial
 from scripts.news import make_srt
 from scripts.news import paths
 from scripts.news import tracker
@@ -50,10 +50,8 @@ def _tsv_lines(path):
 def episode_transcripts(srt_name):
     """transcripts.json content, rebuilt from the episode's vision TSVs."""
     resolved = {}
-    for source in (paths.KARI_VISION, paths.KARI_VISION_RTF):
-        folder = paths.stage_path(source, srt_name)
-        if not os.path.isdir(folder):
-            continue
+    folder = paths.stage_path(paths.KARI_VISION, srt_name)
+    if os.path.isdir(folder):
         # `b*.tsv` ê 才是視覺辨識ê批（644 个內底 643 个按呢號名）。
         # 賰彼一个 `sample.tsv` sort 起來排佇後壁，會kā彼幾條蓋過
         # 去；舊編號ê時內容拄好仝款所以看袂出來，重新編號了後就
@@ -84,7 +82,7 @@ def check_inputs(entries):
             problems.append("no vision TSVs for %s" % name)
         if not os.path.exists(paths.stage_path(paths.SRT_DIR, name,
                                                ".srt")):
-            problems.append("missing delivered 6-srt/%s.srt to compare against"
+            problems.append("missing delivered 3-srt/%s.srt to compare against"
                             % name)
     return problems
 
@@ -94,8 +92,9 @@ def rebuild_one(entry, tmp):
     name = entry["srt_name"]
     work = os.path.join(tmp, name + ".work")
     os.makedirs(work, exist_ok=True)
-    shutil.copy2(paths.stage_path(paths.KARI_CUES, name, ".json"),
-                 os.path.join(work, "cues.json"))
+    timeline = paths.coarse_cues(work)
+    os.makedirs(os.path.dirname(timeline), exist_ok=True)
+    shutil.copy2(paths.stage_path(paths.KARI_CUES, name, ".json"), timeline)
     with open(os.path.join(work, "transcripts.json"), "w",
               encoding="utf-8") as handle:
         json.dump(episode_transcripts(name), handle, ensure_ascii=False)
@@ -124,6 +123,25 @@ def _mismatches(tmp, entries):
     return mismatched
 
 
+def coaxial_problems(entries):
+    """Episodes whose two delivered sides disagree about time.
+
+    Only where both sides exist: the speech side is its own line and
+    "not made yet" is not a defect. See `scripts.news.coaxial`.
+    """
+    pairs = []
+    for entry in entries:
+        if entry["truncated"] or tracker.is_pending(entry):
+            continue
+        name = entry["srt_name"]
+        pairs.append((name,
+                      paths.stage_path(paths.SRT_DIR, name, ".srt"),
+                      paths.stage_path(
+                          os.path.join(paths.ASR_DIR, "3-srt-raw"),
+                          name, ".srt")))
+    return coaxial.problems(pairs)
+
+
 def _delivered_count(entries):
     count = 0
     for entry in entries:
@@ -135,7 +153,7 @@ def _delivered_count(entries):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--verify", action="store_true",
-                    help="byte-compare the rebuild against news/1-ocr/6-srt/")
+                    help="byte-compare the rebuild against news/1-ocr/3-srt/")
     args = ap.parse_args()
 
     entries = paths.load_inventory()
@@ -165,6 +183,14 @@ def main():
     if not args.verify:
         print("\nrebuilt into", tmp)
         return
+
+    drifted = coaxial_problems(entries)
+    if drifted:
+        for line in drifted:
+            print("NOT COAXIAL:", line)
+        raise PipelineError(
+            "%d 集ê語音側佮影像側對袂起來——重投影閣 render 一擺就好"
+            "（`asrmt_run --step entries` 起）" % len(drifted))
 
     mismatched = _mismatches(tmp, entries)
     if mismatched:

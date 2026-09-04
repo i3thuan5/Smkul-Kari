@@ -35,8 +35,7 @@ class TestOnlyBatchTsvs(unittest.TestCase):
 
     def _read(self, stage):
         with mock.patch.object(paths, "KARI_VISION", stage):
-            with mock.patch.object(paths, "KARI_VISION_RTF", stage + "-none"):
-                return rebuild.episode_transcripts("20210209_040_午間_X_甲")
+            return rebuild.episode_transcripts("20210209_040_午間_X_甲")
 
     def test_a_stray_tsv_does_not_overwrite_a_batch(self):
         stage = self._stage(("b01.tsv", "73\thàn\t著ê\n"),

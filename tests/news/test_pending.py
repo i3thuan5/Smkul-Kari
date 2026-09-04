@@ -55,8 +55,6 @@ class TestRebuildSkipsPending(unittest.TestCase):
             mock.patch.object(paths, "KARI_CUES", self.cues),
             mock.patch.object(paths, "SRT_DIR", self.srt),
             mock.patch.object(paths, "KARI_VISION", self.vision),
-            mock.patch.object(paths, "KARI_VISION_RTF",
-                              os.path.join(self.root, "vision-rtf")),
         ]
         for patch in self.patches:
             patch.start()

@@ -28,7 +28,7 @@
 # that already has a timeline -- in a work dir or in the store -- is not
 # downloaded at all, because cutting is the last step that needs the video.
 # Delivered episodes are never fetched here either; a reread downloads what
-# it needs when it runs (`refine_fetch.sh`). 使用者裁定 2026-08-31.
+# it needs when it runs. 使用者裁定 2026-08-31.
 # `plan_month.py --todo` decides all of that.
 set -u
 
@@ -200,7 +200,8 @@ while IFS=$'\t' read -r slug remote <&3; do
         # -- the log names the episode for a later retry.
         echo "$(date +%H:%M:%S) refine $slug"
         if ! nice -n 15 ionice -c 3 "$PY" -m scripts.news.refine_cues "$local_file" \
-             "$dst/cues.json" > "$LOG/$slug.refine.log" 2>&1; then
+             "$("$PY" -m scripts.news.paths --coarse-of "$dst")" \
+             > "$LOG/$slug.refine.log" 2>&1; then
             echo "$(date +%H:%M:%S) WARN  refine $slug failed, keeping" \
                  "coarse timings -- see $LOG/$slug.refine.log"
         fi
@@ -216,7 +217,8 @@ while IFS=$'\t' read -r slug remote <&3; do
             *) [[ -f "$local_file.keep" ]] || rm -f "$local_file" ;;
         esac
         done_count=$((done_count + 1))
-        ncues=$("$PY" -c "import json,sys;print(len(json.load(open(sys.argv[1]))['cues']))" "$dst/cues.json")
+        ncues=$("$PY" -c "import json,sys;print(len(json.load(open(sys.argv[1]))['cues']))" \
+                "$("$PY" -m scripts.news.paths --cues-of "$dst")")
         echo "$(date +%H:%M:%S) done  $slug  $ncues cues$kept"
     else
         echo "$(date +%H:%M:%S) FAIL  cues $slug -- see $LOG/$slug.cues.log"
