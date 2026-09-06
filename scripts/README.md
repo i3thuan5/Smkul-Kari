@@ -50,21 +50,29 @@
 | `srt.py` | SRT 格式：時間戳、render、parse |
 | `assemble.py` | 組裝鏈：同文合併、間距規則、0.5s 留白、`chain_with_spans`（條目↔真實窗對照——影像側交付與語音側 raw 跑同一條鏈，同軸因此逐 byte 成立） |
 
-## asrmt/——語音側引擎（預設線：到 raw 為止）
+## asrmt/——語音側引擎
 
 | 檔 | 做什麼 |
 |---|---|
 | `asr.py` | vosk 整集解碼 → 逐詞時間戳＋confidence（1-words） |
-| `project.py` | 詞按真實窗 max-overlap 歸戶條目（2-entries） |
-| `bisrt.py` | raw render：「族語：／華語：」兩行（3-srt-raw，預設終點） |
+| `project.py` | 詞按真實窗 max-overlap 歸戶條目（純函式，結果無落地——愛ê時陣當場算） |
+| `bisrt.py` | render：raw 兩逝「族語：／華語：」（2-srt-raw，正式交付）；分析用ê三逝版 |
+| `mtclient.py` | ai-labs 翻譯服務（族語→華語一个方向）＋內容定址ê `mt-cache/` |
+| `dialects.py` | 族別 → 服務ê語言碼靜態表（對服務ê選單抄落來；賽德克ê碼是 `trv_` 起頭，袂使用前綴臆族別） |
+| `judge.py` | 族華對應品質：材料（族語逝／字幕／譯文／前後字幕）、批次、收件檢查、`quality-cache/`、兩个裁判合成 |
+| `judge_prompt.md` | 裁判ê prompt——三級ê定義本身；改伊愛順紲 `PROMPT_VERSION` 加一 |
+| `judge_prompts/` | 歷版ê正文。快取逐筆判定攏記版本，彼个記號無正文就無意義——測試會擋「快取有、遮無」 |
+| `probes.py` | 構造法探針（配毋著字幕、改數字、剁後半句）——無真值ê時，用「應該降級ê」來量裁判ê盲點 |
+| `glossary.py` | 逐集掃一擺，揣出「佇幾若條攏對著仝一个華語主題」ê族語詞——逐批共用，省重推、標準一致 |
+| `orthography.py` | 機器譯文ê字形改做這个語料ê字形（日文變體、簡體）；做佇 render，快取保持忠實 |
 
 ## news/——族語新聞編排
 
 | 檔 | 做什麼 |
 |---|---|
 | `paths.py` | 語料路徑的單一出處（`stage_path()` 是階段目錄唯一出口，逐集檔案囥佇月份一層；`--var` 供 shell 取值；版面與保護轉出自 `scripts/datadirs.py`） |
-| `asrmt_batch.py` | 語音側整批：逐集 抓音檔→解碼→投影→raw→刪音檔 |
-| `asrmt_run.py` | 語音側單集步驟（預設 words→entries→raw；align 延伸 `--step` 指名） |
+| `asrmt_batch.py` | 語音側整批：逐集 抓音檔→解碼→投影＋render→刪音檔 |
+| `asrmt_run.py` | 語音側單集步驟（預設 words→raw；翻譯佮品質判斷 `--step` 指名） |
 | `anchors_ami.json` | 阿美語錨點表（數詞＋借詞專名，拼法對照模型 lexicon） |
 | `plan_month.py` | 一批＝一个播出月份：揀來源、寫 pending 條目、出跳過報告 |
 | `sources.py` | 一集配一支檔的規則（母帶優先→時段相符→同名不同夾→一檔一集） |
@@ -77,6 +85,7 @@
 | `split_cue.py` | 佇量出來ê時間點kā一條 cue 剖做兩條，後壁ê重新編號 |
 | `migrate_strips.py` | Strip ê檔名對 cue 序號換做起始時間（照磁碟頂ê檔案走，毋是照 cue）|
 | `migrate_workdirs.py` | 舊 work dir ê平 `cues.json` 徙入階段目錄（看檔案家己有無 `refined` 決定入 `1-cues/` 抑 `2-refined/`）；冪等，做過矣 |
+| `redump_store.py` | 店面ê JSON 重排做人讀有ê形（縮排、鍵排序、漢字免跳脫）；JSONL 一逝一筆免縮排。干焦改排版，內容無動 |
 | `gap_sheets.py`／`batches.py`／`ingest.py` | 視覺辨識批次的出題與收卷 |
 | `make_srt.py`／`make_all.py`／`publish.py`／`tracker.py`／`rebuild.py` | 組裝、定版、進度表、離線重建驗證 |
 | `coaxial.py` | 比影像側佮語音側交付ê (index, 起, 迄)——兩爿攏有ê時愛逐條仝款；干焦影像側ê免比（語音側是家己ê一條線）|
@@ -115,6 +124,22 @@ news 有而遮無ê四支：`fetch_sftp.sh`（素材已經佇本機）、`plan_m
 
 `transcode/` 是母帶封存：`encode_master.sh` 是編碼本身（CRF 23、
 yuv420p、flac、MKV），`archive_batch.py` 是整批流程——抓母帶落
-stage、編做 `*.partial.mkv`、ffmpeg 家己ê audio MD5 過了才改名就位、
-紲落去刣掉 stage 彼支。已經有封存ê集數直接跳過，所以斷去閣走接會
-起來。
+stage、編、驗、改名就位、紲落去刣掉 stage 彼支。已經有封存ê集數直接
+跳過，所以斷去閣走接會起來。
+
+編碼彼站行**三站**，`encode_master.sh` 刁工做煞頭一站就停：一逝
+ffmpeg 共來源全部聲軌攏紮入去封存，順紲算出**逐條來源聲軌ê指紋**；
+紲落來 `audio_tracks.py` 決定敢忠實、佗幾條愛留；上尾 `-c copy` 重
+封裝賰該留ê。按呢來源干焦讀一擺——舊版讀三擺（比聲軌、編碼、驗證），
+一支 19 GB ê母帶佇 USB 碟就是 57 GB ê讀取。
+
+`audio_tracks.py` 是這爿ê判斷：對音訊指紋看封存敢逐位元忠實、佗幾條
+聲軌愛留。純函式無 I/O，予 `archive_batch.py` 佮 `tools/mxf2mkv/` 兩
+爿共用。兩條聲軌內容無仝（主聲道／國際聲、族語／華語）是廣電ê常規，
+所以「看起來仝款就刣一條」這款判斷伊袂家己做——伊逐位元比。
+
+`tools/mxf2mkv/` 是仝一套編碼佮聲軌邏輯ê另外一个呼叫端：**隨身硬碟**
+一个資料夾底ê mxf 逐支轉、轉一支傳一支，遠端結構照來源排，囥
+`/home/mkv-raw/`。伊無查目錄、無查 `smkul.csv`、無查 inventory，所以
+猶未登記ê母帶嘛轉會動；佮 `/home/news/mkv/` 彼爿無相干，重複ê照轉。
+按怎走看 `tools/mxf2mkv/README.md`。

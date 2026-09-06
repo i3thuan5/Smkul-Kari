@@ -40,7 +40,7 @@ class TestTodoSelection(unittest.TestCase):
     """揀愛做的集數。
 
     「一集做到底」這款流程，語音側是佇 publish **進前**跑的——順序是
-    OCR → 3-srt-raw → publish。所以 pending 的集數袂使一律跳過；指名
+    OCR → 2-srt-raw → publish。所以 pending 的集數袂使一律跳過；指名
     彼集的時陣，是呼叫端咧講「這集的 cue 佮視覺逐字稿攏齊矣」，若無
     齊，`step_entries` 家己會大聲失敗。
     """

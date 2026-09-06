@@ -48,7 +48,12 @@
 理由的三條來路（使用者裁定 2026-09-03：有異常都直接記，不問）：
 
 1. **檔名**：字幕狀態 token 是 `無字幕` 或 `僅華語字幕` 時照錄。`catalogue._variety_after()` 本來就把這個 token 認出來再跳過，改成記下來即可；解析規則不變。這是播出端打的標籤，四筆全都有，推導決定性、可重跑、可測。
-2. **量測**：切 cue 前 `verify_band` 量到 no-band → 記 `無字幕`；量到 mismatch → **先換 `aiyalaeho-bilingual-low` 再量一次**（087／094 當初就是整帶低 14 px、靠第二個 preset 才過的，不能因為第一個 preset 不合就丟掉），仍 mismatch → 記 `版型不符：<verify_band 指名的第一行問題>`。兩種都不切、不擋、不等人。
+2. **量測**：切 cue 前 `verify_band` 量到 no-band → 記 `無字幕`。量到 mismatch **不可以馬上記理由**，要先走完兩層補救（兩層都是機械的，不用人判）：
+   - **換 `aiyalaeho-bilingual-low` 再量**：094 就是整帶低 14 px，標準 preset 的槽界 948 剛好切在它族語列中央，換低版就 OK。
+   - **`--duration 480`（取樣加倍）再量，兩個 preset 都試**：087 的兩列靠得太近，240 格的平均剖面把兩列黏成一段 `918..992`，`rows_fit` 就判不出來；480 格分得開（`918..943`／`967..1004`，OK）。**這是量出來的**（2026-09-05 實測：240 格 exit 1、480 格 exit 0），不是猜的。
+   - 兩層都過不了才記 `版型不符：<verify_band 指名的第一行問題>`。
+
+   為什麼要有第二層：087 已經交付 590 行，是好的雙語集；它當初是「靠量測和影格人工確認」繞過閘門切的（README 有記）。沒有這一層，本 change 的 SOP 會把它誤記成版型不符——實作時跑活體驗證才發現，設計原本寫「087／094 都靠低版 preset 救回來」是半錯的。
 3. **人工判定**：切完看 sheet_001 判版型異常（119／122 這種檔名沒說的）→ 記 `人工判定：<一句話>`，由做批次的人（Claude Code）當場決定並寫入，不問使用者。
 
 批次結束時的報告（`make_all` 與 `publish --check`）逐集列出異常集的理由，並標出理由不是來自檔名的（理由是 `無字幕` 而檔名字樣不是、或理由以 `版型不符：`／`人工判定：` 起頭）——讓人最後看一眼。反方向（檔名說無字幕、其實有）沒有程式守——旗標集根本不進 `verify_band`；補救是 SOP：登記時抽三格看一眼（四集已看過，寫進 README）。
@@ -73,7 +78,9 @@
 
 ### D3 — 旗標與影片長度都進 inventory；store 別處不放任何東西
 
-inventory 追加兩欄（尾端）：理由（字串：空＝雙語、照常；非空＝分流——這個字串就是第二張表那欄的值，「有旗標」＝非空）、影片長度（秒，浮點；由 ffprobe 取得，工具寫入）。`tracker.video_length()` 對有旗標者改讀 inventory 這欄，其餘照舊讀 `1-cues/` 時間軸。
+inventory 追加兩欄（尾端）：**`理由`**（字串：空＝雙語、照常；非空＝分流——這個字串就是第二張表那欄的值，「有旗標」＝非空）、**`影片長度秒`**（浮點秒數，由 ffprobe 取得、工具寫入）。`tracker.video_length()` 對有旗標者改讀 inventory 這欄，其餘照舊讀 `1-cues/` 時間軸。
+
+欄名寫 `影片長度秒` 而不是 `影片長度`：CSV 那欄是「時:分:秒」，inventory 這欄是浮點秒數，同名不同格式，人打開 inventory.json 會看不懂——`Kari-SRT/` 的內容要人讀得懂（實作時定的，2026-09-05）。
 
 **不放空時間軸到 `1-cues/`**：使用者裁定 store 不為這些集放東西；而且一份 `cues: []` 的檔看起來像交付品的輸入，會讓「`1-cues/` 有檔＝交付過」這個直覺失效。**不在 rebuild 時跑 ffprobe**：那會讓離線重建要影片，破壞 store 的核心承諾。inventory 本來就在 store、本來就是每集事實的所在，長度由工具寫、不手填，`rebuild` 只讀它就能逐 byte 重算第二張表——這和「影片長度 SHALL NOT 手填」的用意一致。
 
@@ -105,7 +112,16 @@ inventory 追加兩欄（尾端）：理由（字串：空＝雙語、照常；�
 
 ### D7 — 帶範圍由 `verify_band` 量、寫進工作目錄；`cues` 用 `--band-rows` 讀入
 
-`verify_band` 加 `--band-json PATH`：把 `band_extent()` 的結果（絕對列）連同判定與問題寫成 `<work>/band.json`。SOP（一條指令串，寫進 README）：`verify_band VIDEO --band-json "$W/band.json"`；離開碼 0 → `cues VIDEO --band-rows LO,HI`（絕對列，從 band.json 讀；`cli` 轉成 region 內偏移寫進 spec）→ `refine`；離開碼 1 → 改 `--preset aiyalaeho-bilingual-low` 再跑一次，仍 1 → `catalogue --annotate '<name>=版型不符：<band.json 的第一行問題>'`；離開碼 2 → `catalogue --annotate '<name>=無字幕'`。帶蓋滿 region 的集數（37 集）傳進去的就是整個 region，行為與現在相同。
+`verify_band` 加 `--band-json PATH`：把 `band_extent()` 的結果（絕對列）連同判定與問題寫成 `<work>/band.json`。
+
+**SOP（寫進 README，四步，每步都看離開碼）**：
+
+1. `verify_band VIDEO --band-json "$W/band.json"`
+2. 離開碼 **0** → `cues VIDEO --band-rows LO,HI`（絕對列，從 band.json 讀；`cli` 轉成 region 內偏移寫進 spec）→ `refine`
+3. 離開碼 **1**（版型不符）→ 依序試：`--preset aiyalaeho-bilingual-low` → `--duration 480` → `--preset aiyalaeho-bilingual-low --duration 480`。任何一步回 0 就用那組參數走第 2 步（`cues` 也用同一個 preset）；四種都回 1 才 `catalogue --annotate '<name>=版型不符：<band.json 的第一行問題>'`
+4. 離開碼 **2**（無帶）→ `catalogue --annotate '<name>=無字幕'`
+
+帶蓋滿 region 的集數（37 集）傳進去的就是整個 region，行為與現在相同。
 
 **不讓 `cues` 自己呼叫 `verify_band`**：`cues` 是 news 與 aiyalaeho 共用的引擎，`verify_band` 是 aiyalaeho 專屬判準，反向依賴。**不寫進 preset**：那是逐集的量測值，preset 是版型知識。
 
@@ -141,6 +157,24 @@ repo 已有兩份一模一樣的 `probe_duration`（news 的 `refine_cues`、tra
 
 那兩份 `cues.json` 在 `kithann/out/`（快取、gitignore），從沒進 store，加旗標後沒有任何程式會讀它們。留著或刪都行，不列為任務。098 從未切，不需動。
 
+### D14 — 與 `parallel-corpus-quality` 並行的接觸點
+
+**同時有三條線在跑**（2026-09-05 實地確認）：本 change、`parallel-corpus-quality`（語音側：`scripts/asrmt/`、`scripts/news/asrmt_*`、`Kari-SRT/news/2-asr/`）、`half-res-mask-and-slot-crop`（半解析遮罩＋新聞圖條列位裁切，`scripts/ocr/cuelib.py`／`cli.py`／`sheets.py`、`scripts/news/refine_cues.py`／`presets.json`／`vision_tools/prompt.py`）。三條都可並行，接觸點如下。
+
+**`half-res-mask-and-slot-crop` 不是空目錄，本 change 不刪它**（原本寫「建議刪除」是錯的，2026-09-05 更正）。它的 `frame_mask(scale)` 疊在本 change 的 `MaskSpec.band_rows` 上面，所以它的程式改動排在 1.2／1.4 之後；兩邊約定動 `scripts/ocr/` 那幾支之前互相通知、被通知的一方 `/loop 20m` 等。
+
+**`json.dump` 的四處已由 `parallel-corpus-quality` 改完**（`cli.py` 的 manifest 與 texts、`transcripts.py` 的 existing 與 verified，全部 `indent=2, sort_keys=True`），本 change 不重複改，只在動這兩支之前重讀。與 `parallel-corpus-quality` 的接觸點如下。
+
+1. **同一個檔兩邊都要改**：`scripts/ocr/cli.py`（他們 8.1 改全 repo `json.dump` 參數，含 `cli.py:158` 的 manifest；我 1.4 加 `--band-rows`）與 `scripts/README.md`（他們補四支新模組，`test_readme_covers_scripts` 逼的；我加一行參數說明）。協議：同一個檔一次只有一條線動、動手前重讀；我動的時候通知對方 `/loop 20m` 等我，對方動的時候我 `/loop 20m` 等他。其餘程式檔互不相碰（他們的 design 明文不碰 `scripts/aiyalaeho/`）。
+2. **spec 同一份不同條**：兩邊都對 `srt-data-store` 出 delta，但 MODIFIED／ADDED／REMOVED 的九個要求標題查過各不相同、都在主 spec。誰先歸檔誰先合，後歸檔的重跑 `openspec validate --strict`。
+3. **資料層的隱藏衝突——我這邊要改**：他們的 `redump_store` 會把 `1-ocr/1-cues/` 重排成 `indent=2, sort_keys=True`；`aiyalaeho/1-ocr/1-cues/` 現在只有 068 一個檔，是 `cli.py` 用 `indent=1` 寫的。而 `publish.main` 對**每一個** ready 的集（含已定版的 068）都會 `publish_one` → `shutil.copy2` 把工作目錄的 `cues.json` 再蓋一次進 store——會用 `indent=1` 蓋回去，兩邊來回翻。
+
+   **使用者裁定 2026-09-05：`json.dump` 照他們那邊的規格改。** 也就是本 change 動到的每一支寫 JSON 的程式，一律 `ensure_ascii=False, indent=2, sort_keys=True`（JSONL 不 indent，其餘照用）：`scripts/aiyalaeho/` 的 `publish`（inventory）、`catalogue`（inventory）、`make_srt`／`make_all`（qc），以及**影像側工作目錄那三支** `scripts/ocr/cli.py`（manifest、transcripts）與 `scripts/ocr/transcripts.py`（transcripts、verified）——那三支現在是 `indent=1`、沒有 `sort_keys`，而 `1-ocr/1-cues/` 的內容就是從那裡來的。`publish_one` 不再 `copy2`，改讀 JSON 再以同一組參數寫出，讓 store 內的排版由本程式決定而非複製來源。inventory 的鍵序從此是字母序（`INVENTORY_FIELDS` 只管重建 dict 時的欄位集合，不再管檔案裡的鍵序），這是一次性的整檔 diff，之後就穩。`rebuild` 讀的是內容，不受影響。與另一條線的 8.1 有重疊，照第 1 點的協議對時。
+4. **驗收互相踩**：`news` 的 `rebuild --verify` 是兩邊的驗收。他們 1.3（`mv 3-srt-raw 2-srt-raw`）到 4.3（`coaxial` 改完）之間 news verify 會紅；我的 1.5、10.4 若在那個窗口跑會誤判是我弄壞的。反過來，我若動到 `text_mask` 的預設行為，他們的 9.2 會紅。**協議（使用者裁定 2026-09-05）：對方在改的時候，我用 `/loop 20m` 等他；我在改共用檔的時候，通知他也 `/loop 20m` 等我。** 不互相打斷、不硬跑；紅的時候先看 DIFFERS 指名哪一側的檔。
+5. **額度是同一個帳號的**。他們 10.2：59 集、100 條一批、Sonnet 全判再 Fable 判三成，幾百次 subagent；我 9.2：16 集 × 7 批 Opus 約 112 次，加 119／122。之前單一 session 撞過 session limit（105 b02 半路中斷）。**使用者裁定 2026-09-05：不用怕，兩邊都有 `/loop 20m`，token 盡量用。** 所以不排隊、不互讓——撞到上限就由 `/loop` 等額度回來自動續跑，做到一個段落就回報。
+
+CPU 與磁碟不衝突：他們的 mt 步是網路單併發、judge 是 subagent；我的 `verify_band` 16 集各約 41 秒、不重切。Kari-SRT 子模組兩邊路徑分開（`news/2-asr/` 對 `aiyalaeho/`），刪檔都留給使用者 `git add`，分得開。
+
 ## 檔案樹
 
 `P` 產生者、`I` 輸入。只列本 change 新增或改動的檔；既有檔案的既有角色見歸檔 design。
@@ -151,8 +185,8 @@ scripts/ocr/
 └── cli.py                    cues --band-rows LO,HI → 轉 region 內偏移 → spec.band_rows（進 cues.json 的 mask）
 
 scripts/aiyalaeho/
-├── paths.py                  INVENTORY_FIELDS 尾端追加：理由、影片長度；
-│                             ABNORMAL_STORE／ABNORMAL_CACHE（smkul-字幕版型異常.csv 的兩個位置）；band_json(work)
+├── paths.py                  INVENTORY_FIELDS 尾端追加：理由、影片長度秒；
+│                             ABNORMAL_STORE／ABNORMAL_CACHE（smkul-字幕版型異常.csv 的兩個位置）；band_json(srt_name)
 ├── catalogue.py              parse()：字幕狀態 token → 理由欄；有旗標即 ffprobe 長度（D11）
 │                             --annotate：既有條目只補這兩欄；'<srt_name>=<理由>' 收量測／人工分類（D4）
 ├── verify_band.py            verdict(…, band=None) 槽落帶上守門（D8）；main：no-band → 2（D9）、

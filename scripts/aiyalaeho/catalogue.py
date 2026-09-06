@@ -25,9 +25,27 @@ So the folder listing *is* the episode list, and this module turns one
 name into one inventory entry. What it will not do is guess: three of the
 44 files on the server are older uploads named `116ALL_無字.mp4`,
 `119-混雜.mp4` and `122-混雜.mp4`, which name no language at all. Those are
-reported and skipped -- a person watches the video, and then names it with
-`--language`. Skipping rather than aborting is deliberate: one unreadable
-name must not hold up the forty that are readable.
+reported and skipped, to be named with `--language`. Skipping rather than
+aborting is deliberate: one unreadable name must not hold up the forty
+that are readable.
+
+Naming one rarely means watching it. Every episode paints its own language
+card into the top-right corner -- the island of Taiwan, the `a'iyalaeho:`
+title, and under them the language in its own spelling above the Chinese
+`〇〇族`. One frame carries it:
+
+    ffmpeg -ss 25 -i VIDEO -frames:v 1 -vf crop=340:260:1580:40 card.png
+
+Two files with a language in the name confirm the card says what it looks
+like it says: 123 reads `Truku 太魯閣族` and 107 reads `Hla'alua 拉阿魯哇族`.
+119 and 122 both read `Bunun 布農族`, and that is how they were named --
+their `混雜` is about the speech, not the subtitles, which are the ordinary
+two rows on the ordinary band.
+
+116 is the one the card does not rescue. Twenty frames spanning all 2880
+seconds show that corner empty; it carries no subtitles either, and the
+transcripts beside the videos on the server stop at episode 045 on a
+different numbering. Its language has to be listened for.
 """
 import argparse
 import json
@@ -179,6 +197,64 @@ def _variety_after(tokens, index, language):
     return ""
 
 
+# The subtitle-state wording that means "this episode cannot go through
+# the two-row bilingual pipeline", and what to record as the reason.
+# 雙語字幕 is the normal path and yields no reason at all.
+BILINGUAL = "雙語字幕"
+SUBTITLE_STATE = {
+    "無字幕": "無字幕",
+    # `116ALL_無字.mp4`, one of the older uploads, writes the short form.
+    "無字": "無字幕",
+    "僅華語字幕": "僅華語字幕",
+}
+
+
+def subtitle_state(tokens):
+    """Why this file cannot be delivered as a bilingual episode, or "".
+
+    The broadcaster writes it into the file name, and for the four
+    episodes that carry one it is the whole answer -- decisive, repeatable
+    and testable, where a hand-kept note would need somebody to remember.
+    Measurement cannot replace it: 083's single Chinese row measures as a
+    perfectly good subtitle band, so only the name says it has no Formosan
+    text.
+
+    An unrecognised 字幕 wording is returned as-is rather than assumed to
+    be normal: it is not the bilingual form, so it is not the normal path,
+    and recording what the name actually says is the honest default.
+    """
+    for token in tokens:
+        key = _key(token)
+        if key in SUBTITLE_STATE:
+            return SUBTITLE_STATE[key]
+        if "字幕" in key:
+            if key == BILINGUAL:
+                return ""
+            return key
+    return ""
+
+
+def _probe_duration(path):
+    """Seconds, straight from the container.
+
+    Imported inside the function so that registering an episode -- a
+    listing and some string work -- does not drag numpy and the rest of
+    the decoding stack in at import time. The news side already has this
+    exact call; a third copy would be one more place to keep in step.
+    """
+    from scripts.news.refine_cues import probe_duration
+    return probe_duration(path)
+
+
+def source_path(entry_or_name):
+    """The local copy of the video, for the one step that must open it."""
+    name = entry_or_name
+    if isinstance(entry_or_name, dict):
+        name = entry_or_name.get("file") or os.path.basename(
+            entry_or_name["video"])
+    return os.path.join(paths.SOURCE, os.path.basename(name))
+
+
 def code_for(language, variety):
     """The language tag: a private variety tag, else the ISO 639 code.
 
@@ -193,13 +269,16 @@ def code_for(language, variety):
     return LANGUAGES[language][1]
 
 
-def parse(file_name, language=""):
+def parse(file_name, language="", probe=None):
     """(entry, problem) for one video file name.
 
     `language` is a person's answer for a file that names none -- the three
     older uploads on the server. It is checked against the language table
     rather than trusted, so a typo fails loudly instead of creating an
     episode nobody can find.
+
+    `probe` reads a video's length; it is injected so the tests never open
+    a file, and so that only the episodes that need it get opened.
     """
     if language and language not in LANGUAGES:
         raise PipelineError(
@@ -224,7 +303,7 @@ def parse(file_name, language=""):
             variety = _variety_after(tokens, index, found)
 
     english = LANGUAGES[found][0]
-    return {
+    entry = {
         "file": os.path.basename(file_name),
         "video": CORPUS_DIR + os.path.basename(file_name),
         "srt_name": "%s_%03d_%s_%s" % (paths.KEY_PREFIX[:-1], int(episode),
@@ -239,17 +318,25 @@ def parse(file_name, language=""):
         # rebuild whatever it names, and there is nothing to rebuild from
         # yet; `publish` clears the flag once the batch is finished.
         "pending": True,
-    }, ""
+    }
+    reason = subtitle_state(tokens)
+    if reason:
+        # Only these carry the two extra fields: a bilingual episode's
+        # length comes from its timeline in 1-cues/, and adding an empty
+        # column to forty entries would be a column that means nothing.
+        entry["理由"] = reason
+        entry["影片長度秒"] = (probe or _probe_duration)(source_path(entry))
+    return entry, ""
 
 
-def resolve(file_names, languages=None):
+def resolve(file_names, languages=None, probe=None):
     """([entry…], [(file name, problem)…]) for a whole folder listing."""
     languages = languages or {}
     entries = []
     skipped = []
     for name in file_names:
         entry, problem = parse(name, languages.get(os.path.basename(name),
-                                                   ""))
+                                                   ""), probe)
         if problem:
             skipped.append((os.path.basename(name), problem))
         else:
@@ -278,6 +365,66 @@ def merge(planned, existing):
     return merged, added
 
 
+def annotate(entries, named=None, probe=None):
+    """Fill in `理由` and `影片長度秒` where they are missing.
+
+    `merge()` leaves a registered entry exactly as it is -- that is what
+    protects a name somebody corrected by hand -- so bringing the four
+    already-registered episodes up to date needs a path of its own. This
+    one writes those two fields and touches nothing else, so the diff
+    lands on the two lines it should.
+
+    `named` is `(srt_name, reason)`: the batch uses it when the band check
+    or a person, rather than the file name, is what decided. A reason is
+    never overwritten -- changing one is a person's job, and doing it by
+    hand is the point at which somebody notices.
+
+    Returns [(srt_name, field, value)…] -- what actually changed, so the
+    caller can print it and skip writing when nothing did.
+    """
+    probe = probe or _probe_duration
+    wanted = None
+    if named is not None:
+        wanted, reason = named
+        if not str(reason).strip():
+            raise PipelineError(
+                "--annotate ê理由袂使是空ê：欲寫啥理由愛講出來，"
+                "親像 '%s=無字幕'" % wanted)
+        if not _has(entries, wanted):
+            raise PipelineError("inventory 內底無 %s 這集" % wanted)
+
+    changed = []
+    for entry in entries:
+        name = entry["srt_name"]
+        if wanted is not None and name != wanted:
+            continue
+        if not entry.get("理由"):
+            found = reason if wanted is not None else _reason_of(entry)
+            if found:
+                entry["理由"] = found
+                changed.append((name, "理由", found))
+        if entry.get("理由") and not entry.get("影片長度秒"):
+            seconds = probe(source_path(entry))
+            entry["影片長度秒"] = seconds
+            changed.append((name, "影片長度秒", seconds))
+    return changed
+
+
+def _has(entries, srt_name):
+    for entry in entries:
+        if entry["srt_name"] == srt_name:
+            return True
+    return False
+
+
+def _reason_of(entry):
+    """What this entry's own file name says, or ""."""
+    stem = os.path.splitext(entry.get("file")
+                            or os.path.basename(entry["video"]))[0]
+    _episode, tokens = _tokens(stem)
+    return subtitle_state(tokens)
+
+
 def write(entries, path=None):
     """Write the inventory back, entries in registration order."""
     target = path or paths.INVENTORY
@@ -285,7 +432,8 @@ def write(entries, path=None):
     if folder:
         os.makedirs(folder, exist_ok=True)
     with open(target, "w", encoding="utf-8") as handle:
-        json.dump(entries, handle, ensure_ascii=False, indent=2)
+        json.dump(entries, handle, ensure_ascii=False, indent=2,
+                  sort_keys=True)
     return target
 
 
@@ -323,6 +471,28 @@ def _overrides(pairs):
     return out
 
 
+def _annotate_cli(args):
+    """`--annotate`: bring existing entries up to date, print what moved."""
+    named = None
+    if args.annotate:
+        name, sep, reason = args.annotate.partition("=")
+        if not sep:
+            raise PipelineError(
+                "--annotate 愛寫做 <srt_name>=<理由>，親像 "
+                "'開會了_106_Paiwan_排灣=無字幕'；收著ê是 %r" % args.annotate)
+        named = (paths.check_srt_name(name.strip()), reason.strip())
+
+    entries = paths.load_inventory()
+    changed = annotate(entries, named=named)
+    for srt_name, field, value in changed:
+        print("set   %-30s %s = %s" % (srt_name, field, value))
+    if changed and not args.dry_run:
+        write(entries)
+    print("\n改著 %d 筆欄位%s"
+          % (len(changed), "" if not args.dry_run else "（試跑，無寫入）"))
+    return 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("videos", nargs="*",
@@ -333,7 +503,15 @@ def main(argv=None):
                     help="干焦檔名合這个 regex ê")
     ap.add_argument("--language", action="append", metavar="檔名=族語別",
                     help="人判過ê族語別，予檔名講無ê彼幾支用")
+    ap.add_argument("--annotate", nargs="?", const="", default=None,
+                    metavar="srt_name=理由",
+                    help="補既有條目ê「理由」佮「影片長度秒」；無寫參數"
+                         "就是照檔名補規份，寫 srt_name=理由 就是指名"
+                         "（量測抑是人判ê結果按呢寫入）")
     args = ap.parse_args(argv)
+
+    if args.annotate is not None:
+        return _annotate_cli(args)
 
     names = args.videos or listing(only=args.only)
     entries, skipped = resolve(names, _overrides(args.language))

@@ -124,7 +124,8 @@ def migrate(work, dry_run=False):
         moved += 1
     book["cues"] = rewrite(book["cues"], moves)
     with open(book_path, "w", encoding="utf-8") as handle:
-        json.dump(book, handle, ensure_ascii=False, indent=2)
+        json.dump(book, handle, ensure_ascii=False, indent=2,
+                  sort_keys=True)
     return len(moves), moved
 
 

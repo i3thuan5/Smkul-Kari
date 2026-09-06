@@ -6,12 +6,16 @@ MKV, verify before delete).
     python3 -m scripts.transcode.archive_batch [--limit N]
 
 Per episode: fetch the master over SFTP into the shared stage dir (reused
-if already there with the right byte count), run encode_master.sh into a
-*.partial.mkv and rename it into place only once ffmpeg's own audio MD5
-check has passed, then delete the staged master. An episode whose archive
-mkv already exists is skipped, so an interrupted batch resumes without
-redoing finished work; a failing episode is reported and the batch moves
-on to the next one.
+if already there with the right byte count), then encode in three stages --
+one ffmpeg pass writing an archive with every source audio track plus a
+per-track source fingerprint, a comparison that decides which tracks are
+duplicates, and a `-c copy` remux down to the ones worth keeping. The
+result is renamed into place only once the audio has been shown to
+reproduce the source bit for bit; then the staged master is deleted.
+
+An episode whose archive mkv already exists is skipped, so an interrupted
+batch resumes without redoing finished work; a failing episode is reported
+and the batch moves on to the next one.
 """
 import argparse
 import contextlib
@@ -24,6 +28,7 @@ import sys
 from scripts.news import paths
 from scripts.news import resolve_slug
 from scripts.news import sources
+from scripts.transcode import audio_tracks
 from scripts.errors import PipelineError
 
 REMOTE_ROOT = "/docker"
@@ -362,16 +367,117 @@ def encode_lock(dst):
             os.remove(path)
 
 
+def _read_md5(path):
+    """The hash out of one of ffmpeg's md5-muxer files ("MD5=<hex>")."""
+    with open(path, encoding="utf-8") as handle:
+        return handle.read().strip().split("=", 1)[-1]
+
+
+def _source_md5s(work, name):
+    """The per-track source fingerprints encode_master.sh left behind."""
+    out = []
+    index = 0
+    while True:
+        path = os.path.join(work, "%s.src-a%d.md5" % (name, index))
+        if not os.path.exists(path):
+            return out
+        out.append(_read_md5(path))
+        index += 1
+
+
+def _encoded_md5s(archive, tracks, stream_copy):
+    """The same fingerprints, taken off the encoded archive.
+
+    Read from the local SSD, so this costs nothing like the source read
+    it replaces. `stream_copy` has to match the path the encode took: a
+    copied AAC track must be hashed as packets, not decoded samples --
+    Matroska drops mp4's priming-delay side data, so decoding one picks
+    up an extra frame at the front and every sample after it reads as
+    different even though the bytes are identical.
+    """
+    out = []
+    for index in range(tracks):
+        cmd = ["ffmpeg", "-v", "error", "-i", archive,
+               "-map", "0:a:%d" % index]
+        if stream_copy:
+            cmd += ["-c:a", "copy"]
+        cmd += ["-f", "md5", "-"]
+        done = subprocess.run(cmd, capture_output=True, text=True)
+        if done.returncode:
+            raise PipelineError("讀無封存ê音軌指紋：%s a:%d"
+                                % (archive, index))
+        out.append(done.stdout.strip().split("=", 1)[-1])
+    return out
+
+
+def _is_stream_copied(archive):
+    """Whether the archive's audio was copied rather than re-encoded."""
+    done = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "a:0",
+         "-show_entries", "stream=codec_name", "-of", "csv=p=0", archive],
+        capture_output=True, text=True)
+    return done.stdout.strip() != "flac"
+
+
+def _remux(archive, keep, dst):
+    """Copy the archive across keeping only `keep`'s audio tracks."""
+    cmd = ["ffmpeg", "-v", "error", "-y", "-i", archive, "-map", "0:v:0"]
+    for index in keep:
+        cmd += ["-map", "0:a:%d" % index]
+    cmd += ["-c", "copy", dst]
+    done = subprocess.run(cmd)
+    if done.returncode:
+        raise PipelineError("重新封裝失敗：%s" % dst)
+
+
 def _encode(src, dst):
-    """Encode one master into its archive, one process at a time."""
+    """Encode one master into its archive, one process at a time.
+
+    Three stages, because `encode_master.sh` deliberately stops after the
+    first one (see its header): it does a single ffmpeg pass that writes
+    an archive holding *every* source audio track plus one md5 per source
+    track, and leaves the judgement to us.
+
+    1. encode + fingerprint the source, one read of the master
+    2. compare against the archive's own tracks and decide what to keep
+    3. remux (-c copy) down to the kept tracks
+
+    Audio that does not reproduce the source bit for bit is a failure, not
+    a warning, and nothing lands in `dst` when it happens.
+    """
+    work = os.path.dirname(dst)
+    name = os.path.basename(dst)
+    if name.endswith(".mkv"):
+        name = name[:-len(".mkv")]
+    everything = os.path.join(work, name + ".all.mkv")
     partial = dst + ".partial.mkv"
     with encode_lock(dst):
         # Ours now -- the lock says no one else can be writing this one, so
-        # a leftover partial is from a run that died and is safe to clear.
-        if os.path.exists(partial):
-            os.remove(partial)
-        subprocess.run(["bash", ENCODE_SCRIPT, src, partial], check=True)
-        os.rename(partial, dst)
+        # leftovers are from a run that died and are safe to clear.
+        for stale in (partial, everything):
+            if os.path.exists(stale):
+                os.remove(stale)
+        try:
+            subprocess.run(["bash", ENCODE_SCRIPT, src, work, name],
+                           check=True)
+            sources = _source_md5s(work, name)
+            encoded = _encoded_md5s(everything, len(sources),
+                                    _is_stream_copied(everything))
+            verdict = audio_tracks.decide(sources, encoded)
+            if not verdict.bit_exact:
+                raise PipelineError("%s 音訊無逐位元相符：%s"
+                                    % (name, verdict.summary))
+            print("  %s" % verdict.summary)
+            _remux(everything, verdict.keep, partial)
+            os.rename(partial, dst)
+        finally:
+            for leftover in (everything, partial):
+                if os.path.exists(leftover):
+                    os.remove(leftover)
+            for index in range(16):
+                path = os.path.join(work, "%s.src-a%d.md5" % (name, index))
+                if os.path.exists(path):
+                    os.remove(path)
 
 
 def apply_limit(rows, limit):

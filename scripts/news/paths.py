@@ -223,6 +223,24 @@ KARI_CUES = os.path.join(OCR_STORE, "1-cues")
 KARI_VISION = os.path.join(OCR_STORE, "2-vision")
 SRT_DIR = os.path.join(OCR_STORE, "3-srt")
 
+# The speech side's stages, in production order: whole-episode recognition
+# (1-words) -> the two-line deliverable (2-srt-raw) -> the analysis renders
+# that add a machine translation (3-srt-ai) and the correspondence grade
+# (4-srt-quality). The projection between words and entries is a pure
+# function of 1-words and the picture side's timeline, so it is recomputed
+# where it is needed rather than stored -- there is no stage for it.
+ASR_WORDS = os.path.join(ASR_DIR, "1-words")
+ASR_RAW = os.path.join(ASR_DIR, "2-srt-raw")
+ASR_AI = os.path.join(ASR_DIR, "3-srt-ai")
+ASR_QUALITY = os.path.join(ASR_DIR, "4-srt-quality")
+
+# The two caches are content-addressed and shared across episodes, so they
+# have neither a stage number nor a month layer: a line translated once for
+# one episode is a hit for every other episode that says the same thing, and
+# a re-projection after the timeline changes finds its work already done.
+MT_CACHE = os.path.join(ASR_DIR, "mt-cache")
+QUALITY_CACHE = os.path.join(ASR_DIR, "quality-cache")
+
 # The delivered progress table sits at the corpus level: it lists both
 # techniques' per-episode state, so it belongs to neither directory.
 TRACKER_STORE = os.path.join(NEWS_STORE, "smkul.csv")

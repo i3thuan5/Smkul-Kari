@@ -183,7 +183,8 @@ def apply(stem, index, at, first, second):
     book["split"] = book.get("split", []) + [
         {"cue": index, "at": at, "first": first, "second": second}]
     with open(path, "w", encoding="utf-8") as handle:
-        json.dump(book, handle, ensure_ascii=False, indent=2)
+        json.dump(book, handle, ensure_ascii=False, indent=2,
+                  sort_keys=True)
 
     sheets_path = os.path.join(work, "sheets.json")
     if os.path.exists(sheets_path):
@@ -191,7 +192,7 @@ def apply(stem, index, at, first, second):
             sheets = json.load(handle)
         with open(sheets_path, "w", encoding="utf-8") as handle:
             json.dump(remap_sheets(sheets, index), handle,
-                      ensure_ascii=False)
+                      ensure_ascii=False, indent=2, sort_keys=True)
 
     name = None
     for entry in paths.load_inventory():

@@ -211,7 +211,8 @@ def write(report, inventory=None):
     """Register the plan's episodes in the inventory."""
     path = inventory or paths.INVENTORY
     with open(path, "w", encoding="utf-8") as handle:
-        json.dump(report.entries, handle, ensure_ascii=False, indent=2)
+        json.dump(report.entries, handle, ensure_ascii=False, indent=2,
+                  sort_keys=True)
     return path
 
 

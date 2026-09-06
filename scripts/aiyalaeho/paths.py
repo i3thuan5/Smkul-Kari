@@ -105,6 +105,16 @@ def work_dir(srt_name):
     return os.path.join(WORK, check_srt_name(srt_name) + ".work")
 
 
+def band_json(srt_name):
+    """Where `verify_band` leaves the rows it measured, for `cues` to read.
+
+    A work-dir cache, not store: what reaches the store is the range that
+    ended up in `cues.json`'s `mask`, written when the episode was cut.
+    This file only carries the measurement between the two steps.
+    """
+    return os.path.join(work_dir(srt_name), "band.json")
+
+
 # ------------------------------------------------------------ store（正本）
 
 # Kari-SRT is the submodule holding the canonical data, layered
@@ -125,6 +135,13 @@ SRT_DIR = os.path.join(OCR_STORE, "3-srt")
 # not layered and do not belong to any one stage.
 INVENTORY = os.path.join(AIYA_STORE, "inventory.json")
 TRACKER_STORE = os.path.join(AIYA_STORE, "smkul.csv")
+
+# Episodes that cannot go through this programme's two-row bilingual
+# pipeline get a table of their own, with the reason in a column. Keeping
+# them out of smkul.csv is what lets a reader of that table trust every
+# row in it: a row there means a delivered SRT exists.
+ABNORMAL_STORE = os.path.join(AIYA_STORE, "smkul-字幕版型異常.csv")
+ABNORMAL_CACHE = os.path.join(WORK, "smkul-字幕版型異常.csv")
 
 # presets.json is corpus knowledge -- which programme is laid out how -- so
 # it is part of the code and lives beside it.
@@ -152,10 +169,21 @@ INVENTORY_FIELDS = (
     "語言別",         # the variety named in the file name, or ""
     "語言代號",       # ISO 639 three-letter, or an RFC 5646 private tag
     "pending",       # registered, not yet delivered; publish deletes it
+    # Non-empty means this episode cannot go through the two-row bilingual
+    # pipeline, and says why: 無字幕 / 僅華語字幕 (from the file name),
+    # 版型不符：… (measured), 人工判定：… (somebody looked). It is the
+    # tenth column of smkul-字幕版型異常.csv, and the only thing that
+    # decides which of the two tables an episode lands in.
+    "理由",
+    # Seconds, as the container reports them. Only the abnormal episodes
+    # carry it: they have no timeline in 1-cues/ to derive a length from,
+    # and the offline rebuild may not open a video. Named for its unit so
+    # that nobody confuses it with smkul.csv's 影片長度, which is 時:分:秒.
+    "影片長度秒",
 )
 
 # Everything else in INVENTORY_FIELDS is required.
-INVENTORY_OPTIONAL = ("file", "pending")
+INVENTORY_OPTIONAL = ("file", "pending", "理由", "影片長度秒")
 
 # The one that becomes a path, so it is what gets checked on the way in.
 INVENTORY_NAMES = ("srt_name",)

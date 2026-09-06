@@ -114,7 +114,8 @@ def build_sheets(workdir, manifest, megapixels=1.10):
     # later -- see the `pending` stage.
     path = os.path.join(workdir, "sheets.json")
     with open(path, "w", encoding="utf-8") as handle:
-        json.dump(index_map, handle, ensure_ascii=False, indent=1)
+        json.dump(index_map, handle, ensure_ascii=False, indent=2,
+                  sort_keys=True)
     return made
 
 

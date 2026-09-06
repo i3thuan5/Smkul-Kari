@@ -97,7 +97,8 @@ def rebuild_one(entry, tmp):
     shutil.copy2(paths.stage_path(paths.KARI_CUES, name, ".json"), timeline)
     with open(os.path.join(work, "transcripts.json"), "w",
               encoding="utf-8") as handle:
-        json.dump(episode_transcripts(name), handle, ensure_ascii=False)
+        json.dump(episode_transcripts(name), handle, ensure_ascii=False,
+                  indent=2, sort_keys=True)
 
     out = os.path.join(tmp, "srt", name + ".srt")
     qc = make_srt.run(work, out)
@@ -123,23 +124,33 @@ def _mismatches(tmp, entries):
     return mismatched
 
 
-def coaxial_problems(entries):
-    """Episodes whose two delivered sides disagree about time.
+def speech_stages():
+    """The speech-side deliverables, each with how to rebuild it.
 
-    Only where both sides exist: the speech side is its own line and
-    "not made yet" is not a defect. See `scripts.news.coaxial`.
+    Imported here rather than at the top because `asrmt_run` reads this
+    module (it rebuilds an episode's transcripts the same way): at
+    module level the two would import each other while half-built.
+    A stage is listed as soon as something can produce it -- what makes
+    a stage checkable is a rebuilder, not whether any episode has got
+    that far yet.
     """
-    pairs = []
+    from scripts.news import asrmt_run
+    return [("2-srt-raw", paths.ASR_RAW, ".srt", asrmt_run.raw_body_of),
+            ("3-srt-ai", paths.ASR_AI, ".srt", asrmt_run.ai_body_of)]
+
+
+def speech_problems(entries):
+    """Speech-side deliverables the store cannot rebuild byte for byte.
+
+    Only files that exist: the speech side is its own line and "not made
+    yet" is not a defect. See `scripts.news.coaxial`.
+    """
+    names = []
     for entry in entries:
         if entry["truncated"] or tracker.is_pending(entry):
             continue
-        name = entry["srt_name"]
-        pairs.append((name,
-                      paths.stage_path(paths.SRT_DIR, name, ".srt"),
-                      paths.stage_path(
-                          os.path.join(paths.ASR_DIR, "3-srt-raw"),
-                          name, ".srt")))
-    return coaxial.problems(pairs)
+        names.append(entry["srt_name"])
+    return coaxial.problems(names, speech_stages())
 
 
 def _delivered_count(entries):
@@ -184,13 +195,14 @@ def main():
         print("\nrebuilt into", tmp)
         return
 
-    drifted = coaxial_problems(entries)
+    drifted = speech_problems(entries)
     if drifted:
         for line in drifted:
-            print("NOT COAXIAL:", line)
+            print("REBUILD DIFFERS:", line)
         raise PipelineError(
-            "%d 集ê語音側佮影像側對袂起來——重投影閣 render 一擺就好"
-            "（`asrmt_run --step entries` 起）" % len(drifted))
+            "%d 份語音側交付對 store 重建袂出來——重投影閣 render 一擺"
+            "（`asrmt_run <集名> --step raw`）；若是講快取內底無彼條，"
+            "彼份檔毋是對 store 產出來ê，愛查" % len(drifted))
 
     mismatched = _mismatches(tmp, entries)
     if mismatched:

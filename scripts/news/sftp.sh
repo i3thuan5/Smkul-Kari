@@ -6,6 +6,7 @@
 #         scripts/news/sftp.sh put LOCAL REMOTE
 #         scripts/news/sftp.sh mkdir REMOTE         (tolerates "already there")
 #         scripts/news/sftp.sh ls REMOTE            (long form, as parsed)
+#         scripts/news/sftp.sh rename OLD NEW       (remote -> remote)
 #         printf 'ls\n' | scripts/news/sftp.sh -    (ad-hoc batch on stdin)
 #
 # Paths are separate arguments, never pieces of a command string. `sftp -b`
@@ -40,7 +41,7 @@ SFTP_HOST="${SFTP_HOST:-ilrdf-corpus@192.168.35.10}"
 # 印用法、回傳離開碼；離開由呼叫端做，函式才有明確的出口
 usage() {
     echo "usage: $0 {get REMOTE LOCAL | put LOCAL REMOTE |" \
-         "mkdir REMOTE | ls REMOTE | -}" >&2
+         "mkdir REMOTE | ls REMOTE | rename OLD NEW | -}" >&2
     return 2
 }
 
@@ -101,6 +102,18 @@ case "$verb" in
         [[ $# -eq 2 ]] || { usage; exit $?; }
         check_path "$arg2"
         printf 'ls -l "%s"\n' "$arg2" > "$batch"
+        ;;
+    rename)
+        # Deliberately without mkdir's leading "-": for mkdir, "already
+        # there" is the normal case and must not abandon the batch. Here
+        # a failure means the final name never appeared, so the file did
+        # not really arrive -- and callers use "the final name exists" as
+        # their proof that an upload completed. Swallowing this would let
+        # the next run skip a file that is not actually there.
+        [[ $# -eq 3 ]] || { usage; exit $?; }
+        check_path "$arg2"
+        check_path "$arg3"
+        printf 'rename "%s" "%s"\n' "$arg2" "$arg3" > "$batch"
         ;;
     *)
         usage

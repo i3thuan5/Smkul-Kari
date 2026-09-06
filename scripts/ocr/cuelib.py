@@ -178,7 +178,7 @@ class MaskSpec(object):
 
     def __init__(self, white_min=185, max_spread=45, dark_max=95,
                  outline=True, outline_size=9, thin=False, thin_size=7,
-                 band_probe=None):
+                 band_probe=None, band_rows=None):
         self.white_min = white_min
         self.max_spread = max_spread
         self.dark_max = dark_max
@@ -190,12 +190,27 @@ class MaskSpec(object):
         # backdrop and never glyph. When the backdrop stops being there, the
         # subtitle is not on screen at all -- see band_present().
         self.band_probe = band_probe
+        # (lo, hi) rows within the region that the coloured band actually
+        # covers, or None for "all of it". Rows outside take no part in
+        # deciding where a cue starts and ends.
+        #
+        # 083 is why: its band covers only the lower half of the region and
+        # the 36 rows above it are picture. A frame's mask came out 88.3%
+        # white shirt and 11.7% glyph, so a line change moved the mask by
+        # 0.21-0.27 against a 0.35 threshold -- one cue ran through four
+        # sentences. Measured with the rows cropped, the same stretch splits
+        # at exactly the times a person reads off the video.
+        #
+        # This is the SEGMENTER's view, not the reader's: strips are cut
+        # from the preset's `lines` and are not affected.
+        self.band_rows = band_rows
 
     @classmethod
     def from_dict(cls, data):
         spec = cls()
         for key in ("white_min", "max_spread", "dark_max", "outline",
-                    "outline_size", "thin", "thin_size", "band_probe"):
+                    "outline_size", "thin", "thin_size", "band_probe",
+                    "band_rows"):
             if key in data:
                 setattr(spec, key, data[key])
         return spec
@@ -210,6 +225,7 @@ class MaskSpec(object):
             "thin": self.thin,
             "thin_size": self.thin_size,
             "band_probe": self.band_probe,
+            "band_rows": self.band_rows,
         }
 
 
@@ -249,13 +265,32 @@ def text_mask(rgb, spec):
     low = rgb.min(axis=2).astype(np.int16)
     high = rgb.max(axis=2).astype(np.int16)
     mask = (low > spec.white_min) & ((high - low) < spec.max_spread)
-    if not spec.outline:
+    if spec.outline:
+        dark = luma_of(rgb) < spec.dark_max
+        mask &= dilate(dark, spec.outline_size)
+        if spec.thin:
+            white = (low > spec.white_min) & ((high - low) < spec.max_spread)
+            mask &= ~erode(white, spec.thin_size)
+    return _within_band(mask, spec.band_rows)
+
+
+def _within_band(mask, band_rows):
+    """Blank every row the band does not cover; `None` leaves the mask be.
+
+    Applied last, after the outline and thinning passes, so that what it
+    drops is exactly "rows the band does not reach" and nothing else. The
+    `None` path returns the very same array, which is what keeps the news
+    side byte-for-byte identical.
+    """
+    if band_rows is None:
         return mask
-    dark = luma_of(rgb) < spec.dark_max
-    mask &= dilate(dark, spec.outline_size)
-    if spec.thin:
-        white = (low > spec.white_min) & ((high - low) < spec.max_spread)
-        mask &= ~erode(white, spec.thin_size)
+    lo, hi = int(band_rows[0]), int(band_rows[1])
+    lo = max(lo, 0)
+    hi = min(hi, mask.shape[0])
+    if lo <= 0 and hi >= mask.shape[0]:
+        return mask
+    mask[:lo, :] = False
+    mask[hi:, :] = False
     return mask
 
 

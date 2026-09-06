@@ -128,15 +128,35 @@ class TestParseNoise(unittest.TestCase):
             for value in self._parsed_values(got):
                 self.assertNotIn("字幕", value, name)
 
+    # 三支較早期ê上傳，檔名內底無族語別。`parse` 拒絕臆測是著ê行為，
+    # 所以規夾解析ê時 in 會回報問題，毋是解析會開。2026-09-06 三支
+    # 落地了後，原本彼句「逐支攏愛解析會開」就予現實反證去矣。
+    NAMELESS = ("116ALL_無字.mp4", "119-混雜.mp4", "122-混雜.mp4")
+
     def test_the_whole_folder_parses(self):
-        # 本機彼份是伺服器彼夾ê複本，逐支攏愛解析會開。
+        # 本機彼份是伺服器彼夾ê複本。除了頂懸彼三支以外，逐支攏愛
+        # 解析會開——新出現ê歹名猶原愛予這條紅。
         if not os.path.isdir(paths.SOURCE):
             self.skipTest("no local copy of the source folder")
+        refused = []
         for name in sorted(os.listdir(paths.SOURCE)):
             if not name.lower().endswith(".mp4"):
                 continue
             entry, problem = catalogue.parse(name)
+            if problem:
+                refused.append(name)
+                continue
+            paths.check_srt_name(entry["srt_name"])
+        self.assertEqual(sorted(refused), sorted(
+            name for name in self.NAMELESS
+            if os.path.isfile(os.path.join(paths.SOURCE, name))))
+
+    def test_the_nameless_three_parse_once_a_language_is_given(self):
+        # 有人講出族語別了後，仝彼三个名就愛解析會開。
+        for name in self.NAMELESS:
+            entry, problem = catalogue.parse(name, language="布農")
             self.assertEqual(problem, "", name)
+            self.assertEqual(entry["族語別(英)"], "Bunun", name)
             paths.check_srt_name(entry["srt_name"])
 
 
@@ -230,6 +250,243 @@ class TestRegister(unittest.TestCase):
         self._register(["083-魯凱語-非霧台-僅華語字幕.mp4"])
         got = self._load()
         self.assertEqual(got[0]["語言別"], "非霧台")
+
+
+class TestParseReason(unittest.TestCase):
+    """檔名ê字幕狀態字樣 → `理由` 欄。非空就是行袂過雙語流程ê集。"""
+
+    def test_no_subtitles_at_all(self):
+        self.assertEqual(parse("88-泰雅語-無字幕.mp4")["理由"], "無字幕")
+
+    def test_chinese_only(self):
+        got = parse("083-魯凱語-非霧台-僅華語字幕.mp4")
+        self.assertEqual(got["理由"], "僅華語字幕")
+
+    def test_bilingual_carries_no_reason_field_at_all(self):
+        # 「無資料ê欄莫養」：雙語集是 38 集，逐集园一个空欄無意思，
+        # 嘛會予人看做「理由袂記得填」。無彼隻鍵就是正常。
+        self.assertNotIn("理由", parse("082-阿美語-雙語字幕.mp4"))
+
+    def test_a_parenthetical_note_is_not_a_reason(self):
+        # 括號內底講ê是受訪者講啥話，毋是字幕按怎排。這兩集是雙語集。
+        for name in ("108-排灣語-雙語字幕（講中文居多）.mp4",
+                     "111-阿美語-雙語字幕（很多人講中文）.mp4"):
+            self.assertNotIn("理由", parse(name), name)
+
+    def test_the_short_form_on_the_server_counts(self):
+        # `116ALL_無字.mp4` 是較早期上傳ê，字樣是「無字」毋是「無字幕」。
+        # 伊名內無族語別，愛人指定才登記會起來；伊猶未落載，所以量長度
+        # 彼步用假ê。
+        got = catalogue.parse("116ALL_無字.mp4", language="布農",
+                              probe=lambda _path: 2900.0)[0]
+        self.assertEqual(got["理由"], "無字幕")
+
+    def test_a_reason_never_lands_in_another_field(self):
+        got = parse("88-泰雅語-無字幕.mp4")
+        self.assertEqual(got["語言別"], "")
+        self.assertEqual(got["族語別(中)"], "泰雅")
+
+    def test_every_local_file_gets_a_verdict(self):
+        # 規夾ê檔逐支攏愛判會出來——理由空ê是雙語集，非空ê是異常集。
+        if not os.path.isdir(paths.SOURCE):
+            self.skipTest("no local copy of the source folder")
+        reasons = {}
+        for name in sorted(os.listdir(paths.SOURCE)):
+            if not name.lower().endswith(".mp4"):
+                continue
+            entry, problem = catalogue.parse(
+                name, probe=lambda _path: 2900.0)
+            if problem:
+                continue
+            reasons[entry["集數"]] = entry.get("理由", "")
+        abnormal = []
+        for episode in sorted(reasons):
+            if reasons[episode]:
+                abnormal.append(episode)
+        self.assertEqual(abnormal, ["83", "88", "90", "98"])
+
+
+class TestParseDuration(unittest.TestCase):
+    """異常集登記ê時就量長度——in 佇 `1-cues/` 無時間軸通推。"""
+
+    def test_an_abnormal_episode_is_probed(self):
+        seen = []
+
+        def probe(path):
+            seen.append(path)
+            return 2969.967
+
+        got = catalogue.parse("88-泰雅語-無字幕.mp4", probe=probe)[0]
+        self.assertEqual(got["影片長度秒"], 2969.967)
+        self.assertEqual(len(seen), 1)
+        self.assertTrue(seen[0].endswith("88-泰雅語-無字幕.mp4"))
+
+    def test_a_bilingual_episode_is_not_probed(self):
+        # 雙語集ê長度是對 `1-cues/` 時間軸推ê，這位莫開影片。
+        def probe(path):
+            raise AssertionError("袂使量雙語集：%s" % path)
+
+        got = catalogue.parse("082-阿美語-雙語字幕.mp4", probe=probe)[0]
+        self.assertNotIn("影片長度秒", got)
+
+
+class TestAnnotate(unittest.TestCase):
+    """既有條目補這兩欄——`merge()` 袂振動舊條目，所以愛另外一條路。"""
+
+    def _entry(self, **over):
+        entry = {
+            "file": "88-泰雅語-無字幕.mp4",
+            "video": "ilrdf-corpus/族語節目/開會了/88-泰雅語-無字幕.mp4",
+            "srt_name": "開會了_088_Atayal_泰雅",
+            "節目名稱": "開會了",
+            "集數": "88",
+            "族語別(英)": "Atayal",
+            "族語別(中)": "泰雅",
+            "語言別": "",
+            "語言代號": "tay",
+            "pending": True,
+        }
+        entry.update(over)
+        return entry
+
+    def _probe(self, seconds=2969.967):
+        def probe(_path):
+            return seconds
+        return probe
+
+    def test_it_fills_the_reason_from_the_file_name(self):
+        entries = [self._entry()]
+        changed = catalogue.annotate(entries, probe=self._probe())
+        self.assertEqual(entries[0]["理由"], "無字幕")
+        self.assertTrue(changed)
+
+    def test_it_fills_the_duration_for_abnormal_entries(self):
+        entries = [self._entry()]
+        catalogue.annotate(entries, probe=self._probe())
+        self.assertEqual(entries[0]["影片長度秒"], 2969.967)
+
+    def test_a_bilingual_entry_keeps_no_reason_field(self):
+        entries = [self._entry(file="082-阿美語-雙語字幕.mp4",
+                               srt_name="開會了_082_Amis_阿美")]
+        catalogue.annotate(entries, probe=self._probe())
+        self.assertNotIn("理由", entries[0])
+        self.assertNotIn("影片長度秒", entries[0])
+
+    def test_it_leaves_a_bilingual_entry_alone(self):
+        entries = [self._entry(file="082-阿美語-雙語字幕.mp4",
+                               srt_name="開會了_082_Amis_阿美")]
+        before = dict(entries[0])
+        changed = catalogue.annotate(entries, probe=self._probe())
+        self.assertEqual(entries[0], before)
+        self.assertEqual(changed, [])
+
+    def test_it_touches_no_other_field(self):
+        entries = [self._entry()]
+        before = dict(entries[0])
+        catalogue.annotate(entries, probe=self._probe())
+        for field in before:
+            self.assertEqual(entries[0][field], before[field], field)
+
+    def test_nothing_to_do_reports_nothing(self):
+        entries = [self._entry(理由="無字幕", 影片長度秒=2969.967)]
+        self.assertEqual(catalogue.annotate(entries, probe=self._probe()), [])
+
+    def test_a_named_reason_is_written(self):
+        entries = [self._entry(file="106-排灣語-雙語字幕.mp4",
+                               srt_name="開會了_106_Paiwan_排灣")]
+        reason = "版型不符：字幕逝 y=1005..1014 無囥佇任何一个宣告ê槽內"
+        catalogue.annotate(entries, named=("開會了_106_Paiwan_排灣", reason),
+                           probe=self._probe())
+        self.assertEqual(entries[0]["理由"], reason)
+        self.assertEqual(entries[0]["影片長度秒"], 2969.967)
+
+    def test_a_named_reason_may_not_be_empty(self):
+        entries = [self._entry()]
+        self.assertRaises(PipelineError, catalogue.annotate, entries,
+                          named=("開會了_088_Atayal_泰雅", ""))
+
+    def test_a_named_reason_does_not_overwrite_one_that_is_there(self):
+        entries = [self._entry(理由="無字幕")]
+        catalogue.annotate(entries, named=("開會了_088_Atayal_泰雅",
+                                           "人工判定：帶色無對"),
+                           probe=self._probe())
+        self.assertEqual(entries[0]["理由"], "無字幕")
+
+    def test_a_named_episode_that_is_not_registered_is_refused(self):
+        entries = [self._entry()]
+        self.assertRaises(PipelineError, catalogue.annotate, entries,
+                          named=("開會了_999_Amis_阿美", "無字幕"))
+
+    def test_it_says_what_it_changed(self):
+        entries = [self._entry()]
+        changed = catalogue.annotate(entries, probe=self._probe())
+        names = []
+        for name, _field, _value in changed:
+            names.append(name)
+        self.assertEqual(names.count("開會了_088_Atayal_泰雅"), 2)
+
+
+class TestAnnotateCli(unittest.TestCase):
+    """`--annotate` ê兩款用法，佮伊拒收啥。"""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="aiya-ann-")
+        self.inventory = os.path.join(self.tmp, "inventory.json")
+        entry = {
+            "file": "88-泰雅語-無字幕.mp4",
+            "video": "ilrdf-corpus/族語節目/開會了/88-泰雅語-無字幕.mp4",
+            "srt_name": "開會了_088_Atayal_泰雅",
+            "節目名稱": "開會了",
+            "集數": "88",
+            "族語別(英)": "Atayal",
+            "族語別(中)": "泰雅",
+            "語言別": "",
+            "語言代號": "tay",
+            "pending": True,
+        }
+        with open(self.inventory, "w", encoding="utf-8") as handle:
+            json.dump([entry], handle, ensure_ascii=False)
+        self._patch(paths, "INVENTORY", self.inventory)
+        self._patch(catalogue, "_probe_duration", lambda _p: 2969.967)
+
+    def _patch(self, module, name, value):
+        old = getattr(module, name)
+        setattr(module, name, value)
+        self.addCleanup(setattr, module, name, old)
+
+    def _load(self):
+        return paths.load_inventory(self.inventory)
+
+    def test_no_argument_fills_from_the_file_names(self):
+        self.assertEqual(catalogue.main(["--annotate"]), 0)
+        got = self._load()[0]
+        self.assertEqual(got["理由"], "無字幕")
+        self.assertEqual(got["影片長度秒"], 2969.967)
+
+    def test_a_named_reason_is_written(self):
+        catalogue.main(["--annotate",
+                        "開會了_088_Atayal_泰雅=人工判定：帶色無對"])
+        self.assertEqual(self._load()[0]["理由"], "人工判定：帶色無對")
+
+    def test_a_dry_run_writes_nothing(self):
+        catalogue.main(["--annotate", "-n"])
+        self.assertNotIn("理由", self._load()[0])
+
+    def test_a_named_argument_without_an_equals_sign_is_refused(self):
+        self.assertRaises(PipelineError, catalogue.main,
+                          ["--annotate", "開會了_088_Atayal_泰雅"])
+
+    def test_a_bad_name_is_refused(self):
+        self.assertRaises(PipelineError, catalogue.main,
+                          ["--annotate", "../x=無字幕"])
+
+    def test_running_it_twice_changes_nothing_the_second_time(self):
+        catalogue.main(["--annotate"])
+        with open(self.inventory, "rb") as handle:
+            first = handle.read()
+        catalogue.main(["--annotate"])
+        with open(self.inventory, "rb") as handle:
+            self.assertEqual(handle.read(), first)
 
 
 if __name__ == "__main__":

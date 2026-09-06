@@ -116,8 +116,10 @@ class TestUsageErrors(unittest.TestCase):
         self.assertEqual(run().returncode, 2)
 
     def test_unknown_verb_is_refused(self):
+        # `rename` 本底佇這口灶，後來 mxf2mkv 需要伊（傳暫名才換正名）
+        # 才加入去，所以這位換做別个無支援ê動詞。
         self.assertEqual(run("rm", "/a").returncode, 2)
-        self.assertEqual(run("rename", "/a", "/b").returncode, 2)
+        self.assertEqual(run("chmod", "/a", "/b").returncode, 2)
 
     def test_get_needs_both_sides(self):
         self.assertEqual(run("get", "/only-remote").returncode, 2)
@@ -128,3 +130,46 @@ class TestUsageErrors(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestRename(unittest.TestCase):
+    """rename：傳煞才共暫名換做正名。
+
+    為著「已經做好ê就跳過」這條判準。成品幾若个位元組愛轉煞才知,
+    所以袂當提位元組數去問「遠端彼份完整無」——彼愛先花二十分鐘
+    轉一支才比得。改做傳去 <名>.mkv.partial，位元組數對了才 rename
+    做 <名>.mkv：按呢「正名有佇咧」本身就是「完整」ê證據，因為斷
+    去ê彼份叫做別个名。
+
+    佮 archive_batch.py 佇本機做ê代誌仝款（.partial.mkv → os.rename）。
+    """
+
+    def test_rename_builds_one_quoted_line(self):
+        proc = run("rename", "/home/mkv-raw/2月/a.mkv.partial",
+                   "/home/mkv-raw/2月/a.mkv")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(
+            proc.stdout,
+            'rename "/home/mkv-raw/2月/a.mkv.partial" '
+            '"/home/mkv-raw/2月/a.mkv"\n')
+
+    def test_rename_checks_both_paths(self):
+        proc = run("rename", '/home/a"b.partial', "/home/a.mkv")
+        self.assertNotEqual(proc.returncode, 0)
+        proc = run("rename", "/home/a.partial", "/home/a\nb.mkv")
+        self.assertNotEqual(proc.returncode, 0)
+
+    def test_rename_takes_exactly_two_paths(self):
+        self.assertNotEqual(run("rename", "/home/a").returncode, 0)
+        self.assertNotEqual(
+            run("rename", "/a", "/b", "/c").returncode, 0)
+
+    def test_rename_does_not_tolerate_failure(self):
+        """袂使加頭前彼个 "-"。
+
+        mkdir 用 "-" 是因為「已經有矣」是正常狀況。rename 倒反：
+        伊若失敗，就是正名無出現，彼支片實際上無傳成功——彼陣袂當
+        恬恬過去，若無下一擺會共伊當做做好矣。
+        """
+        proc = run("rename", "/home/a.partial", "/home/a.mkv")
+        self.assertFalse(proc.stdout.startswith("-"))

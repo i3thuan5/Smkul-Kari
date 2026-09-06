@@ -156,7 +156,8 @@ def main():
         return 0
     if added or replaced:
         with open(paths.INVENTORY, "w", encoding="utf-8") as handle:
-            json.dump(entries, handle, ensure_ascii=False, indent=2)
+            json.dump(entries, handle, ensure_ascii=False, indent=2,
+                      sort_keys=True)
     print("\n%d added, %d replaced, %d already there; inventory now holds "
           "%d episode(s)"
           % (len(added), len(replaced), len(skipped), len(entries)))

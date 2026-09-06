@@ -3,9 +3,11 @@
 
     python3 -m scripts.news.asrmt_batch [--limit N]
 
-Per episode: fetch the mp3 over SFTP, decode (words), project
-(entries), render the raw SRT -- the default endpoint (使用者裁定) --
-then delete the audio. Episodes already done, pending or truncated are
+Per episode: fetch the mp3 over SFTP, decode (words), then project and
+render the two-line SRT -- the end of the machine-time work -- and
+delete the audio. Translation and grading come after, in their own
+steps, because they are not CPU work: one talks to a public service,
+the other spends model tokens. Episodes already done, pending or truncated are
 skipped; a failing episode is reported and the batch moves on.
 """
 import argparse
@@ -48,7 +50,7 @@ def _todo(entries, worker, total, raw_dir, only=""):
 
     `only` names a single episode and takes it even while it is pending.
     Doing an episode end to end runs the speech side *before* `publish`
-    -- OCR, then 3-srt-raw, then publish -- so "pending" no longer means
+    -- OCR, then 2-srt-raw, then publish -- so "pending" no longer means
     "not ready"; naming the episode is the caller saying its cues and
     vision transcripts are in. If they are not, `step_entries` fails and
     says which file is missing.
@@ -72,13 +74,12 @@ def _todo(entries, worker, total, raw_dir, only=""):
 
 
 def _run_episode(entry, catalogue):
-    """Fetch -> decode -> project -> raw -> delete audio, one episode."""
+    """Fetch -> decode -> project+render -> delete audio, one episode."""
     name = entry["srt_name"]
     audio = os.path.join(asrmt_run._workdir(name), "audio.mp3")
     if not os.path.exists(audio):
         _fetch(asrmt_run.mp3_remote(name, catalogue), audio)
     asrmt_run.step_words(name, entry["族語別(英)"])
-    asrmt_run.step_entries(name)
     asrmt_run.step_raw(name)
     if os.path.exists(audio):
         os.remove(audio)
@@ -103,7 +104,7 @@ def main(argv=None):
     with open(paths.CATALOGUE, encoding="utf-8-sig", newline="") as handle:
         catalogue = list(csv.DictReader(handle))
 
-    raw_dir = os.path.join(paths.ASR_DIR, "3-srt-raw")
+    raw_dir = paths.ASR_RAW
     todo = _todo(entries, worker, total, raw_dir, only=args.only)
     if args.limit:
         todo = todo[:args.limit]

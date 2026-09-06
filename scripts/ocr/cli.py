@@ -81,6 +81,48 @@ def write_preview(video_path, region, lines, path, count=6):
         Image.fromarray(np.vstack(tiles)).save(path)
 
 
+def band_rows_of(text, region):
+    """`--band-rows LO,HI` (absolute rows) -> (lo, hi) inside the region.
+
+    The caller has absolute rows: `verify_band --band-json` measures where
+    the coloured band actually sits (083: y924..1014). What goes into the
+    manifest is an offset inside the region, because `normalize_region`
+    snaps the region to even crop bounds and an absolute row could then be
+    off by one; an offset travels with the region and depends on nothing
+    outside the file.
+
+    Bad input raises rather than falling back to the default: a silently
+    ignored range means cutting against the wrong strip of pixels, which
+    is exactly the failure this option exists to prevent.
+    """
+    if not text:
+        return None
+    parts = []
+    for part in str(text).split(","):
+        parts.append(part.strip())
+    if len(parts) != 2:
+        raise PipelineError(
+            "--band-rows 愛寫做 LO,HI 兩个絕對列，親像 924,1014；"
+            "收著ê是 %r" % text)
+    rows = []
+    for part in parts:
+        try:
+            rows.append(int(part))
+        except ValueError:
+            raise PipelineError("--band-rows ê %r 毋是數字" % part)
+    if rows[0] >= rows[1]:
+        raise PipelineError("--band-rows ê LO 愛細過 HI，收著ê是 %r" % text)
+
+    top = region[1]
+    lo = max(rows[0] - top, 0)
+    hi = min(rows[1] - top, region[3])
+    if lo >= hi:
+        raise PipelineError(
+            "--band-rows %s 佮 region y=%d..%d 無相交——剪了是空ê，"
+            "遮罩會規塊烏" % (text, top, top + region[3]))
+    return (lo, hi)
+
+
 def _region_spec_lines(video, args, key, preset):
     """The crop region: --region beats the preset beats detection."""
     spec = cuelib.MaskSpec()
@@ -155,7 +197,8 @@ def write_manifest(workdir, manifest):
     path = datadirs.coarse_cues(workdir)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as handle:
-        json.dump(manifest, handle, ensure_ascii=False, indent=1)
+        json.dump(manifest, handle, ensure_ascii=False, indent=2,
+                  sort_keys=True)
     return path
 
 
@@ -190,6 +233,14 @@ def stage_cues(args):
         print("region snapped to even crop bounds: %d,%d,%d,%d"
               % tuple(fixed))
     region = fixed
+
+    # After the region is final, so the offsets are measured against the
+    # snapped bounds and not the ones asked for.
+    band_rows = band_rows_of(getattr(args, "band_rows", None), region)
+    if band_rows is not None:
+        spec.band_rows = band_rows
+        print("segmenting on band rows %d..%d of the region (strips unchanged)"
+              % band_rows)
 
     if lines is None:
         lines = _split_region_lines(video, region, spec, args.lang)
@@ -274,7 +325,8 @@ def stage_ocr(args):
 
     path = os.path.join(workdir, "transcripts.json")
     with open(path, "w", encoding="utf-8") as handle:
-        json.dump(texts, handle, ensure_ascii=False, indent=1)
+        json.dump(texts, handle, ensure_ascii=False, indent=2,
+                  sort_keys=True)
     print("wrote %s (%d cues)" % (path, len(texts)))
     return 0
 
@@ -698,6 +750,12 @@ def add_cue_options(parser):
                              "not the name, identifies the programme")
     parser.add_argument("--autodetect", action="store_true",
                         help="ignore any matching preset")
+    parser.add_argument("--band-rows",
+                        help="LO,HI absolute rows the coloured band covers; "
+                             "only those rows decide where a cue starts and "
+                             "ends (strips are unaffected). Measure them "
+                             "with the caller's band check, e.g. "
+                             "scripts.aiyalaeho.verify_band --band-json")
     parser.add_argument("--fps", type=float, default=5.0,
                         help="frames sampled per second (default 5)")
     parser.add_argument("--start", type=float, default=0.0)

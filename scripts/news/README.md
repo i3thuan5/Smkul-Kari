@@ -61,6 +61,7 @@ python3 -m scripts.news.rebuild --verify   # 通過的集數＝已交付集數
 | **一、cues** | `fetch_sftp.sh`（下載 → 驗字幕帶 → 切 cue → 精修） | 本機 CPU＋網路 | 下載 5 分、切 cue 6 分、精修 8.5 分 |
 | **二、OCR** | `/smkul-news` 的視覺辨識 → `ingest` → `make_all` → `publish` | **Claude 視覺辨識**（模型呼叫）；前後的匯入與組裝是秒級 CPU | 約 50 分（178 張 sheet、8.2 批）|
 | **三、asr** | `asrmt_batch`（抓音檔 → vosk → 投影 → render） | 本機 CPU | 約 15 分 |
+| **四、品質** | `asrmt_run --step mt` → `judge` → sonnet subagent → `ingest` → `--second` → fable subagent → `ingest` → `quality` | ai-labs 服務（免費、單併發）＋**Claude 判定** | 翻譯約 15 分、判定約 8 批 |
 
 **時間的大頭在第二階段**：一個月 71 集 ≈ 58 小時視覺辨識，而第一階段
 整月約 7.5 小時。第三階段跟第二階段可以並行。封存 mkv
@@ -1324,6 +1325,7 @@ sheet 讀了一遍，還多花了建兩次 contact sheet 的工。真正的價�
 | `split_cue.py` | 一條 cue 內底有兩句ê時，佇量出來ê彼點kā伊剖開（`images` 留原本ê，strip 免改名）|
 | `migrate_strips.py` | Strip 檔名對序號換做起始時間；`scripts/ocr/stripname.py` 是號名ê所在 |
 | `migrate_workdirs.py` | 舊 work dir ê平 `cues.json` 徙入階段目錄（帶 `refined` ê入 `2-refined/`，無ê入 `1-cues/`）；冪等，做過矣（news 75 个、《開會了》40 个）|
+| `redump_store.py` | 店面ê JSON 重排做人讀有ê形（縮排、鍵排序、漢字免跳脫）；JSONL 一逝一筆免縮排。干焦改排版，內容無動 |
 | `plan_month.py` | 一批＝一个播出月份：揀來源、登記 pending、出跳過報告 |
 | `sources.py` | 一集配一支檔的四條規則；揀袂出來就跳過並回報 |
 | `resolve_slug.py` | 用 `ilrdf-corpus.csv` 把路徑對成 work dir／SRT 名稱 |

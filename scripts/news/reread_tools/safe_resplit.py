@@ -122,11 +122,11 @@ if isinstance(doc, dict):
 else:
     doc = cues
 json.dump(doc, open(os.path.join(W, "cues.json"), "w", encoding="utf-8"),
-          ensure_ascii=False, indent=1)
+          ensure_ascii=False, indent=2, sort_keys=True)
 other = os.path.join(W.replace(".B.work", ".work"), "cues.json")
 if os.path.exists(other):
     json.dump(doc, open(other, "w", encoding="utf-8"),
-              ensure_ascii=False, indent=1)
+              ensure_ascii=False, indent=2, sort_keys=True)
 for f in glob.glob(os.path.join(D, "b*.tsv")):
     os.remove(f)
 idx = sorted(rows)

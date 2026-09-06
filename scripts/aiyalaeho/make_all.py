@@ -54,6 +54,12 @@ def vision_complete(work):
 
 def make_one(entry):
     """Build one episode's SRT; return its status line."""
+    if tracker.is_abnormal(entry):
+        # No band, or no Formosan row: there is nothing to assemble, and
+        # a 0-line SRT in 3-srt/ would claim a deliverable that is not
+        # one. It is listed in smkul-字幕版型異常.csv with the reason.
+        return "字幕版型異常（%s；列於 %s）" % (
+            entry["理由"], os.path.basename(paths.ABNORMAL_STORE))
     work = paths.work_dir(entry["srt_name"])
     if not datadirs.cues_to_read(work):
         return "待處理（尚未切cue）"
@@ -65,7 +71,8 @@ def make_one(entry):
     qc = make_srt.run(work, out)
     with open(os.path.splitext(out)[0] + ".qc.json", "w",
               encoding="utf-8") as handle:
-        json.dump(qc, handle, ensure_ascii=False, indent=2)
+        json.dump(qc, handle, ensure_ascii=False, indent=2,
+                  sort_keys=True)
     if not qc["cues"]:
         return "交付：0 條 cue（這集無字幕）"
     return "交付：%d 行字幕（族語 %d、華語 %d）" % (
@@ -86,9 +93,34 @@ def main(argv=None):
     # that is what it is for: seeing how far the batch has got.
     rows = tracker.tracker_rows(entries, include_pending=True)
     tracker.write_tracker(rows, paths.TRACKER_CACHE)
+    abnormal = tracker.abnormal_rows(entries, include_pending=True)
+    tracker.write_tracker(abnormal, paths.ABNORMAL_CACHE,
+                          tracker.ABNORMAL_FIELDS)
     print("\nwrote", paths.TRACKER_CACHE)
-    print("（store ê smkul.csv 是 publish 寫ê，規批做煞才寫）")
+    print("wrote", paths.ABNORMAL_CACHE)
+    print("（store ê兩張表是 publish 寫ê，規批做煞才寫）")
+    publish_report(entries)
     return 0
+
+
+def publish_report(entries):
+    """List the abnormal episodes and mark the ones a measurement found.
+
+    A reason taken from the file name is the broadcaster's own label and
+    needs no second look. One that came from the band check or from
+    somebody reading a contact sheet is this pipeline's own judgement, so
+    it gets named here -- the batch does not stop to ask, it says so at
+    the end.
+    """
+    from scripts.aiyalaeho import publish
+    listed = tracker.abnormal_rows(entries, include_pending=True)
+    if not listed:
+        return
+    measured = set(publish.measured_reasons(entries))
+    print("\n字幕版型異常 %d 集：" % len(listed))
+    for row in listed:
+        mark = "  ← 量測抑是人判ê，看一目" if row["成果檔名"] in measured else ""
+        print("  %-30s %s%s" % (row["成果檔名"], row["理由"], mark))
 
 
 if __name__ == "__main__":

@@ -174,7 +174,8 @@ def clear_pending(entries, published):
             del entry["pending"]
             cleared += 1
     with open(paths.INVENTORY, "w", encoding="utf-8") as handle:
-        json.dump(entries, handle, ensure_ascii=False, indent=2)
+        json.dump(entries, handle, ensure_ascii=False, indent=2,
+                  sort_keys=True)
     return cleared
 
 

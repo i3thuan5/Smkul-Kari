@@ -288,7 +288,8 @@ def write_refined(cues_path, manifest):
     target = refined_target(cues_path)
     os.makedirs(os.path.dirname(target), exist_ok=True)
     with open(target, "w", encoding="utf-8") as handle:
-        json.dump(manifest, handle, ensure_ascii=False)
+        json.dump(manifest, handle, ensure_ascii=False, indent=2,
+                  sort_keys=True)
     return target
 
 

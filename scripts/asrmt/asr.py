@@ -65,4 +65,5 @@ def decode(audio_path, model_dir, srt_name, model_label=""):
 
 def write_record(record, path):
     with open(path, "w", encoding="utf-8") as handle:
-        json.dump(record, handle, ensure_ascii=False)
+        json.dump(record, handle, ensure_ascii=False, indent=2,
+                  sort_keys=True)

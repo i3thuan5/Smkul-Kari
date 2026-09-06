@@ -28,17 +28,44 @@ class Store(unittest.TestCase):
             os.makedirs(folder)
         self.inventory = os.path.join(self.tmp, "inventory.json")
         self.table = os.path.join(self.tmp, "smkul.csv")
+        self.abnormal = os.path.join(self.tmp, "smkul-字幕版型異常.csv")
         self._patch(paths, "KARI_CUES", self.cues)
         self._patch(paths, "KARI_VISION", self.vision)
         self._patch(paths, "SRT_DIR", self.srt)
         self._patch(paths, "INVENTORY", self.inventory)
         self._patch(paths, "TRACKER_STORE", self.table)
+        self._patch(paths, "ABNORMAL_STORE", self.abnormal)
         self.entries = []
 
     def _patch(self, module, name, value):
         old = getattr(module, name)
         setattr(module, name, value)
         self.addCleanup(setattr, module, name, old)
+
+    def abnormal_episode(self, number, reason="無字幕", seconds=2969.967,
+                         pending=False):
+        """登記矣、有理由、`1-ocr/` 底下一隻檔都無ê集。"""
+        name = "開會了_%03d_Atayal_泰雅" % number
+        entry = {
+            "file": "%d-泰雅語-無字幕.mp4" % number,
+            "video": "ilrdf-corpus/族語節目/開會了/%d-泰雅語-無字幕.mp4"
+                     % number,
+            "srt_name": name,
+            "節目名稱": "開會了",
+            "集數": str(number),
+            "族語別(英)": "Atayal",
+            "族語別(中)": "泰雅",
+            "語言別": "",
+            "語言代號": "tay",
+            "理由": reason,
+            "影片長度秒": seconds,
+        }
+        if pending:
+            entry["pending"] = True
+        self.entries.append(entry)
+        self._write_inventory()
+        self.deliver()
+        return name
 
     def episode(self, number, cues=2, rows=True, pending=False,
                 deliver=True):
@@ -97,6 +124,9 @@ class Store(unittest.TestCase):
                       encoding="utf-8") as handle:
                 handle.write(built["srt"][name])
         tracker.write_tracker(built["rows"], self.table)
+        if built["abnormal"]:
+            tracker.write_tracker(built["abnormal"], self.abnormal,
+                                  tracker.ABNORMAL_FIELDS)
 
 
 class TestRebuild(Store):
@@ -113,12 +143,11 @@ class TestRebuild(Store):
         self.assertIn("族語：a1", body)
         self.assertIn("華語：甲1", body)
 
-    def test_an_episode_with_no_subtitles_rebuilds_as_an_empty_srt(self):
-        name = self.episode(88, cues=0, rows=False)
+    def test_an_abnormal_episode_needs_no_inputs_at_all(self):
+        # 無切、無讀、無組裝——`1-ocr/` 底下一隻檔都無，猶原愛過。
+        self.episode(68)
+        self.abnormal_episode(88)
         self.assertEqual(rebuild.verify(), [])
-        with open(os.path.join(self.srt, name + ".srt"),
-                  encoding="utf-8") as handle:
-            self.assertEqual(handle.read(), "")
 
     def test_a_changed_deliverable_is_reported(self):
         name = self.episode(68)
@@ -160,6 +189,43 @@ class TestMissing(Store):
             "語言別": "", "語言代號": "ami", "pending": True})
         self._write_inventory()
         self.assertEqual(rebuild.check_inputs(paths.load_inventory()), [])
+        self.assertEqual(rebuild.verify(), [])
+
+
+class TestAbnormalTable(Store):
+    """第二張表嘛愛干焦靠 store 逐 byte 重建會出來。"""
+
+    def test_it_is_rebuilt_and_compared(self):
+        self.episode(68)
+        self.abnormal_episode(88)
+        self.assertEqual(rebuild.verify(), [])
+
+    def test_a_changed_second_table_is_reported(self):
+        self.episode(68)
+        self.abnormal_episode(88)
+        with open(self.abnormal, "a", encoding="utf-8") as handle:
+            handle.write("開會了,99,Amis,阿美,,ami,x,,開會了_099_Amis_阿美,"
+                         "無字幕\n")
+        self.assertEqual(rebuild.verify(),
+                         [os.path.basename(self.abnormal)])
+
+    def test_its_length_comes_from_the_inventory_not_a_video(self):
+        self.episode(68)
+        self.abnormal_episode(88, seconds=2969.967)
+        rebuild.verify()
+        with open(self.abnormal, encoding="utf-8-sig") as handle:
+            self.assertIn("00:49:30", handle.read())
+
+    def test_a_missing_second_table_is_named(self):
+        self.episode(68)
+        self.abnormal_episode(88)
+        os.remove(self.abnormal)
+        with self.assertRaises(PipelineError):
+            rebuild.verify()
+
+    def test_no_abnormal_episodes_means_no_second_table_is_required(self):
+        self.episode(68)
+        self.assertFalse(os.path.exists(self.abnormal))
         self.assertEqual(rebuild.verify(), [])
 
 

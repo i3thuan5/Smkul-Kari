@@ -107,7 +107,8 @@ def migrate_sheets(work):
         renamed[new] = cues
     if moved:
         with open(index, "w", encoding="utf-8") as handle:
-            json.dump(renamed, handle, ensure_ascii=False)
+            json.dump(renamed, handle, ensure_ascii=False, indent=2,
+                      sort_keys=True)
     return moved
 
 

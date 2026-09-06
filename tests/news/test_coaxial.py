@@ -1,109 +1,144 @@
-"""The two sides must agree about time, whenever both have delivered.
+"""語音側交付愛干焦靠 store 就重建會出來，而且逐 byte 仝款。
 
-The speech side projects its words onto the picture side's timeline, so
-`2-asr/3-srt-raw/` and `1-ocr/3-srt/` are supposed to carry the same
-entries with the same timestamps -- same count, same index, same
-start/end. Nothing checked it: `rebuild --verify` rebuilds the picture
-side and never opens the speech side at all, so 47 of the delivered
-episodes drifted apart and stayed that way for two months.
+本底這爿干焦比時間戳：兩爿ê (index, start, end) 相仝就準過。彼掠會著
+「時間軸換版、語音側無綴leh重投影」彼種漂移——47 集就是按呢走精兩個月
+無人知——毋過掠袂著別兩種：有人用手改交付檔、抑是程式改矣交付檔無重產。
 
-Two rules, and they are not symmetrical (使用者裁定 2026-09-03):
+這馬改做**重建比對**：交付檔家己毋看，倒轉去用 store 內底ê輸入（1-words
+＋影像側時間軸；譯文快取；判定快取）閣行一擺仝一條程式，佇記持內底
+產出正文，才佮硬碟頂彼份一 byte 一 byte 比。影像側 `rebuild --verify`
+本底就是按呢做ê，這是kā仝一條規矩𤆬到語音側。
 
-  both sides delivered   the sequences must match, and a mismatch is an
-                         error to fix, not a warning. Two files claiming
-                         different timings for one episode is a
-                         contradiction, and nothing downstream can tell
-                         which one is right.
-  only the picture side  fine. The speech side is its own line running at
-                         its own pace, and `smkul.csv` already says how
-                         far it has got. Calling "not done yet" an error
-                         makes the check red for weeks at a time, and a
-                         permanently red check is one nobody reads.
+三種歹法攏掠會著：手改、程式佮產物無同步、輸入換版下游無綴。時間戳
+比對干焦掠會著上尾彼種。同軸嘛順紲成立矣——重建過ê族語逝就是對影像
+側彼條時間軸投影出來ê。
 
-比較ê是 (index, start, end)，毋是逐 byte——族語彼逝ê文字是辨識器出ê，
-本底就袂佮字幕仝款。
+無做ê階段毋是錯，嘛袂報警告（使用者裁定 2026-09-03）：語音側是家己ê
+一條線，做到佗位由 `smkul.csv` 照實反映。毋過**有交付檔而頂手ê輸入
+無夠**就是錯——彼表示彼份檔毋是對 store 產出來ê。
 """
 import os
 import tempfile
 import unittest
 
 from scripts.news import coaxial
+from scripts.errors import PipelineError
 
-PICTURE = ("1\n00:00:01,000 --> 00:00:02,000\n甲\n\n"
-           "2\n00:00:03,000 --> 00:00:04,000\n乙\n")
-SPEECH = ("1\n00:00:01,000 --> 00:00:02,000\n族語：a\n華語：甲\n\n"
-          "2\n00:00:03,000 --> 00:00:04,000\n族語：b\n華語：乙\n")
-SHIFTED = ("1\n00:00:01,000 --> 00:00:02,000\n族語：a\n華語：甲\n\n"
-           "2\n00:00:03,500 --> 00:00:04,000\n族語：b\n華語：乙\n")
+RAW = ("1\n00:00:01,000 --> 00:00:02,000\n族語：a\n華語：甲\n\n"
+       "2\n00:00:03,000 --> 00:00:04,000\n族語：b\n華語：乙\n")
+SHIFTED = RAW.replace("00:00:03,000", "00:00:03,500")
+RETEXTED = RAW.replace("族語：b", "族語：zzz")
 SHORTER = "1\n00:00:01,000 --> 00:00:02,000\n族語：a\n華語：甲\n"
 
 
 class Fixture(unittest.TestCase):
+    NAME = "20210101_001_午間_Rukai_魯凱"
+
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.root = tmp.name
 
-    def _srt(self, name, text):
-        path = os.path.join(self.root, name)
-        with open(path, "w", encoding="utf-8") as handle:
-            handle.write(text)
-        return path
+    def _stage(self, label, text=None, name=None):
+        """A stage folder, optionally holding this episode's file."""
+        base = os.path.join(self.root, label)
+        if text is not None:
+            path = os.path.join(base, "2021-01", (name or self.NAME) + ".srt")
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(text)
+        return base
+
+    def _stages(self, *specs):
+        """[(label, stored, rebuilt)] -> the stage list `problems` takes."""
+        out = []
+        for label, stored, rebuilt in specs:
+            base = self._stage(label, stored)
+
+            def build(name, text=rebuilt):
+                if isinstance(text, Exception):
+                    raise text
+                return text
+            out.append((label, base, ".srt", build))
+        return out
 
 
-class TestBothSidesDelivered(Fixture):
-    def test_matching_timings_are_no_complaint(self):
-        picture = self._srt("p.srt", PICTURE)
-        speech = self._srt("s.srt", SPEECH)
-        self.assertIsNone(coaxial.compare(picture, speech))
+class TestOneFile(Fixture):
+    def test_an_exact_rebuild_is_no_complaint(self):
+        stages = self._stages(("2-srt-raw", RAW, RAW))
+        self.assertEqual(coaxial.problems([self.NAME], stages), [])
 
-    def test_a_shifted_timestamp_is_reported_with_the_entry(self):
-        picture = self._srt("p.srt", PICTURE)
-        speech = self._srt("s.srt", SHIFTED)
-        problem = coaxial.compare(picture, speech)
-        self.assertIsNotNone(problem)
-        self.assertIn("2", problem)
+    def test_a_shifted_timestamp_names_the_entry(self):
+        stages = self._stages(("2-srt-raw", SHIFTED, RAW))
+        got = coaxial.problems([self.NAME], stages)
+        self.assertEqual(len(got), 1)
+        self.assertIn("條目 2", got[0])
+        self.assertIn("2-srt-raw", got[0])
+        self.assertIn(self.NAME, got[0])
+
+    def test_changed_text_is_caught_too(self):
+        """時間戳比對掠袂著這種：有人kā族語逝改過，抑是程式改矣
+        交付檔無重產。逐 byte 比就掠會著。"""
+        stages = self._stages(("2-srt-raw", RETEXTED, RAW))
+        got = coaxial.problems([self.NAME], stages)
+        self.assertEqual(len(got), 1)
+        self.assertIn("條目 2", got[0])
 
     def test_a_different_entry_count_is_reported(self):
-        picture = self._srt("p.srt", PICTURE)
-        speech = self._srt("s.srt", SHORTER)
-        self.assertIsNotNone(coaxial.compare(picture, speech))
-
-    def test_the_text_lines_are_not_compared(self):
-        """族語彼逝是辨識器出ê，佮字幕本底就無仝，比伊會逐集攏紅。"""
-        picture = self._srt("p.srt", PICTURE)
-        speech = self._srt("s.srt", SPEECH.replace("族語：a", "族語：zzz"))
-        self.assertIsNone(coaxial.compare(picture, speech))
-
-    def test_it_names_the_first_entry_that_differs(self):
-        picture = self._srt("p.srt", PICTURE)
-        speech = self._srt("s.srt", SHIFTED)
-        self.assertIn("條目 2", coaxial.compare(picture, speech))
+        stages = self._stages(("2-srt-raw", SHORTER, RAW))
+        got = coaxial.problems([self.NAME], stages)
+        self.assertEqual(len(got), 1)
+        self.assertIn("條目數", got[0])
 
 
-class TestOnlyThePictureSide(Fixture):
-    def test_a_missing_speech_side_is_not_a_problem(self):
-        picture = self._srt("p.srt", PICTURE)
-        missing = os.path.join(self.root, "nope.srt")
-        self.assertIsNone(coaxial.compare(picture, missing))
+class TestStagesNotMadeYet(Fixture):
+    def test_a_stage_with_no_file_is_skipped(self):
+        stages = self._stages(("2-srt-raw", None, RAW))
+        self.assertEqual(coaxial.problems([self.NAME], stages), [])
 
-    def test_and_it_does_not_warn_either(self):
-        """語音側是家己ê一條線，猶未做袂使算做錯，嘛袂使報警告——
-        規禮拜攏紅ê檢查無人會去看。"""
-        picture = self._srt("p.srt", PICTURE)
-        missing = os.path.join(self.root, "nope.srt")
-        self.assertEqual(coaxial.problems([("x", picture, missing)]), [])
+    def test_half_way_through_is_fine(self):
+        """做到 3-srt-ai、猶未做 4-srt-quality——彼是進度，毋是錯。"""
+        stages = self._stages(("2-srt-raw", RAW, RAW),
+                              ("3-srt-ai", RAW, RAW),
+                              ("4-srt-quality", None, RAW))
+        self.assertEqual(coaxial.problems([self.NAME], stages), [])
+
+    def test_another_episodes_file_does_not_count(self):
+        base = self._stage("2-srt-raw", RAW, name="20210102_002_午間_Amis_阿美")
+
+        def build(name):
+            raise AssertionError("this episode has no file to check")
+        self.assertEqual(
+            coaxial.problems([self.NAME], [("2-srt-raw", base, ".srt",
+                                            build)]), [])
+
+
+class TestUpstreamMissing(Fixture):
+    def test_a_file_the_store_cannot_rebuild_is_an_error(self):
+        """有交付檔，毋過快取內底無彼條ê譯文／判定——彼份檔毋是對
+        store 產出來ê，抑是快取予人剾掉。兩款攏愛講出來。"""
+        stages = self._stages(
+            ("3-srt-ai", RAW, PipelineError("條目 7：快取內底揣無譯文")))
+        got = coaxial.problems([self.NAME], stages)
+        self.assertEqual(len(got), 1)
+        self.assertIn("條目 7", got[0])
+        self.assertIn("3-srt-ai", got[0])
 
 
 class TestSweep(Fixture):
-    def test_it_collects_every_episode_that_differs(self):
-        picture = self._srt("p.srt", PICTURE)
-        good = self._srt("good.srt", SPEECH)
-        bad = self._srt("bad.srt", SHIFTED)
-        got = coaxial.problems([("ok", picture, good),
-                                ("drifted", picture, bad)])
+    def test_it_collects_every_episode_and_stage_that_differs(self):
+        good = "20210102_002_午間_Amis_阿美"
+        base = self._stage("2-srt-raw", SHIFTED)
+        path = os.path.join(base, "2021-01", good + ".srt")
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(RAW)
+
+        def build(name):
+            return RAW
+        got = coaxial.problems([self.NAME, good],
+                               [("2-srt-raw", base, ".srt", build)])
         self.assertEqual(len(got), 1)
-        self.assertIn("drifted", got[0])
+        self.assertIn(self.NAME, got[0])
 
 
 if __name__ == "__main__":

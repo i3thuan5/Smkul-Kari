@@ -4,7 +4,7 @@ srt-data-store spec「語音側進度欄由 store 推導」scenario：任何時�
 重算都得到相同內容，rebuild 才能逐 byte 重建含此欄的進度表。
 
 欄位講的是**用哪個模型辨識的**，不是做到哪一版：交付止於
-`3-srt-raw/`，有那個檔就是 Kaldi 辨識過，沒有就留白。
+`2-srt-raw/`，有那個檔就是 Kaldi 辨識過，沒有就留白。
 """
 import os
 import tempfile
@@ -49,24 +49,32 @@ class TestAsrModel(unittest.TestCase):
         self.assertEqual(tracker.asr_model(self.name, gone), "")
 
     def test_the_raw_srt_is_what_names_the_model(self):
-        touch(self.asr, "3-srt-raw", self.name, ".srt")
+        touch(self.asr, "2-srt-raw", self.name, ".srt")
         self.assertEqual(tracker.asr_model(self.name, self.asr), "Kaldi")
 
     def test_stages_before_the_raw_srt_stay_blank(self):
-        # 逐詞辨識與投影是半路的中間檔，還不是交付
+        # 逐詞辨識是半路的中間檔，還不是交付
         touch(self.asr, "1-words", self.name, ".json")
-        touch(self.asr, "2-entries", self.name, ".json")
         self.assertEqual(tracker.asr_model(self.name, self.asr), "")
 
+    def test_the_analysis_renders_do_not_change_the_column(self):
+        """3-srt-ai／4-srt-quality 是分析用的，欄位講的是「這條族語
+        文字是佗一个辨識器產ê」——分析做偌濟攏無改變彼件事。"""
+        touch(self.asr, "3-srt-ai", self.name, ".srt")
+        touch(self.asr, "4-srt-quality", self.name, ".srt")
+        self.assertEqual(tracker.asr_model(self.name, self.asr), "")
+        touch(self.asr, "2-srt-raw", self.name, ".srt")
+        self.assertEqual(tracker.asr_model(self.name, self.asr), "Kaldi")
+
     def test_other_episodes_files_do_not_count(self):
-        touch(self.asr, "3-srt-raw", "20210208_039_晚間_Amis_阿美", ".srt")
+        touch(self.asr, "2-srt-raw", "20210208_039_晚間_Amis_阿美", ".srt")
         self.assertEqual(tracker.asr_model(self.name, self.asr), "")
 
 
 class TestRowCarriesTheColumn(unittest.TestCase):
     def test_field_exists_and_is_derived(self):
         with tempfile.TemporaryDirectory() as asr:
-            touch(asr, "3-srt-raw", entry()["srt_name"], ".srt")
+            touch(asr, "2-srt-raw", entry()["srt_name"], ".srt")
             row = tracker.tracker_row(entry(), "狀態文字", asr_dir=asr)
         self.assertIn("語音辨識模型", tracker.FIELDS)
         self.assertEqual(row["語音辨識模型"], "Kaldi")

@@ -62,12 +62,14 @@ def prepare(slug):
     copied = paths.coarse_cues(dst)
     os.makedirs(os.path.dirname(copied), exist_ok=True)
     with open(copied, "w", encoding="utf-8") as handle:
-        json.dump(manifest, handle, ensure_ascii=False)
+        json.dump(manifest, handle, ensure_ascii=False, indent=2,
+                  sort_keys=True)
     made = sheets.build_sheets(dst, manifest)
 
     for name in ("transcripts.json", "verified.json"):
         with open(os.path.join(dst, name), "w", encoding="utf-8") as handle:
-            json.dump({}, handle, ensure_ascii=False, indent=1)
+            json.dump({}, handle, ensure_ascii=False, indent=2,
+                      sort_keys=True)
 
     return len(manifest["cues"]), made
 

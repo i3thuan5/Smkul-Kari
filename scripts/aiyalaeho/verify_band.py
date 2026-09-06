@@ -103,6 +103,13 @@ JOIN = 6
 # （90），新聞版型 4.04——差三倍，門檻园佇中央。
 CONTRAST = 2.0
 
+# 宣告ê槽愛有偌濟比例崁佇帶頂懸。量著ê兩爿差真遠：083 ê族語槽佮伊ê帶
+# 重疊 24/60 ＝ 0.40，其餘 37 集帶崁規个 region、逐个槽攏是 1.00
+# （087／094 彼款規條帶低 14 px ê，用低版 preset 量嘛是 1.00）。0.4 佮
+# 1.0 中間隨在揀攏分會開；囥 0.9 是留予「帶頂沿量差幾列」ê餘裕，
+# 毋是校出來ê臨界值。
+SLOT_ON_BAND = 0.9
+
 
 def slots_of(preset):
     """[(top, bottom)…] absolute rows, from the preset's declared lines."""
@@ -275,8 +282,44 @@ def rows_fit(runs, slots):
     return (bool(runs) and not problems), problems
 
 
-def verdict(score, runs, slots, region, contrast=0.0):
+def slots_on_band(slots, band):
+    """[problem…] for every declared slot the band does not cover.
+
+    `rows_fit` asks only "does each row found sit inside some slot", and
+    083 answers yes: its one Chinese row is squarely in the Chinese slot.
+    What it never asked is whether the slot above it is band at all --
+    there, it is 36 rows of picture. Cutting then measures a mask that is
+    88.3% white shirt, a line change moves it 0.21-0.27 against a 0.35
+    threshold, and one cue runs through four sentences.
+
+    So the slots are checked against the band as well as the rows against
+    the slots. `band` of None skips this: the no-band path has no band to
+    check, and `check` hands the whole region over in that case anyway.
+    """
+    if band is None:
+        return []
+    low, high = band
+    problems = []
+    for slot_lo, slot_hi in slots:
+        span = slot_hi - slot_lo
+        if span <= 0:
+            continue
+        covered = min(slot_hi, high) - max(slot_lo, low)
+        if covered < 0:
+            covered = 0
+        if float(covered) / span < SLOT_ON_BAND:
+            problems.append(
+                "宣告ê槽 %d..%d 下跤無帶（帶干焦崁著 %d..%d，重疊 %d/%d）"
+                "——槽园佇畫面頂懸，切落去會kā畫面ê振動當做換句"
+                % (slot_lo, slot_hi, low, high, covered, span))
+    return problems
+
+
+def verdict(score, runs, slots, region, contrast=0.0, band=None):
     """(state, [problem…]) -- see the module docstring for the states."""
+    off_band = slots_on_band(slots, band)
+    if off_band:
+        return "mismatch", off_band
     fits, problems = rows_fit(runs, slots)
     if fits:
         return "ok", []
@@ -323,13 +366,49 @@ def check(video, preset, start=START, duration=DURATION):
     runs = runs_of(ink, probe_top, lo, hi)
     slots = slots_of(preset)
     contrast = contrast_of(ink, probe_top, region)
-    state, problems = verdict(score, runs, slots, region, contrast)
+    # 帶若無夠色（`score` 過袂去），頂懸已經kā範圍囥做規个 region——
+    # 彼是「無帶」彼條路，槽落帶ê檢查佇遐無意義，所以彼時傳 None。
+    band = (lo, hi) if score >= BAND_SCORE else None
+    state, problems = verdict(score, runs, slots, region, contrast, band)
     return state, problems, {"score": score, "band": (lo, hi), "runs": runs,
                              "slots": slots, "frames": frames,
                              "contrast": contrast}
 
 
 DEFAULT_PRESET = "aiyalaeho-bilingual"
+
+# 三款判定三个離開碼。進前 no-band 佮 ok 攏回 0，批次迴圈干焦看離開碼，
+# 就照切落去——088 ê亮攝影棚予 `band_probe` 一直觸發，切出 311 條布料
+# 紋理ê cue。分開了後，迴圈才分會出「無字幕」佮「版型毋著」。
+MISMATCH_EXIT = 1
+NO_BAND_EXIT = 2
+
+
+def write_band_json(path, state, problems, report):
+    """The measurement, for the next step in the batch to read.
+
+    A work-dir cache: what reaches the store is the range that ends up in
+    `cues.json`'s `mask`. Written whatever the verdict, because a bad
+    verdict is exactly what the batch quotes into the reason column.
+    """
+    folder = os.path.dirname(path)
+    if folder:
+        os.makedirs(folder, exist_ok=True)
+    payload = {
+        "state": state,
+        "problems": list(problems),
+        "band": list(report["band"]),
+        "slots": [],
+        "score": report["score"],
+        "contrast": report["contrast"],
+        "frames": report["frames"],
+    }
+    for slot in report["slots"]:
+        payload["slots"].append(list(slot))
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=False, indent=2,
+                  sort_keys=True)
+    return path
 
 
 def main(argv=None):
@@ -340,6 +419,9 @@ def main(argv=None):
     ap.add_argument("--start", type=float, default=START)
     ap.add_argument("--duration", type=float, default=DURATION)
     ap.add_argument("--quiet", action="store_true", help="干焦印結論")
+    ap.add_argument("--band-json", default="",
+                    help="kā量著ê帶範圍佮判定寫落這隻檔，予 "
+                         "`ocr.cli cues --band-rows` 讀")
     args = ap.parse_args(argv)
 
     preset = load_preset(args.preset, args.presets or None)
@@ -357,11 +439,20 @@ def main(argv=None):
                  report["contrast"]))
     for line in problems:
         print("PROBLEM", line)
+
+    if args.band_json:
+        write_band_json(args.band_json, state, problems, report)
+
     if state == "no-band":
-        print("NO-BAND  %s（這集看起來無字幕，切出來會是 0 條 cue）" % name)
-        return 0
-    print("%s  %s" % ("MISMATCH" if state == "mismatch" else "OK", name))
-    return 1 if state == "mismatch" else 0
+        print("NO-BAND  %s（畫面量無帶——記做無字幕，莫切；"
+              "尾溜ê報告會點名）" % name)
+        return NO_BAND_EXIT
+    if state == "mismatch":
+        print("MISMATCH  %s（換低版 preset 閣量一擺；猶原無合就記做"
+              "版型不符）" % name)
+        return MISMATCH_EXIT
+    print("OK  %s" % name)
+    return 0
 
 
 if __name__ == "__main__":

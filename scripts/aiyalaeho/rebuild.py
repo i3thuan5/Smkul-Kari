@@ -80,7 +80,12 @@ def check_inputs(entries):
         # rebuild yet, and says so in the inventory. Every other episode
         # is a claim that it was delivered, and that claim is what the
         # rest of this checks.
-        if tracker.is_pending(entry):
+        if tracker.is_pending(entry) or tracker.is_abnormal(entry):
+            # Two ways an episode legitimately has nothing to rebuild: it
+            # is still being worked on, or it never was a bilingual
+            # deliverable. Both say so in the inventory, so an episode
+            # carrying neither is a claim -- and that claim is what the
+            # rest of this checks.
             continue
         name = entry["srt_name"]
         cues = paths.stage_path(paths.KARI_CUES, name, ".json")
@@ -124,12 +129,13 @@ def rebuild_all():
     try:
         bodies = {}
         for entry in entries:
-            if tracker.is_pending(entry):
+            if tracker.is_pending(entry) or tracker.is_abnormal(entry):
                 continue
             bodies[entry["srt_name"]] = rebuild_one(entry, tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
-    return {"srt": bodies, "rows": tracker.tracker_rows(entries)}
+    return {"srt": bodies, "rows": tracker.tracker_rows(entries),
+            "abnormal": tracker.abnormal_rows(entries)}
 
 
 def verify():
@@ -147,18 +153,40 @@ def verify():
             if handle.read() != built["srt"][name]:
                 mismatched.append(name + ".srt")
 
+    mismatched.extend(_table_problems(built))
+    return mismatched
+
+
+def _table_problems(built):
+    """Both progress tables, rebuilt from the store and compared.
+
+    The second one only has to exist when something belongs in it: a
+    corpus with no abnormal episodes has no such table, and demanding one
+    would fail a store that is perfectly consistent.
+    """
+    wanted = [(SMKUL, paths.TRACKER_STORE, built["rows"], tracker.FIELDS)]
+    if built["abnormal"]:
+        wanted.append((os.path.basename(paths.ABNORMAL_STORE),
+                       paths.ABNORMAL_STORE, built["abnormal"],
+                       tracker.ABNORMAL_FIELDS))
+
+    problems = []
     tmp = tempfile.mkdtemp(prefix="aiya-table-")
     try:
-        table = os.path.join(tmp, SMKUL)
-        tracker.write_tracker(built["rows"], table)
-        with open(table, "rb") as handle:
-            rebuilt = handle.read()
+        for label, target, rows, fields in wanted:
+            if not os.path.exists(target):
+                raise PipelineError("揣無 %s——有 %d 逝愛记佇遐"
+                                    % (label, len(rows)))
+            table = os.path.join(tmp, label)
+            tracker.write_tracker(rows, table, fields)
+            with open(table, "rb") as handle:
+                rebuilt = handle.read()
+            with open(target, "rb") as handle:
+                if handle.read() != rebuilt:
+                    problems.append(label)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
-    with open(paths.TRACKER_STORE, "rb") as handle:
-        if handle.read() != rebuilt:
-            mismatched.append(SMKUL)
-    return mismatched
+    return problems
 
 
 def main(argv=None):

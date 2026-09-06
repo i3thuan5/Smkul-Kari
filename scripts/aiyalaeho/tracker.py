@@ -27,6 +27,20 @@ from scripts.errors import PipelineError
 FIELDS = ["節目名稱", "集數", "族語別(英)", "族語別(中)", "語言別",
           "語言代號", "影片檔案位置", "影片長度", "成果檔名"]
 
+# The second table's columns: the nine above, then why this episode is not
+# a bilingual deliverable. Every row has a value there, so it is not a
+# column kept empty for the sake of having it -- and `smkul.csv` does not
+# get one, where 38 of its rows would have nothing to put in it.
+ABNORMAL_FIELDS = FIELDS + ["理由"]
+
+
+def hms(duration):
+    """Seconds as 時:分:秒, or "" for nothing."""
+    if not duration:
+        return ""
+    whole = int(round(float(duration)))
+    return "%02d:%02d:%02d" % (whole // 3600, whole % 3600 // 60, whole % 60)
+
 
 def video_length(srt_name, cues_dir=None):
     """How long the video ran, as 時:分:秒, or "" with no timeline yet.
@@ -42,10 +56,18 @@ def video_length(srt_name, cues_dir=None):
         return ""
     with open(path, encoding="utf-8") as handle:
         duration = json.load(handle).get("duration")
-    if not duration:
-        return ""
-    whole = int(round(float(duration)))
-    return "%02d:%02d:%02d" % (whole // 3600, whole % 3600 // 60, whole % 60)
+    return hms(duration)
+
+
+def is_abnormal(entry):
+    """True when this episode cannot be a bilingual deliverable.
+
+    One field decides which of the two tables an episode lands in, and it
+    says why in the same breath: 無字幕 / 僅華語字幕 off the file name,
+    版型不符：… measured before cutting, 人工判定：… after somebody looked
+    at a contact sheet. Empty or absent means the ordinary path.
+    """
+    return bool(entry.get("理由"))
 
 
 def corpus_path(path):
@@ -91,21 +113,48 @@ def tracker_rows(entries, cues_dir=None, include_pending=False):
     which rebuild has no access to, so such a table could never be rebuilt
     byte-for-byte. The work copy passes `include_pending` and lists
     everybody, which is what it is for.
+
+    Abnormal episodes get none either: they have no deliverable, and a row
+    here would name an SRT that does not exist. They are listed in the
+    second table instead, with the reason.
     """
     rows = []
     for entry in entries:
         if is_pending(entry) and not include_pending:
             continue
+        if is_abnormal(entry):
+            continue
         rows.append(tracker_row(entry, cues_dir))
     return rows
 
 
-def write_tracker(rows, path):
+def abnormal_rows(entries, include_pending=False):
+    """One row per episode that cannot be delivered, and why.
+
+    The length comes from the inventory rather than a timeline: these
+    episodes are never cut, so `1-cues/` holds nothing for them, and the
+    offline rebuild may not open a video to find out. A tool writes it at
+    registration; nobody types it.
+    """
+    rows = []
+    for entry in entries:
+        if not is_abnormal(entry):
+            continue
+        if is_pending(entry) and not include_pending:
+            continue
+        row = tracker_row(entry)
+        row["影片長度"] = hms(entry.get("影片長度秒"))
+        row["理由"] = entry["理由"]
+        rows.append(row)
+    return rows
+
+
+def write_tracker(rows, path, fields=None):
     """Write the table. utf-8-sig and CRLF: Excel is the reader."""
     folder = os.path.dirname(path)
     if folder:
         os.makedirs(folder, exist_ok=True)
     with open(path, "w", encoding="utf-8-sig", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=FIELDS)
+        writer = csv.DictWriter(handle, fieldnames=fields or FIELDS)
         writer.writeheader()
         writer.writerows(rows)

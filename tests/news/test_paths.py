@@ -34,6 +34,27 @@ class TestConstants(unittest.TestCase):
                          os.path.join(paths.KARI, "ilrdf-corpus.csv"))
         self.assertFalse(paths.CATALOGUE.startswith(paths.KITHANN + os.sep))
 
+    def test_the_speech_side_stages_are_numbered_in_production_order(self):
+        """階段目錄ê號碼就是做ê先後，打開目錄就看會出流程——所以
+        常數嘛愛照這个順序，別位才免家己組路徑。"""
+        stages = [paths.ASR_WORDS, paths.ASR_RAW, paths.ASR_AI,
+                  paths.ASR_QUALITY]
+        names = []
+        for stage in stages:
+            self.assertEqual(os.path.dirname(stage), paths.ASR_DIR)
+            names.append(os.path.basename(stage))
+        self.assertEqual(names, ["1-words", "2-srt-raw", "3-srt-ai",
+                                 "4-srt-quality"])
+
+    def test_the_caches_sit_beside_the_stages_and_are_not_per_month(self):
+        """快取是**跨集**ê內容定址正本，毋是逐集ê產出，所以無月份彼
+        層，嘛無號碼——伊毋是流程ê一站。"""
+        for cache in (paths.MT_CACHE, paths.QUALITY_CACHE):
+            self.assertEqual(os.path.dirname(cache), paths.ASR_DIR)
+        self.assertEqual(os.path.basename(paths.MT_CACHE), "mt-cache")
+        self.assertEqual(os.path.basename(paths.QUALITY_CACHE),
+                         "quality-cache")
+
     def test_the_catalogue_covers_more_than_one_corpus_so_it_sits_on_top(self):
         # 內底有族語新聞（983 逝）嘛有開會了（46 逝），毋是 news/ 一个
         # 語料的物件，所以囥 Kari-SRT 的頂層。
@@ -70,11 +91,16 @@ class TestConstants(unittest.TestCase):
                              os.path.join(base, "2021-02", name))
 
     def test_the_retired_stages_are_gone(self):
-        # 文稿供字彼條路線佮 align 延伸攏裁掉矣，常數留咧就是閣有人
-        # 會去指——階段目錄本身嘛已經對 store 提掉。
-        for name in ("KARI_FROM_RTF", "KARI_VISION_RTF", "KARI_REPORT",
-                     "MT_CACHE"):
+        # 文稿供字彼條路線裁掉矣，常數留咧就是閣有人會去指——階段
+        # 目錄本身嘛已經對 store 提掉。
+        for name in ("KARI_FROM_RTF", "KARI_VISION_RTF", "KARI_REPORT"):
             self.assertFalse(hasattr(paths, name), name)
+
+    def test_the_translation_cache_is_live_again(self):
+        # align 延伸裁掉ê時 mt-cache 綴leh刣，因為彼陣無人讀伊矣。
+        # 這馬伊是 3-srt-ai 譯文ê正本（族語→華語一个方向），koh是
+        # 內容定址ê——重投影了後仝款ê族語逝直接命中，免閣問服務。
+        self.assertTrue(hasattr(paths, "MT_CACHE"))
 
 
 class TestStagePath(unittest.TestCase):

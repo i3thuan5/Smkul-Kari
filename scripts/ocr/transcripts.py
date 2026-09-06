@@ -123,7 +123,8 @@ def _merge_transcripts(workdir, parsed, replace):
     for key in parsed:
         existing.setdefault(key, {}).update(parsed[key])
     with open(path, "w", encoding="utf-8") as handle:
-        json.dump(existing, handle, ensure_ascii=False, indent=1)
+        json.dump(existing, handle, ensure_ascii=False, indent=2,
+                  sort_keys=True)
     return existing
 
 
@@ -149,7 +150,8 @@ def load_verified(workdir):
 def save_verified(workdir, verified):
     path = os.path.join(workdir, VERIFIED_NAME)
     with open(path, "w", encoding="utf-8") as handle:
-        json.dump(verified, handle, ensure_ascii=False, indent=1)
+        json.dump(verified, handle, ensure_ascii=False, indent=2,
+                  sort_keys=True)
 
 
 SPECIAL_MARKS = "^\'\":"

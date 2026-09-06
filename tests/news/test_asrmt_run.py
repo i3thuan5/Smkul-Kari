@@ -5,11 +5,14 @@ naming the episode and both durations, producing nothing -- and the
 resume rule: a step whose output already exists is skipped, so an
 interrupted run continues instead of redoing paid work.
 """
+import copy
+import json
 import os
 import tempfile
 import unittest
 from unittest import mock
 
+from scripts.asrmt import mtclient
 from scripts.news import asrmt_run
 from scripts.news import paths
 from scripts.errors import PipelineError
@@ -96,7 +99,7 @@ class TestMp3Resolution(unittest.TestCase):
 class TestCuesPath(unittest.TestCase):
     """時間軸對佗位提：交付了ê對 store，猶未交付ê對 work dir。
 
-    一集做到底ê流程，語音側是佇 publish **進前**跑ê（OCR → 3-srt-raw →
+    一集做到底ê流程，語音側是佇 publish **進前**跑ê（OCR → 2-srt-raw →
     publish），而 cues.json 是 publish 才對 work dir 徙入 store ê。若干焦
     看 store，語音側就永遠等袂著——publish 顛倒愛等伊。
 
@@ -152,6 +155,347 @@ class TestCuesPath(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def _made(folder):
+    os.makedirs(folder, exist_ok=True)
+    return folder
+
+
+class TestProjectionIsNotStored(unittest.TestCase):
+    """投影是純函式，算出來ê物件無落地。
+
+    本底伊會寫一份 `2-entries`，予人當做「來源追蹤」咧用。毋過彼
+    是**視圖毋是正本**：時間軸換版就規份重產，頂懸補入去ê物件（譯文）
+    綴leh予洗掉——2026-09-04 就按呢無去一集ê譯文。正本愛囥內容定址
+    ê快取，中間過程當場算就好，才會使講「干焦靠 store 就重建會出來」。
+    """
+
+    NAME = "20210101_001_午間_Rukai_魯凱"
+    ROWS = [{"index": 1, "true_start": 0.0, "true_end": 2.0,
+             "srt_start": 0.0, "srt_end": 2.5, "text": "大家好"},
+            {"index": 2, "true_start": 2.0, "true_end": 4.0,
+             "srt_start": 2.5, "srt_end": 4.5, "text": "今天的新聞"}]
+    WORDS = [{"w": "kai", "start": 0.2, "end": 0.8, "conf": 0.9},
+             {"w": "nga", "start": 1.0, "end": 1.6, "conf": 0.8},
+             {"w": "sudalu", "start": 2.4, "end": 3.4, "conf": 0.7}]
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.asr = tmp.name
+        # 逐个階段常數攏愛換掉，一个漏去就會寫著**真正ê店面**——
+        # ASR_AI 漏去彼擺，測試ê假資料就按呢寫入 Kari-SRT，
+        # `rebuild --verify` 才kā伊掠著。
+        for name, stage in (("ASR_DIR", ""), ("ASR_WORDS", "1-words"),
+                            ("ASR_RAW", "2-srt-raw"), ("ASR_AI", "3-srt-ai"),
+                            ("ASR_QUALITY", "4-srt-quality"),
+                            ("QUALITY_CACHE", "quality-cache"),
+                            ("MT_CACHE", "mt-cache")):
+            patch = mock.patch.object(paths, name,
+                                      os.path.join(self.asr, stage))
+            patch.start()
+            self.addCleanup(patch.stop)
+        patch = mock.patch.object(asrmt_run, "_chain_rows",
+                                  lambda name: copy.deepcopy(self.ROWS))
+        patch.start()
+        self.addCleanup(patch.stop)
+        # `_workdir` 是對 repo 根算ê，無綴階段常數走。無kā伊換掉，
+        # 批次檔就寫入真正ê `kithann/out/asrmt/`——測試ê假資料留佇
+        # 使用者ê工作區，落尾閣有人當做真ê去收。
+        work = os.path.join(self.asr, "work")
+        patch = mock.patch.object(asrmt_run, "_workdir",
+                                  lambda name: _made(os.path.join(work,
+                                                                  name)))
+        patch.start()
+        self.addCleanup(patch.stop)
+        words = paths.stage_path(paths.ASR_WORDS, self.NAME, ".json")
+        os.makedirs(os.path.dirname(words), exist_ok=True)
+        with open(words, "w", encoding="utf-8") as handle:
+            json.dump({"srt_name": self.NAME, "words": self.WORDS}, handle,
+                      ensure_ascii=False, indent=2, sort_keys=True)
+
+    def _json_files(self):
+        found = []
+        for folder, _dirs, names in os.walk(self.asr):
+            for name in names:
+                if name.endswith(".json"):
+                    found.append(os.path.join(folder, name))
+        return found
+
+    def test_the_rows_come_from_the_words_and_the_timeline(self):
+        rows, unassigned = asrmt_run.rows_of(self.NAME)
+        self.assertEqual(rows[0]["formosan"], "kai nga")
+        self.assertEqual(rows[0]["subtitle"], "大家好")
+        self.assertEqual(rows[1]["formosan"], "sudalu")
+        self.assertEqual(unassigned, [])
+
+    def test_projecting_twice_gives_the_same_thing(self):
+        first, _ = asrmt_run.rows_of(self.NAME)
+        second, _ = asrmt_run.rows_of(self.NAME)
+        self.assertEqual(first, second)
+
+    def test_the_raw_body_renders_off_those_rows(self):
+        body = asrmt_run.raw_body_of(self.NAME)
+        self.assertIn("族語：kai nga", body)
+        self.assertIn("華語：大家好", body)
+
+    def test_the_raw_step_writes_the_second_stage(self):
+        asrmt_run.step_raw(self.NAME)
+        out = paths.stage_path(paths.ASR_RAW, self.NAME, ".srt")
+        with open(out, encoding="utf-8") as handle:
+            self.assertEqual(handle.read(), asrmt_run.raw_body_of(self.NAME))
+
+    def test_nothing_but_the_words_file_is_written(self):
+        asrmt_run.step_raw(self.NAME)
+        self.assertEqual(self._json_files(),
+                         [paths.stage_path(paths.ASR_WORDS, self.NAME,
+                                           ".json")])
+
+    def test_the_entries_step_is_gone(self):
+        for gone in ("step_entries", "_entries_path"):
+            self.assertFalse(hasattr(asrmt_run, gone), gone)
+
+    def test_the_default_pipeline_is_words_then_raw(self):
+        names = []
+        for name, _ in asrmt_run.STEPS:
+            names.append(name)
+        self.assertEqual(names[:2], ["words", "raw"])
+        self.assertNotIn("entries", names)
+
+
+class TestTranslationStep(TestProjectionIsNotStored):
+    """mt 步：逐條非空ê族語逝翻做華語，寫 3-srt-ai。
+
+    快取是內容定址ê，所以「翻過ê免閣翻」佮「重投影了後照常命中」是
+    仝一件代誌。服務是公共ê，單併發、逐擺歇一秒，一集愛十外分鐘——
+    所以斷去閣走一擺袂使閣付一擺錢。
+    """
+
+    def setUp(self):
+        super(TestTranslationStep, self).setUp()
+        patch = mock.patch.object(
+            asrmt_run, "_entry_of",
+            lambda name: {"srt_name": name, "族語別(英)": "Rukai",
+                          "slug": "x"})
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    class FakeClient(object):
+        def __init__(self, table):
+            self.table = table
+            self.calls = []
+
+        def translate_cached(self, cache, engine, direction, lang, text):
+            hit = cache.get(engine, direction, lang, text)
+            if hit is not None:
+                return hit
+            self.calls.append(text)
+            out = self.table[text]
+            cache.put(engine, direction, lang, text, out)
+            return out
+
+    TABLE = {"kai nga": "大家好啊", "sudalu": "今天"}
+
+    def test_it_writes_the_third_stage_with_the_translation(self):
+        client = self.FakeClient(self.TABLE)
+        asrmt_run.step_mt(self.NAME, client=client)
+        path = paths.stage_path(paths.ASR_AI, self.NAME, ".srt")
+        with open(path, encoding="utf-8") as handle:
+            body = handle.read()
+        self.assertIn("族語ASR結果翻譯華語-ailabs：大家好啊", body)
+        self.assertIn("華語OCR字幕：大家好", body)
+
+    def test_the_language_code_comes_from_the_table(self):
+        client = self.FakeClient(self.TABLE)
+        asrmt_run.step_mt(self.NAME, client=client)
+        cache = mtclient.MTCache(paths.MT_CACHE)
+        self.assertEqual(cache.get("ailabs", "f2z", "dru_Dawu", "kai nga"),
+                         "大家好啊")
+
+    def test_a_second_run_asks_the_service_nothing(self):
+        first = self.FakeClient(self.TABLE)
+        asrmt_run.step_mt(self.NAME, client=first)
+        again = self.FakeClient(self.TABLE)
+        asrmt_run.step_mt(self.NAME, client=again)
+        self.assertEqual(again.calls, [])
+
+    def test_the_offline_rebuild_reads_the_cache_and_never_the_service(self):
+        client = self.FakeClient(self.TABLE)
+        asrmt_run.step_mt(self.NAME, client=client)
+        path = paths.stage_path(paths.ASR_AI, self.NAME, ".srt")
+        with open(path, encoding="utf-8") as handle:
+            self.assertEqual(handle.read(), asrmt_run.ai_body_of(self.NAME))
+
+    def test_a_missing_cache_entry_makes_the_rebuild_fail_by_name(self):
+        client = self.FakeClient(self.TABLE)
+        asrmt_run.step_mt(self.NAME, client=client)
+        for name in os.listdir(paths.MT_CACHE):
+            os.remove(os.path.join(paths.MT_CACHE, name))
+        with self.assertRaises(PipelineError) as caught:
+            asrmt_run.ai_body_of(self.NAME)
+        self.assertIn("條目 1", str(caught.exception))
+
+
+class TestJudgingSteps(TestTranslationStep):
+    """judge／ingest／quality 三步：寫批次、收回覆、render。
+
+    模型ê部份是 Claude Code ê subagent 讀批次檔、寫回覆檔——容器內底
+    無 SDK 嘛無金鑰，而且視覺辨識彼爿本底就是按呢做ê。所以程式這爿
+    ê責任是：批次寫予好、回覆檢查予絚、判定囥入快取。
+    """
+
+    def setUp(self):
+        super(TestJudgingSteps, self).setUp()
+        asrmt_run.step_mt(self.NAME, client=self.FakeClient(self.TABLE))
+
+    def _folder(self):
+        return asrmt_run.judge_folder(self.NAME)
+
+    def _reply(self, request, labels):
+        path = request[:-len(".tsv")] + ".reply.tsv"
+        lines = []
+        with open(request, encoding="utf-8") as handle:
+            for line in handle:
+                key = line.split("\t")[0]
+                lines.append("%s\t%s\n" % (key, labels[key]))
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.writelines(lines)
+        return path
+
+    def test_the_glossary_lands_beside_the_batches(self):
+        """詞表佮批次做伙產，逐个 agent 讀仝一份。
+
+        本底逐个 agent 家己推——三个 agent 推出仝一个詞是常有ê代誌，
+        而且無仝批對仝一个詞ê認定會無仝。掃規集算一擺，較緊嘛較一致。
+        """
+        asrmt_run.step_judge(self.NAME)
+        path = os.path.join(asrmt_run.judge_folder(self.NAME),
+                            "glossary.tsv")
+        self.assertTrue(os.path.exists(path))
+        with open(path, encoding="utf-8") as handle:
+            self.assertTrue(handle.read().strip())
+
+    def test_the_glossary_is_not_wiped_by_the_second_round(self):
+        asrmt_run.step_judge(self.NAME)
+        written = asrmt_run.step_judge(self.NAME)
+        self.assertIsNotNone(written)
+        path = os.path.join(asrmt_run.judge_folder(self.NAME),
+                            "glossary.tsv")
+        self.assertTrue(os.path.exists(path))
+
+    def test_the_first_judge_gets_a_batch_of_everything(self):
+        written = asrmt_run.step_judge(self.NAME)
+        self.assertEqual(len(written), 1)
+        self.assertTrue(os.path.basename(written[0]).startswith("s"))
+        with open(written[0], encoding="utf-8") as handle:
+            self.assertEqual(len(handle.read().splitlines()), 2)
+
+    def test_ingesting_a_reply_fills_the_cache(self):
+        written = asrmt_run.step_judge(self.NAME)
+        self._reply(written[0], {"1": "高", "2": "中"})
+        self.assertEqual(asrmt_run.step_ingest(self.NAME), 2)
+
+    def test_the_second_judge_only_sees_what_the_first_called_high(self):
+        written = asrmt_run.step_judge(self.NAME)
+        self._reply(written[0], {"1": "高", "2": "中"})
+        asrmt_run.step_ingest(self.NAME)
+        second = asrmt_run.step_judge(self.NAME, second=True)
+        with open(second[0], encoding="utf-8") as handle:
+            keys = []
+            for line in handle:
+                keys.append(line.split("\t")[0])
+        self.assertEqual(keys, ["1"])
+
+    def test_writing_a_new_batch_clears_the_old_reply(self):
+        """問題換過矣，舊ê答案就袂使閣算數。
+
+        判定ê定義改過（prompt 換版）ê時，`pending` 會kā規集閣提出來
+        問一擺，批次檔用仝款ê名重寫。舊ê回覆檔若留咧，`ingest` 會
+        提著伊——編號拄好對得起來，所以**袂當場歹去**，是恬恬kā舊
+        定義下跤ê答案當做新ê收落去。彼比整批拒收較危險。
+        """
+        written = asrmt_run.step_judge(self.NAME)
+        self._reply(written[0], {"1": "高", "2": "中"})
+        again = asrmt_run.step_judge(self.NAME)
+        reply = again[0][:-len(".tsv")] + ".reply.tsv"
+        self.assertFalse(os.path.exists(reply))
+
+    def test_it_does_not_clear_the_other_judges_files(self):
+        written = asrmt_run.step_judge(self.NAME)
+        self._reply(written[0], {"1": "高", "2": "中"})
+        asrmt_run.step_ingest(self.NAME)
+        second = asrmt_run.step_judge(self.NAME, second=True)
+        self._reply(second[0], {"1": "高"})
+        asrmt_run.step_judge(self.NAME)
+        kept = second[0][:-len(".tsv")] + ".reply.tsv"
+        self.assertTrue(os.path.exists(kept))
+
+    def test_the_second_round_refuses_while_the_first_is_unfinished(self):
+        """頭一輪無收齊就寫第二輪，會**恬恬**漏掉。
+
+        第二輪干焦問頭一个裁判講懸ê。頭一輪若閣有一批無收，彼批內
+        底ê懸就iáu無入快取，第二輪就無問著——落尾產品質檔ê時才發
+        現彼幾條無判定，抑是閣較穤：無發現。
+        """
+        written = asrmt_run.step_judge(self.NAME, size=1)
+        self._reply(written[0], {"1": "高"})
+        asrmt_run.step_ingest(self.NAME)
+        with self.assertRaises(PipelineError) as caught:
+            asrmt_run.step_judge(self.NAME, second=True)
+        self.assertIn("頭一輪", str(caught.exception))
+
+    def test_the_second_round_goes_once_the_first_is_complete(self):
+        written = asrmt_run.step_judge(self.NAME)
+        self._reply(written[0], {"1": "高", "2": "中"})
+        asrmt_run.step_ingest(self.NAME)
+        self.assertEqual(len(asrmt_run.step_judge(self.NAME, second=True)), 1)
+
+    def test_nothing_left_to_ask_writes_no_batch(self):
+        written = asrmt_run.step_judge(self.NAME)
+        self._reply(written[0], {"1": "低", "2": "中"})
+        asrmt_run.step_ingest(self.NAME)
+        self.assertEqual(asrmt_run.step_judge(self.NAME), [])
+        self.assertEqual(asrmt_run.step_judge(self.NAME, second=True), [])
+
+    def _grade_everything(self, first, second=None):
+        written = asrmt_run.step_judge(self.NAME)
+        self._reply(written[0], first)
+        asrmt_run.step_ingest(self.NAME)
+        again = asrmt_run.step_judge(self.NAME, second=True)
+        if again:
+            self._reply(again[0], second)
+            asrmt_run.step_ingest(self.NAME, second=True)
+
+    def test_the_quality_step_writes_the_fourth_stage(self):
+        self._grade_everything({"1": "高", "2": "中"}, {"1": "高"})
+        asrmt_run.step_quality(self.NAME)
+        path = paths.stage_path(paths.ASR_QUALITY, self.NAME, ".srt")
+        with open(path, encoding="utf-8") as handle:
+            body = handle.read()
+        self.assertIn("族華對應品質：高", body)
+        self.assertIn("族華對應品質：中", body)
+        self.assertNotIn("ailabs", body)
+
+    def test_the_second_judge_disagreeing_lands_as_middle(self):
+        self._grade_everything({"1": "高", "2": "中"}, {"1": "低"})
+        asrmt_run.step_quality(self.NAME)
+        path = paths.stage_path(paths.ASR_QUALITY, self.NAME, ".srt")
+        with open(path, encoding="utf-8") as handle:
+            self.assertNotIn("品質：高", handle.read())
+
+    def test_an_unjudged_episode_says_which_entry(self):
+        with self.assertRaises(PipelineError) as caught:
+            asrmt_run.step_quality(self.NAME)
+        self.assertIn("條目 1", str(caught.exception))
+
+    def test_the_offline_rebuild_matches_what_was_written(self):
+        self._grade_everything({"1": "高", "2": "中"}, {"1": "高"})
+        asrmt_run.step_quality(self.NAME)
+        path = paths.stage_path(paths.ASR_QUALITY, self.NAME, ".srt")
+        with open(path, encoding="utf-8") as handle:
+            self.assertEqual(handle.read(),
+                             asrmt_run.quality_body_of(self.NAME))
 
 
 class TestNameGuardWiring(unittest.TestCase):

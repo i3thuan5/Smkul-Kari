@@ -24,6 +24,7 @@ long it should take.
 | **1. cues** | `fetch_sftp.sh` (download → verify band → cut → refine) | local CPU + network | ~5 min download, 6 min cut, 8.5 min refine |
 | **2. OCR** | vision subagents → `ingest` → `make_all` → `publish` | **Claude vision** (the ingest and assembly around it are seconds of CPU) | **~50 min** |
 | **3. asr** | `asrmt_batch` (audio → vosk → project → render) | local CPU | ~15 min |
+| **4. quality** | `asrmt_run --step mt` then `judge` → sonnet subagents → `ingest` → `--second` → fable subagents → `ingest` → `quality` | ai-labs service (free, single concurrency) then **Claude judging** | ~15 min translation, ~8 judging batches |
 
 Stage 2 is where the month goes: 71 episodes ≈ **58 hours of vision**,
 against ~7.5 hours for all of stage 1. Stage 3 can run alongside stage 2.
@@ -138,21 +139,48 @@ been through the 25fps pass, and that only holds if the door is watched.
 things, because the fixes are different (cut it again, or run
 `refine_cues`).
 
-**The two sides must agree about time.** `rebuild --verify` compares the
-(index, start, end) sequence of `1-ocr/3-srt/` against `2-asr/3-srt-raw/`
-for every episode where **both** exist, and a mismatch is an error to fix,
-not a warning — two files claiming different timings for one episode is a
-contradiction. The fix costs nothing but CPU: reproject and re-render off
-`2-entries`, no recognition again:
+**The speech side must rebuild byte for byte.** `rebuild --verify` does not
+read the speech side's delivered files to trust them; it produces each one
+again from the store — `2-srt-raw` from `1-words` plus the picture side's
+timeline, `3-srt-ai` from `2-srt-raw` plus `mt-cache/`, `4-srt-quality` from
+`3-srt-ai` plus `quality-cache/` — and compares the bytes. A difference is an
+error to fix, not a warning. The fix costs nothing but CPU, no recognition and
+no model call:
 
 ```bash
-python3 -m scripts.news.asrmt_run <srt_name> --step entries --redo
-python3 -m scripts.news.asrmt_run <srt_name> --step raw --redo
+python3 -m scripts.news.asrmt_run <srt_name> --step raw
 ```
 
-An episode with **only** the picture side delivered is fine and draws no
-warning: the speech side runs at its own pace and `smkul.csv` already says
-how far it has got.
+An episode that has **not got that far** is fine and draws no warning: the
+speech side runs at its own pace and `smkul.csv` already says how far it has
+got. A file the store cannot rebuild is a different matter — it means a
+translation or a grade was written straight into the deliverable, or a cache
+entry has since been removed.
+
+## 4. Quality grading (after the speech side)
+
+```bash
+python3 -m scripts.news.asrmt_run <srt_name> --step mt        # ai-labs, ~15 min
+python3 -m scripts.news.asrmt_run <srt_name> --step judge     # writes sNN.tsv
+#   → one subagent per batch, model: sonnet, writes sNN.reply.tsv
+python3 -m scripts.news.asrmt_run <srt_name> --step ingest
+python3 -m scripts.news.asrmt_run <srt_name> --step judge --second   # fNN.tsv
+#   → one subagent per batch, model: fable, writes fNN.reply.tsv
+python3 -m scripts.news.asrmt_run <srt_name> --step ingest --second
+python3 -m scripts.news.asrmt_run <srt_name> --step quality
+```
+
+The batch and reply files live in `kithann/out/asrmt/<srt_name>/quality/`.
+Each subagent reads `scripts/asrmt/judge_prompt.md` (the grade definitions
+**and** the prompt) plus its own batch file, and writes one reply file:
+`id<TAB>高|中|低`, one line per request line, same ids, no extras. A reply
+whose id set does not match, or that carries any other label, is rejected
+whole — rerun that batch, the accepted ones are already cached.
+
+The second pass only asks about what the first judge graded 高. High needs
+both judges to agree; there is nobody who reads these languages available to
+calibrate, so that agreement is what the precision of 高 rests on, and the
+store's README says so out loud.
 
 ## Scale — say this out loud before starting
 
@@ -161,7 +189,7 @@ Measured on the February batch (35 episodes, `1-ocr/1-cues/` and
 reading batches per episode**, and the vision pass ran at about **10 batches
 an hour** (13 episodes ≈ 102 batches in a 10.5 h session). Fetch-and-cut costs
 6.3 min per episode including the download; the speech side (`asrmt_batch`,
-through `3-srt-raw`) costs 15 min per episode and can run alongside the vision
+through `2-srt-raw`) costs 15 min per episode and can run alongside the vision
 pass.
 
 So a 71-episode month is roughly **154 GB of download, ~12,600 contact sheets

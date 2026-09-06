@@ -18,7 +18,6 @@ find.
 import argparse
 import json
 import os
-import shutil
 import sys
 
 from scripts import datadirs
@@ -33,7 +32,14 @@ def publishable(entry):
     A reason only stops the batch when the episode is pending -- an
     already-delivered episode whose work dir has been cleared away is
     nothing to do, which is exactly why the work dir was safe to delete.
+
+    An abnormal episode is publishable with nothing to publish: it has no
+    timeline, no transcript and no SRT, and asking `vision_complete` about
+    it would hold the whole batch open forever waiting for a reading that
+    is never going to happen.
     """
+    if tracker.is_abnormal(entry):
+        return "", ""
     work = paths.work_dir(entry["srt_name"])
     if not datadirs.cues_to_read(work):
         return "", "尚未切cue"
@@ -58,11 +64,45 @@ def gate(entries):
 
 
 def publish_one(entry, work):
-    """Copy this episode's timeline into the store."""
+    """Put this episode's timeline in the store, laid out for a reader.
+
+    Read and re-dumped rather than copied: the store's formatting is this
+    program's to decide, not the work dir's. Copying let the work copy's
+    layout through, and with another line of work re-indenting the store
+    the two would have taken turns overwriting each other.
+    """
+    if tracker.is_abnormal(entry):
+        return ""
     target = paths.stage_path(paths.KARI_CUES, entry["srt_name"], ".json")
     os.makedirs(os.path.dirname(target), exist_ok=True)
-    shutil.copy2(datadirs.cues_to_read(work), target)
+    with open(datadirs.cues_to_read(work), encoding="utf-8") as handle:
+        manifest = json.load(handle)
+    with open(target, "w", encoding="utf-8") as handle:
+        json.dump(manifest, handle, ensure_ascii=False, indent=2,
+                  sort_keys=True)
     return target
+
+
+def measured_reasons(entries):
+    """[srt_name…] whose reason this pipeline decided, not the file name.
+
+    A reason lifted off the file name is the broadcaster's own label. One
+    that says 版型不符 or 人工判定, or that says 無字幕 where the name does
+    not, came from the band check or from somebody reading a sheet -- and
+    that is what a person wants to glance at once the batch is over.
+    """
+    from scripts.aiyalaeho import catalogue
+    named = []
+    for entry in entries:
+        reason = entry.get("理由")
+        if not reason:
+            continue
+        stem = os.path.splitext(entry.get("file")
+                                or os.path.basename(entry["video"]))[0]
+        _episode, tokens = catalogue._tokens(stem)
+        if reason != catalogue.subtitle_state(tokens):
+            named.append(entry["srt_name"])
+    return named
 
 
 def clear_pending(entries, published):
@@ -75,7 +115,8 @@ def clear_pending(entries, published):
             del entry["pending"]
             cleared += 1
     with open(paths.INVENTORY, "w", encoding="utf-8") as handle:
-        json.dump(entries, handle, ensure_ascii=False, indent=2)
+        json.dump(entries, handle, ensure_ascii=False, indent=2,
+                  sort_keys=True)
     return cleared
 
 
@@ -119,9 +160,15 @@ def main(argv=None):
     cleared = clear_pending(entries, published)
     rows = tracker.tracker_rows(entries)
     tracker.write_tracker(rows, paths.TRACKER_STORE)
-    print("\n定版 %d／%d 集；%d 集清掉 pending；寫 %s"
+    abnormal = tracker.abnormal_rows(entries)
+    tracker.write_tracker(abnormal, paths.ABNORMAL_STORE,
+                          tracker.ABNORMAL_FIELDS)
+    print("\n定版 %d／%d 集；%d 集清掉 pending；寫 %s（%d 逝）佮 %s（%d 逝）"
           % (len(ready), len(entries), cleared,
-             os.path.basename(paths.TRACKER_STORE)))
+             os.path.basename(paths.TRACKER_STORE), len(rows),
+             os.path.basename(paths.ABNORMAL_STORE), len(abnormal)))
+    for name in measured_reasons(entries):
+        print("  ← %s ê理由是量測抑是人判ê，看一目" % name)
     print("next: python3 -m scripts.aiyalaeho.rebuild --verify")
     return 0
 

@@ -8,7 +8,8 @@ side has to be projected onto it again**. The old entries are exactly
 what must not be kept.
 
 沒這个開關ê時，欲重投影就愛家己去刣檔案，而彼是「刣毋著就愛重跑
-vosk」ê動作——`1-words` 佮 `2-entries` 差一个數量級ê代價。
+vosk」ê動作——重投影是幾若 ms，重新解碼是幾若分鐘，差幾若个
+數量級ê代價。
 """
 import unittest
 

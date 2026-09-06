@@ -276,7 +276,7 @@ def main(argv=None):
         {"lo": args.lo, "hi": args.hi, "region": args.region,
          "count": len(new)}]
     with open(os.path.join(work, "cues.json"), "w", encoding="utf-8") as out:
-        json.dump(book, out, ensure_ascii=False, indent=2)
+        json.dump(book, out, ensure_ascii=False, indent=2, sort_keys=True)
 
     moved, added = move_strips(work, spliced, fresh, args.lo, len(new))
     print("strips：徙 %d 張、新 %d 張" % (moved, added))
@@ -313,7 +313,8 @@ def rebuild_sheets(work, book):
     made = sheets.build_sheets(work, book)
     with open(os.path.join(work, "transcripts.json"), "w",
               encoding="utf-8") as handle:
-        json.dump({}, handle, ensure_ascii=False, indent=1)
+        json.dump({}, handle, ensure_ascii=False, indent=2,
+                  sort_keys=True)
     print("重做 %d 張 contact sheet" % made)
     return made
 

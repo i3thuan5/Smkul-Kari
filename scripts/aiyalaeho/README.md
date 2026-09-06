@@ -47,7 +47,7 @@ $PY -m scripts.aiyalaeho.verify_band "$V" --quiet && \
 $PY -m scripts.ocr.cli cues "$V" -o "$W" \
     --presets scripts/aiyalaeho/presets.json \
     --preset aiyalaeho-bilingual --sheets < /dev/null && \
-$PY -m scripts.news.refine_cues "$V" "$W/cues.json"
+$PY -m scripts.news.refine_cues "$V" "$W/1-cues/cues.json"
 
 # 3. 視覺辨識：subagent 一批讀 24 張 sheet，TSV 直接寫進
 #    Kari-SRT/aiyalaeho/1-ocr/2-vision/<srt_name>/bNN.tsv
@@ -62,6 +62,13 @@ python3 -m scripts.aiyalaeho.rebuild --verify
 
 `cues` 那步的 `< /dev/null` 不可省：迴圈裡的 ffmpeg 會把 stdin 吸乾，
 切 cue 就停在半路而且**不會報錯**（新聞那邊踩過，cues 少四倍）。
+
+**時間軸分兩階段放，餵給 `refine_cues` 的是粗切那一份。** `cues` 寫
+`$W/1-cues/cues.json`（0.2 秒格線，寫一次就不再動），`refine_cues` 讀它、
+把精修的寫到 `$W/2-refined/cues.json`。要讀「這個 work dir 最好的那一份」
+用 `scripts.datadirs.cues_to_read(work)`，不要自己拼路徑——它會挑精修的，
+沒有才退回粗切的。2026-09-06 踩過：這份文件原本寫的是舊布局的
+`$W/cues.json`，照著跑，切 cue 那步成功、refine 當場 `FileNotFoundError`。
 
 **要重切一集之前，先確認上一輪的 `refine_cues` 已經結束**（2026-08-31
 踩過）。`cues` 跑完會接著跑 refine，refine 是把 `cues.json` 讀進記憶體、
@@ -97,8 +104,15 @@ ps -eo pid,etime,cmd -ww | grep -E '[o]cr.cli cues|[r]efine_cues'
 - **`開會了_a_iyalaeho=上字文稿/` 佮影片零交集**：文稿是第 001–045 集，
   影片是 068–164。**袂當供字、嘛袂當對照**，欲收是另外一案ê文本語料。
   （莫閣去揣——查過矣。）
-- **分類**：雙語 37 集（30.1 h）、干焦華語 1 集（083，0.8 h）、無字幕
-  88／90／98（2.5 h）＋116（未下載）、混雜 119／122（未看過）。
+- **分類**：**雙語交付 37 集**（30.1 h）；**字幕版型異常 4 集**——083
+  （僅華語字幕）、088／090／098（無字幕），閣加 116（未下載）；混雜
+  119／122（未看過，愛走完 SOP 才知）。異常彼幾集**無切、無讀、無交付**，
+  列佇 `Kari-SRT/aiyalaeho/smkul-字幕版型異常.csv`，理由記佇第十欄。
+
+  **083 本底交過 694 行**，2026-09-05 撤轉來：伊ê華語列 1,174 條讀了
+  好好，毋過**族語列 0 條**（qc ê `formosan_rows: 0`）——本語料ê交付品
+  是族語文字，伊無。彼 17 个 TSV 佮 SRT 已經對 store 提掉；欲揣ê時
+  佇子模組 commit 694c709 ê歷史內底，工作目錄嘛猶有 `transcripts.json`。
 - **語言分布**（38 集，檔名為準）：阿美 8（068 秀姑巒、112／113 南勢、
   082／084／093／105／117 無註）、泰雅 6（091 賽考利克）、排灣 5、布農 4、
   雅美 4、賽夏 3、卑南 3、魯凱 2（083 非霧台、095 霧台）、賽德克-德路固 1
@@ -153,7 +167,7 @@ ps -eo pid,etime,cmd -ww | grep -E '[o]cr.cli cues|[r]efine_cues'
 
 | 集 | 帶ê色 | 判定 | 是啥 |
 |---|---|---|---|
-| 098 | 0.9 倍 | NO-BAND | 檔名就是「無字幕」，判著ê |
+| 098 | 0.9 倍 | MISMATCH | 檔名是「無字幕」，量著ê是版型無合（戶外亮景，帶區下沿有對比）——兩爿攏指向無字幕 |
 | 094 | 2.4 倍 | MISMATCH | 有帶，毋過**規條帶低 ~14 px** |
 | 087 | 7.0 倍 | MISMATCH | 仝款低，閣加兩逝倚傷近 |
 
@@ -174,6 +188,24 @@ ps -eo pid,etime,cmd -ww | grep -E '[o]cr.cli cues|[r]efine_cues'
 `runs_of` ê列偵測kā兩逝黏做一逝（918–992）。我抽影格看過——**是標準ê
 兩行版型**，而且兩逝各自落佇新 preset ê槽內。所以 087 用
 `--preset aiyalaeho-bilingual-low` 切，閘門彼關是靠量測佮影格人工確認ê。
+
+**後來揣著機械ê解法：取樣加倍。**（2026-09-05 量ê。）087 用低版 preset
+配無仝ê取樣長度：
+
+| 取樣 | 字幕逝 | 剖面對比 | 判定 |
+|---|---|---|---|
+| 240 格（預設） | 918..992（兩逝黏做伙） | 4.9 倍 | MISMATCH |
+| **480 格** | **918..943、967..1004** | 10.0 倍 | **OK** |
+| 750 格 | 918..943、967..1004 | 14.2 倍 | OK |
+
+平均ê格數加倍，下伸部橋過空縫彼幾格ê份量就予正常格淡去，兩逝就分會開。
+480 佮 750 結果一模一樣，所以 **480 就夠**。
+
+**所以 SOP 是四步，攏是機械ê，免人判**：`verify_band` 回 1 ê時，照順序
+試 `--preset aiyalaeho-bilingual-low`、`--duration 480`、兩个鬥做伙；任何
+一步回 0 就用彼組參數切（`cues` 嘛用仝一个 preset）。四款攏回 1 才是真正
+ê版型不符。若無這一層，087 這款**已經交付 590 行ê好集數**會予人記做
+「版型不符」擲掉。
 
 （仝一款「下伸部橋過空縫」ê現象，086 彼爿是kā接縫窗撐懸——看
 `brief.md`「接縫」彼節。）

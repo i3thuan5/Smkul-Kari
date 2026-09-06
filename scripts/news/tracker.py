@@ -44,15 +44,17 @@ FIELDS = ["年度", "集數", "播出日期", "節目名稱", ETH_EN, ETH_ZH,
 CUES_REFINED = "已精修"
 CUES_COARSE = "粗切"
 
-# The speech-side cell names the recogniser, not a revision: delivery stops
-# at 3-srt-raw, so that file existing is what says the audio was recognised.
-# There is nothing above it: the align extension that once sat there was a
-# pilot whose semantic merge did not work out, and it has been removed.
+# The speech-side cell names the recogniser, not a revision: 2-srt-raw is
+# the recognised deliverable, so that file existing is what says the audio
+# was recognised. The stages above it (3-srt-ai, 4-srt-quality) are analysis
+# renders -- a machine translation and a correspondence grade -- and neither
+# changes which recogniser produced the Formosan text, which is the one
+# thing a reader of this column can act on.
 #
 # Derived from the store rather than hand-written: a written value could not
 # survive `rebuild --verify`, which recomputes this table from the store
 # alone -- file existence is the only input both sides share.
-ASR_SRT = ("3-srt-raw", ".srt")
+ASR_SRT = ("2-srt-raw", ".srt")
 ASR_MODEL = "Kaldi"
 
 

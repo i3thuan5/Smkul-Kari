@@ -90,6 +90,6 @@ for k in range(0, len(idx), 4):
     manifest[fn] = group
 json.dump(manifest,
           open(os.path.join(W, "sheets.json"), "w", encoding="utf-8"),
-          ensure_ascii=False, indent=1)
+          ensure_ascii=False, indent=2, sort_keys=True)
 print("  strips %d、sheets %d、sheets.json 好矣"
       % (len(idx), len(manifest)), flush=True)

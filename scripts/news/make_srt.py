@@ -139,7 +139,8 @@ def main(argv=None):
     qc = run(args.work, args.out)
     with open(os.path.splitext(args.out)[0] + ".qc.json", "w",
               encoding="utf-8") as handle:
-        json.dump(qc, handle, ensure_ascii=False, indent=2)
+        json.dump(qc, handle, ensure_ascii=False, indent=2,
+                  sort_keys=True)
     print(json.dumps(qc, ensure_ascii=False))
     return 0
 

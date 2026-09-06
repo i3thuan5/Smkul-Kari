@@ -6,7 +6,12 @@ measurements are in the module docstring; what matters here is that each
 rule has a real file behind it, including the two that first got the
 verdict wrong.
 """
+import json
+import os
+import shutil
+import tempfile
 import unittest
+from unittest import mock
 
 from scripts.aiyalaeho import verify_band
 from scripts.errors import PipelineError
@@ -26,8 +31,14 @@ FLAT = 1.2          # 88／90 量著 1.12 佮 1.35
 STRUCTURED = 4.0    # 新聞版型量著 4.04
 
 
-def verdict(score, runs, contrast=FLAT):
-    return verify_band.verdict(score, runs, SLOTS, REGION, contrast)
+# 帶崁著佗幾列。規个 region ＝ 37 集彼款；924..1014 是 083——帶頂沿
+# 佇 region 第 48 列，族語槽（888..948）ê下跤根本無帶。
+WHOLE_BAND = (876, 1014)
+LOW_BAND = (924, 1014)
+
+
+def verdict(score, runs, contrast=FLAT, band=None):
+    return verify_band.verdict(score, runs, SLOTS, REGION, contrast, band)
 
 
 class TestBandPresent(unittest.TestCase):
@@ -46,7 +57,8 @@ class TestBandPresent(unittest.TestCase):
         self.assertEqual(verdict(WITH_BAND, [(970, 1011)]), ("ok", []))
 
     def test_one_row_only_passes(self):
-        # 083 干焦一逝華語；164 佇取樣彼段干焦量著頂彼逝。
+        # 164 佇取樣彼段干焦量著頂彼逝。（083 嘛是一逝，毋過伊ê帶
+        # 崁袂著族語槽，予下跤 TestSlotsOnBand 彼條擋落來矣。）
         self.assertEqual(verdict(WITH_BAND, [(953, 977)]), ("ok", []))
         self.assertEqual(verdict(WITH_BAND, [(905, 928)]), ("ok", []))
 
@@ -188,6 +200,131 @@ class TestSlots(unittest.TestCase):
         preset = {"region": [0, 722, 1920, 122],
                   "lines": [{"name": "han", "y": 0, "h": 122}]}
         self.assertRaises(PipelineError, verify_band.slots_of, preset)
+
+
+class TestSlotsOnBand(unittest.TestCase):
+    """宣告ê槽下跤愛有帶——083 就是對這个空縫溜過去ê。
+
+    `rows_fit` 干焦問「揣著ê逐逝有囥佇某一个槽內無」。083 彼逝華語
+    確實囥佇華語槽內，所以判 ok，紲落去切 cue——毋過族語槽彼 36 列
+    根本毋是帶，是畫面。遮罩 88.3% 是白襯衫，換句ê時陣距離才 0.21–0.27，
+    一條 cue 就走過四句。
+
+    量著ê兩爿：083 族語槽佮帶重疊 24/60 ＝ 0.40；其餘 37 集帶崁規个
+    region，逐个槽攏是 1.00。門檻 0.9 是留予「帶頂沿量差幾列」ê餘裕。
+    """
+
+    def test_the_threshold(self):
+        self.assertEqual(verify_band.SLOT_ON_BAND, 0.9)
+
+    def test_083_is_refused_even_though_its_row_sits_in_a_slot(self):
+        state, problems = verdict(WITH_BAND, [(953, 977)], STRUCTURED,
+                                  LOW_BAND)
+        self.assertEqual(state, "mismatch")
+        self.assertTrue(problems)
+
+    def test_it_names_the_slot_and_the_band(self):
+        _state, problems = verdict(WITH_BAND, [(953, 977)], STRUCTURED,
+                                   LOW_BAND)
+        joined = "\n".join(problems)
+        self.assertIn("888", joined)     # 崁袂著ê彼个槽
+        self.assertIn("924", joined)     # 帶對佗位起
+
+    def test_a_band_over_the_whole_region_passes(self):
+        self.assertEqual(verdict(WITH_BAND, [(905, 928), (953, 990)],
+                                 FLAT, WHOLE_BAND),
+                         ("ok", []))
+
+    def test_the_low_preset_case_still_passes(self):
+        # 087／094：規條帶低 14 px，毋過帶猶原崁規个 region，
+        # 用低版 preset ê槽去量，覆蓋率是 1.00。
+        self.assertEqual(verdict(WITH_BAND, [(918, 943), (966, 1003)],
+                                 FLAT, WHOLE_BAND),
+                         ("ok", []))
+
+    def test_omitting_the_band_keeps_every_old_verdict(self):
+        # 無傳帶範圍ê時，行為佮進前一模一樣——既有彼十二條靠這點。
+        self.assertEqual(verdict(WITH_BAND, [(905, 928), (953, 990)]),
+                         ("ok", []))
+        self.assertEqual(verdict(NO_BAND, []), ("no-band", []))
+
+    def test_no_band_does_not_run_this_check(self):
+        # 無帶ê時 `check` kā範圍囥做規个 region，這條就免問。
+        self.assertEqual(verdict(NO_BAND, [], FLAT, WHOLE_BAND),
+                         ("no-band", []))
+
+
+class TestExitCodes(unittest.TestCase):
+    """三款判定三个離開碼——批次迴圈干焦看會著這个。
+
+    進前 no-band 佮 ok 攏回 0，迴圈就照切落去：088 ê亮攝影棚予
+    `band_probe` 一直觸發，切出 311 條布料紋理ê cue。
+    """
+
+    def _run(self, state, problems=()):
+        report = {"score": 15.0, "band": (876, 1014), "runs": [],
+                  "slots": SLOTS, "frames": 240, "contrast": 1.2}
+        with mock.patch.object(verify_band, "check",
+                               return_value=(state, list(problems), report)):
+            return verify_band.main(["v.mp4", "--quiet"])
+
+    def test_ok_is_zero(self):
+        self.assertEqual(self._run("ok"), 0)
+
+    def test_mismatch_is_one(self):
+        self.assertEqual(self._run("mismatch", ["槽下跤無帶"]), 1)
+
+    def test_no_band_is_two(self):
+        self.assertEqual(self._run("no-band"), 2)
+
+    def test_the_three_are_distinguishable(self):
+        got = [self._run("ok"), self._run("mismatch"), self._run("no-band")]
+        self.assertEqual(len(set(got)), 3)
+
+
+class TestBandJsonOutput(unittest.TestCase):
+    """量著ê物件寫落工作目錄，予 `cues --band-rows` 讀。"""
+
+    def _write(self, state="ok", problems=()):
+        tmp = tempfile.mkdtemp(prefix="aiya-bandjson-")
+        self.addCleanup(shutil.rmtree, tmp, True)
+        path = os.path.join(tmp, "band.json")
+        report = {"score": 15.0, "band": (924, 1014), "runs": [(953, 977)],
+                  "slots": SLOTS, "frames": 240, "contrast": 1.2}
+        with mock.patch.object(verify_band, "check",
+                               return_value=(state, list(problems), report)):
+            verify_band.main(["v.mp4", "--quiet", "--band-json", path])
+        with open(path, encoding="utf-8") as handle:
+            return json.load(handle)
+
+    def test_it_records_the_measured_rows(self):
+        self.assertEqual(self._write()["band"], [924, 1014])
+
+    def test_it_records_the_verdict(self):
+        self.assertEqual(self._write()["state"], "ok")
+
+    def test_it_records_the_problems_for_a_mismatch(self):
+        got = self._write("mismatch", ["槽 888..948 下跤無帶"])
+        self.assertEqual(got["state"], "mismatch")
+        self.assertEqual(got["problems"], ["槽 888..948 下跤無帶"])
+
+    def test_it_is_written_even_when_the_verdict_is_bad(self):
+        # 判毋著ê時陣嘛愛留紀錄：批次就是欲提彼逝問題去寫理由欄。
+        self.assertIn("band", self._write("no-band"))
+
+    def test_it_is_readable(self):
+        # `Kari-SRT/` 以外ê嘛照規矩：人拍開愛看有。
+        tmp = tempfile.mkdtemp(prefix="aiya-bandjson-")
+        self.addCleanup(shutil.rmtree, tmp, True)
+        path = os.path.join(tmp, "band.json")
+        report = {"score": 15.0, "band": (924, 1014), "runs": [],
+                  "slots": SLOTS, "frames": 240, "contrast": 1.2}
+        with mock.patch.object(verify_band, "check",
+                               return_value=("ok", [], report)):
+            verify_band.main(["v.mp4", "--quiet", "--band-json", path])
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("\n", text)
 
 
 if __name__ == "__main__":

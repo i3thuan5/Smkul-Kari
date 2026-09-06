@@ -280,5 +280,81 @@ class TestInventory(unittest.TestCase):
                           self._write([entry]))
 
 
+class TestAbnormalFields(TestInventory):
+    """字幕版型異常集ê兩个新欄位：理由、影片長度秒。
+
+    理由非空就是異常集——伊行袂過這个節目雙列雙語ê流程，毋管理由是
+    檔名標ê（`無字幕`／`僅華語字幕`）、量測判ê（`版型不符：…`）抑是
+    人看 sheet 判ê（`人工判定：…`）。
+
+    長度ê欄名寫做「影片長度秒」，佮 smkul.csv 彼欄「影片長度」分開：
+    表彼欄是「時:分:秒」，inventory 這欄是浮點ê秒數。仝名無仝款式，
+    人拍開檔案會看無——`Kari-SRT/` ê物件愛人讀有。
+    """
+
+    def test_the_two_new_fields_are_last(self):
+        # 條目是照這張表一欄一欄重建ê，順序換去等於規份 diff，所以
+        # 新欄位干焦會使加佇尾溜。
+        self.assertEqual(paths.INVENTORY_FIELDS[-2:],
+                         ("理由", "影片長度秒"))
+
+    def test_both_are_optional(self):
+        # 雙語集無這兩欄；舊條目嘛無。
+        for field in ("理由", "影片長度秒"):
+            self.assertIn(field, paths.INVENTORY_OPTIONAL)
+
+    def test_an_entry_carrying_them_loads(self):
+        got = paths.load_inventory(self._write([
+            self._entry(理由="無字幕", 影片長度秒=2969.967)]))
+        self.assertEqual(got[0]["理由"], "無字幕")
+        self.assertEqual(got[0]["影片長度秒"], 2969.967)
+
+    def test_an_entry_without_them_still_loads(self):
+        got = paths.load_inventory(self._write([self._entry()]))
+        self.assertNotIn("理由", got[0])
+        self.assertNotIn("影片長度秒", got[0])
+
+    def test_the_reason_survives_the_round_trip(self):
+        # `catalogue` 佮 `publish` kā條目原樣寫轉去 store——理由若佇
+        # 重建ê時無去，異常表隔轉工就空一半。
+        reason = "版型不符：字幕逝 y=1005..1014 無囥佇任何一个宣告ê槽內"
+        got = paths.load_inventory(self._write([self._entry(理由=reason)]))
+        self.assertEqual(got[0]["理由"], reason)
+
+
+class TestAbnormalTablePaths(unittest.TestCase):
+    def test_the_second_table_sits_beside_the_first(self):
+        self.assertEqual(
+            paths.ABNORMAL_STORE,
+            os.path.join(paths.AIYA_STORE, "smkul-字幕版型異常.csv"))
+
+    def test_it_has_a_work_copy_like_the_first(self):
+        self.assertEqual(
+            paths.ABNORMAL_CACHE,
+            os.path.join(paths.WORK, "smkul-字幕版型異常.csv"))
+
+    def test_the_two_tables_are_different_files(self):
+        self.assertNotEqual(paths.ABNORMAL_STORE, paths.TRACKER_STORE)
+        self.assertNotEqual(paths.ABNORMAL_CACHE, paths.TRACKER_CACHE)
+
+
+class TestBandJson(unittest.TestCase):
+    """`verify_band` 量著ê帶範圍——工作區ê快取，無入 store。
+
+    入 store ê是 `cues.json` ê `mask.band_rows`（切 cue ê時陣寫入去ê）。
+    這隻檔干焦是予批次佇兩步中間傳話用ê。
+    """
+
+    def test_it_lives_in_the_episodes_work_dir(self):
+        self.assertEqual(paths.band_json(NAME),
+                         os.path.join(paths.work_dir(NAME), "band.json"))
+
+    def test_it_is_not_in_the_store(self):
+        self.assertNotIn(paths.KARI, paths.band_json(NAME))
+
+    def test_the_name_is_checked(self):
+        self.assertRaises(PipelineError, paths.band_json, "../x")
+
+
 if __name__ == "__main__":
     unittest.main()

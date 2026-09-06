@@ -5,6 +5,7 @@ running ffmpeg are I/O and are not unit tested (same reasoning as the vosk
 call layer: real-transfer smoke test guards them instead).
 """
 import os
+import shutil
 import tempfile
 import unittest
 from unittest import mock
@@ -449,3 +450,83 @@ class TestEncodeLock(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestEncodeThreeStages(unittest.TestCase):
+    """`_encode()` 這馬行三站：編碼＋算指紋 → 判斷去留 → 重新封裝。
+
+    舊版共 `encode_master.sh` 當做烏盒仔，叫一擺就當做逐項攏辦好勢
+    矣。這馬彼隻干焦負責一逝 ffmpeg，驗證佮軌ê去留徙來遮。
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.src = os.path.join(self.tmp, "a.mxf")
+        with open(self.src, "w", encoding="utf-8") as handle:
+            handle.write("master")
+        self.dst = os.path.join(self.tmp, "out.mkv")
+
+    def _fake_run(self, sources, encoded):
+        """假ê subprocess.run：編碼彼站寫出指紋檔佮封存，重封裝寫成品。"""
+        calls = []
+
+        def run(cmd, **kwargs):
+            calls.append(cmd)
+            if cmd[0] == "bash":
+                work, name = cmd[3], cmd[4]
+                with open(os.path.join(work, name + ".all.mkv"), "w") as fh:
+                    fh.write("all")
+                for index, value in enumerate(sources):
+                    path = os.path.join(work, "%s.src-a%d.md5" % (name, index))
+                    with open(path, "w", encoding="utf-8") as fh:
+                        fh.write("MD5=%s\n" % value)
+            else:                                   # remux
+                with open(cmd[-1], "w", encoding="utf-8") as fh:
+                    fh.write("kept")
+            return mock.Mock(returncode=0)
+
+        return run, calls
+
+    def test_bit_exact_archive_is_kept(self):
+        run, calls = self._fake_run(["aa", "aa"], ["aa", "aa"])
+        with mock.patch.object(archive_batch, "_encoded_md5s",
+                               return_value=["aa", "aa"]), \
+                mock.patch.object(archive_batch.subprocess, "run", run):
+            archive_batch._encode(self.src, self.dst)
+        self.assertTrue(os.path.exists(self.dst))
+
+    def test_two_identical_tracks_are_remuxed_down_to_one(self):
+        run, calls = self._fake_run(["aa", "aa"], ["aa", "aa"])
+        with mock.patch.object(archive_batch, "_encoded_md5s",
+                               return_value=["aa", "aa"]), \
+                mock.patch.object(archive_batch.subprocess, "run", run):
+            archive_batch._encode(self.src, self.dst)
+        remux = calls[-1]
+        self.assertIn("-map", remux)
+        self.assertIn("0:a:0", remux)
+        self.assertNotIn("0:a:1", remux)
+
+    def test_two_differing_tracks_are_both_remuxed(self):
+        run, calls = self._fake_run(["aa", "bb"], ["aa", "bb"])
+        with mock.patch.object(archive_batch, "_encoded_md5s",
+                               return_value=["aa", "bb"]), \
+                mock.patch.object(archive_batch.subprocess, "run", run):
+            archive_batch._encode(self.src, self.dst)
+        remux = calls[-1]
+        self.assertIn("0:a:0", remux)
+        self.assertIn("0:a:1", remux)
+
+    def test_audio_mismatch_fails_loud_and_leaves_no_archive(self):
+        """指紋對袂起來，就是 2021-02-09 晚間 雅美彼款代誌。
+
+        彼陣是 fltp ê來源，25% ê PCM 位元組無仝。這款毋是警告，是
+        失敗——半成品袂當留佇正式位置。
+        """
+        run, _ = self._fake_run(["aa", "bb"], ["aa", "cc"])
+        with mock.patch.object(archive_batch, "_encoded_md5s",
+                               return_value=["aa", "cc"]), \
+                mock.patch.object(archive_batch.subprocess, "run", run):
+            with self.assertRaises(PipelineError):
+                archive_batch._encode(self.src, self.dst)
+        self.assertFalse(os.path.exists(self.dst))

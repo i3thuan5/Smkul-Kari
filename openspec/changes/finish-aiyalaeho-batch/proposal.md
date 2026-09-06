@@ -37,8 +37,9 @@ Kari-SRT／tests／scripts 三層的改動已在 2026-09-03 的 explore 逐層�
   - 伺服器三支（`116ALL_無字`、`119-混雜`、`122-混雜`）用 `scripts/news/sftp.sh get` 下載、比位元組數；人看過影片後以 `--language` 指定族語別登記。116 登記時即為第五筆異常集；119／122 依 SOP 過 `verify_band`（不符先換低版 preset），通過才切，切完人工看 sheet_001——任何一關判異常就直接記進異常表附理由，不硬切、不問使用者。
   - 全部讀完：`make_all` → `publish`（報告點名量測分類者）→ `rebuild --verify`（兩張表逐 byte）→ 總驗收（`tox -e unittest`、`tox -e flake8`、news 的 `rebuild --verify` 與 `name_catalogue --check`）。
   - 做完的定義：`smkul.csv` 含全部雙語集、`smkul-字幕版型異常.csv` 含全部字幕版型異常集，兩張表列數相加＝inventory 筆數，inventory 內不再有 pending。
+  - **伺服器三支的位置（2026-09-06 更正）**：在同一台（`ilrdf-corpus@192.168.35.10`）的**絕對路徑** `/docker/ilrdf-corpus/族語節目/開會了/`，`fetch_sftp.sh` 的 `REMOTE_ROOT` 就是 `/docker/ilrdf-corpus`。我 9/5 記「拿不到」是**查錯層**——只看了 SFTP 的相對根目錄，那裡只有新聞的 `home/news/mkv/2021-02`。三支都在，位元組數已核對。它們從未登記進 inventory，所以上面那個完成定義不受影響。
 - **不含**：12.4b 的 B 類補救（要借 news 的 `reread`／`resplit`／`rescan_band`，另開 change）；單列版型當第一級公民（083 已離開，唯一的單列集不存在了）；108／111 標「講中文居多」但兩集都標雙語、有族語列，不屬此類，照常讀。
-- **順帶**：`openspec/changes/half-res-mask-and-slot-crop/` 只有 `.openspec.yaml`、無任何 artifact，題目正是接法 2 的 slot crop，已由本 change 承接——建議刪除該空目錄（Claude Code 刪，使用者最後 `git add`）。
+- **與 `half-res-mask-and-slot-crop` 的關係（2026-09-05 更正）**：那個 change 現在只有 `.openspec.yaml`，但**另一個 session 正在寫它的 artifact**（半解析遮罩＋新聞圖條列位裁切＋批次 24 張），不是廢棄的空目錄，**本 change 不刪它**。它的 `frame_mask(scale)` 會疊在本 change 的 `MaskSpec.band_rows` 上面，所以它的程式改動排在本 change 的 1.2／1.4 之後；那條線會在動 `scripts/ocr/cuelib.py`、`cli.py`、`sheets.py` 之前先通知。
 
 ## Capabilities
 
