@@ -41,6 +41,9 @@
 - [x] 6.5 `test_judge.py` 合成（紅）：`final_label`：(高,高)→高、(高,中|低)→中、(中,·)→中、(低,·)→低、空行→低；第一裁判非高時不需第二裁判 → 實作（綠）
 - [x] 6.6 `test_bisrt.py`：`quality_body` 三行、不含譯文（紅）→ 實作（綠）
 - [x] 6.7 `test_asrmt_run.py`：`step_judge` 寫 sNN 批次（只寫快取未命中的），`--second` 寫 fNN 批次（只寫 Sonnet 給高且 Fable 未判的）；`step_ingest` 收回覆進快取；`step_quality` 要求每條都有判定，缺就指名（紅）→ 實作（綠）
+- [x] 6.9 `ingest_reply` 擋「整批攏低」：一批 10 條以上而且逐條攏低就整批退（阿美 s07、雅美 s13 兩批是按呢來ê，重判後各有 41、27 條毋是低）；規批中無擋，彼是「無把握一律給中」ê合法結果
+- [x] 6.10 `step_judge` 擋「回覆猶未收就重寫批次」：`_clear_batches` 會kā請求檔刣掉重排，中間若有條目入快取，賰ê就重新分批，飛咧ê agent 回來會貼毋著位
+- [x] 6.11 `rebuild.speech_stages()` 加 `4-srt-quality`：本底干焦列 raw 佮 ai 兩層，品質彼層無人顧——阿美 032晚 是舊版 prompt 判ê，材料加了「譯文可疑註記」欄了後根本重建袂出來，`--verify` 猶原講「攏仝款」
 - [x] 6.8 裁判 prompt 寫成 `scripts/asrmt/judge_prompt.md`（三級定義照 spec 逐字、材料說明、回覆格式 `id\t標籤`），`PROMPT_VERSION` 常數與之對應；`test_judge.py` 驗 prompt 檔含三級定義關鍵句
 
 ## 7. 試點與替代驗證
@@ -67,7 +70,7 @@
 
 ## 10. 全部已辨識集數試做
 
-- [ ] 10.1 `asrmt_run --step mt` 對所有已有 `2-srt-raw` 的集數逐集跑（`run_in_background`、`&&` 串、`set -o pipefail`；ai-labs 單併發，一集 12–15 分鐘，全部約半天）；每集落地可續跑
+- [x] 10.1 `asrmt_run --step mt` 對所有已有 `2-srt-raw` 的集數逐集跑（`run_in_background`、`&&` 串、`set -o pipefail`；ai-labs 單併發，一集 12–15 分鐘，全部約半天）；每集落地可續跑
 - [ ] 10.2 每集 `--step judge` 寫 Sonnet 批次 → subagent `model: sonnet` 逐批回覆 → `--step ingest`；再 `--step judge --second` → subagent `model: fable` → `--step ingest` → `--step quality`。批次大小視第一集實測的 token 用量決定（100 或 200 條一批）
 - [ ] 10.3 全程用 `/loop 20m` 檢查進度：mt 做到第幾集、judge 收了幾批、拒收與失敗列出來；有內容的進度寫 `kithann/tuiue/`，純「還在跑」不寫
 - [ ] 10.4 全部做完：`rebuild --verify` 對每集的 `2-srt-raw`／`3-srt-ai`／`4-srt-quality` 逐 byte 通過；三級分布、總 token 用量與實際成本寫進 `2-asr/README.md` 與回覆檔

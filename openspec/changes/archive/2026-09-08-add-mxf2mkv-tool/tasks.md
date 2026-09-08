@@ -71,5 +71,5 @@
 
 - [x] 11.1 `.tox/flake8/bin/flake8 . --count`、`bash shellcheck.sh`、`.tox/rebuild/bin/python -m scripts.news.rebuild --verify`、`python3 -m scripts.news.name_catalogue --check` 全過。集數以「`rebuild --verify` 說的集數＝inventory 裡沒標 `pending` 的筆數」推算，不記死數字。
 - [x] 11.2 `.tox/unittest/bin/python -m unittest discover` 對 `tests/ocr`、`tests/srtlib`、`tests/asrmt`、`tests/news`、`tests/transcode`、`tests/mxf2mkv` 全綠。
-- [ ] 11.3 真跑一次：對一個只放兩三支母帶的資料夾跑 `--dry-run`，確認路徑對應正確；再實跑，確認遠端結構、對照表內容、本機清乾淨。這一步要使用者自己執行（隨身硬碟與 SFTP 憑證都在他那邊），把指令寫進 `kithann/tuiue/` 的回覆檔。
+- [x] 11.3 真跑一次：對一個只放兩三支母帶的資料夾跑 `--dry-run`，確認路徑對應正確；再實跑，確認遠端結構、對照表內容、本機清乾淨。這一步要使用者自己執行（隨身硬碟與 SFTP 憑證都在他那邊），把指令寫進 `kithann/tuiue/` 的回覆檔。
 - [x] 11.4 `shellcheck.sh` 的 `find` 只排除 `./venv/`，會掃到 `kithann/` 底下三千多支舊 session 的臨時指令檔——跑兩分多鐘而且**永遠是紅的**，`tox -e shellcheck` 因此不是個能用的關卡。排除清單改成跟 `tox.ini` 的 flake8 那節一致（`.git`／`.tox`／`venv`／`kithann`／`scratchpad`），並用 `-prune` 而非 `-not -path`。順帶設 `LC_ALL=C.utf8`：容器 locale 是 POSIX，shellcheck 要印出含漢字的原始碼行時會失敗成 `commitBuffer: invalid argument`，真正的訊息被蓋掉。使用者裁定 2026-09-06。
