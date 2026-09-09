@@ -39,14 +39,19 @@ news 有而這裡**沒有**的四支，各有理由：`fetch_sftp.sh`（素材�
 python3 -m scripts.aiyalaeho.catalogue -n
 python3 -m scripts.aiyalaeho.catalogue
 
-# 2. 逐集：驗版型 → 切 cue（出 contact sheet）→ 邊界精修
+# 2. 逐集：守門 → 切 cue（遮罩裁到帶上，出 contact sheet）→ 邊界精修
 PY=$(python3 -m scripts.aiyalaeho.paths --var VENV_PY)
 V='kithann/開會了/068-阿美語-秀姑巒-雙語字幕.mp4'
-W="$(python3 -m scripts.aiyalaeho.paths --var WORK)/開會了_068_Amis_阿美.work"
-$PY -m scripts.aiyalaeho.verify_band "$V" --quiet && \
+N='開會了_068_Amis_阿美'
+W="$(python3 -m scripts.aiyalaeho.paths --var WORK)/$N.work"
+B="$W/band.json"     # 正本是 paths.band_json(srt_name)，莫家己鬥路徑
+
+$PY -m scripts.aiyalaeho.verify_band "$V" --quiet --band-json "$B" && \
 $PY -m scripts.ocr.cli cues "$V" -o "$W" \
     --presets scripts/aiyalaeho/presets.json \
-    --preset aiyalaeho-bilingual --sheets < /dev/null && \
+    --preset aiyalaeho-bilingual \
+    --band-rows "$(python3 -c "import json,sys;b=json.load(open(sys.argv[1]))['band'];print('%d,%d'%(b[0],b[1]))" "$B")" \
+    --sheets < /dev/null && \
 $PY -m scripts.news.refine_cues "$V" "$W/1-cues/cues.json"
 
 # 3. 視覺辨識：subagent 一批讀 24 張 sheet，TSV 直接寫進
@@ -80,6 +85,69 @@ python3 -m scripts.aiyalaeho.rebuild --verify
 ps -eo pid,etime,cmd -ww | grep -E '[o]cr.cli cues|[r]efine_cues'
 ```
 
+## 守門ê離開碼、三路理由、兩張表
+
+### 離開碼分三路，予批次流程免問人
+
+| 碼 | 意思 | 按怎做 |
+|---|---|---|
+| 0 | 通過 | 照常切 cue，`--band-rows` 用 `band.json` 量著ê範圍 |
+| 1 | 版型不符 | **先莫記異常**，照順序試四款參數（下跤） |
+| 2 | 無帶 | 記理由 `無字幕`，分流，莫切 |
+
+回 1 ê時試ê四款，任何一款回 0 就用彼組參數切（`cues` 愛用仝一个 preset）：
+
+```
+1. （原本彼組）--preset aiyalaeho-bilingual
+2. --preset aiyalaeho-bilingual-low                  帶較低ê版型
+3. --duration 480                                    取樣加倍
+4. --preset aiyalaeho-bilingual-low --duration 480   兩个鬥做伙
+```
+
+**四款攏回 1 才是真正ê版型不符。** 087 就是靠取樣加倍才分會開兩逝——若無
+這一層，一集已經交付 590 行ê好集數會予人記做「版型不符」擲掉。
+
+### 三路理由：「理由」彼欄非空就是字幕版型異常集
+
+異常集**無切、無讀、無交付**，列佇另外彼張表。理由有三个來源，寫法刁工
+無仝，就是欲予人一目瞭然彼筆是按怎來ê：
+
+| 來源 | 寫法 | 佗位寫入 |
+|---|---|---|
+| 檔名 | `無字幕`／`僅華語字幕`（照檔名ê字幕狀態字樣抄） | `catalogue` 登記ê時家己填 |
+| 量測（守門回 2） | `無字幕` | 守門了後 `--annotate` |
+| 量測（守門回 1、四款攏試過） | `版型不符：` 接 `band.json` ê第一項問題 | 仝款 |
+| 人判 | `人工判定：` 接一句所看著ê | 人看頭一張 contact sheet 了後 |
+
+```bash
+python3 -m scripts.aiyalaeho.catalogue --annotate     # 空ê理由佮影片長度攏補
+python3 -m scripts.aiyalaeho.catalogue --annotate '開會了_083_Rukai_魯凱=僅華語字幕'
+```
+
+**既有ê非空理由袂予蓋掉**（會指名回報），無代誌通做ê時回「未改」、袂寫檔。
+
+**人工判定ê理由按怎寫：寫「看著啥」，莫寫「判斷」。** 「人工判定：規集干焦
+一逝華語字幕，帶佇 y700 附近，毋是本節目ê雙列版型」是好ê；「人工判定：
+版型無對」無路用——半年後無人知影當初看著啥物。
+
+### 兩張表
+
+| 表 | 內容 | 欄 |
+|---|---|---|
+| `Kari-SRT/aiyalaeho/smkul.csv` | 有交付字幕ê集數 | 九欄 |
+| `Kari-SRT/aiyalaeho/smkul-字幕版型異常.csv` | 無交付ê | 十欄＝九欄加「理由」 |
+
+兩張表ê**逝數相加＝`inventory.json` ê筆數**，`srt_name` 兩爿袂重複。異常表
+ê「影片長度」是對 inventory ê秒數格式化來ê——異常集無時間軸，推導袂出來，
+所以 `catalogue` 登記／補註ê時就先共影片容器ê時長讀落來記。
+
+### 報告按怎看
+
+`make_all` 佮 `publish` 尾溜彼段會逐集列異常集ê理由。**理由若毋是對檔名
+來ê，報告會共伊標出來**——理由是 `無字幕` 毋過檔名ê字樣毋是、抑是理由用
+`版型不符：`／`人工判定：` 起頭ê，攏算。彼幾筆是量測抑是人判ê結論，規批
+做煞ê時愛用目睭閣看一遍。
+
 ## TSV 格式（視覺辨識的交卷）
 
 每個 cue 兩逝，行尾允許留空（那是「這列沒有字幕」，不是漏讀）：
@@ -95,19 +163,24 @@ ps -eo pid,etime,cmd -ww | grep -E '[o]cr.cli cues|[r]efine_cues'
 `^ ' " : ʉ` 這些符號原樣保留，`'`（一撇）與 `"`（兩撇）是不同的符號、
 不可互換。
 
-## 素材：38 集有字幕、30.9 點鐘（量過ê，2026-08-31）
+## 素材：SFTP ê 44 支 mp4
 
 - SFTP `族語節目/開會了/`：**44 支 mp4**——41 支是 2026-08-04 頂傳ê
   `NNN-語言[-方言]-字幕狀態.mp4`，另外 3 支是三月ê舊頂傳（`116ALL_無字`、
-  `119-混雜`、`122-混雜`）。44 組 mp3／wav 用袂著（這爿無做 ASR）。
-  本機 `kithann/開會了/` 有 8/4 彼批 41 支，位元組數逐支對會著，共 68 GB。
+  `119-混雜`、`122-混雜`）。三支舊ê佇**絕對路徑**
+  `/docker/ilrdf-corpus/族語節目/開會了/`，毋是 SFTP ê相對根——2026-09-05
+  講「提袂著」是查毋著層。44 組 mp3／wav 用袂著（這爿無做 ASR）。
 - **`開會了_a_iyalaeho=上字文稿/` 佮影片零交集**：文稿是第 001–045 集，
   影片是 068–164。**袂當供字、嘛袂當對照**，欲收是另外一案ê文本語料。
   （莫閣去揣——查過矣。）
-- **分類**：**雙語交付 37 集**（30.1 h）；**字幕版型異常 4 集**——083
-  （僅華語字幕）、088／090／098（無字幕），閣加 116（未下載）；混雜
-  119／122（未看過，愛走完 SOP 才知）。異常彼幾集**無切、無讀、無交付**，
-  列佇 `Kari-SRT/aiyalaeho/smkul-字幕版型異常.csv`，理由記佇第十欄。
+- **檔名ê字幕狀態字樣有兩套**：8/4 彼批是 `-雙語字幕`／`-無字幕`／
+  `-僅華語字幕`；三月彼三支是 `_無字`（＝無字幕）佮 `-混雜`。**「混雜」
+  檔名本身判袂出來**，愛走完 SOP 才知（119／122 兩支走完攏是正常ê雙列
+  版型，語言卡是布農）。
+- **分類ê正本是兩張表，莫記佇這份文件**：交付幾集看
+  `Kari-SRT/aiyalaeho/smkul.csv`、異常幾集佮理由看
+  `smkul-字幕版型異常.csv`，兩爿逝數相加＝`inventory.json` ê筆數。批次咧
+  行ê時這幾个數字逐工咧走，寫死佇文件就一定會過期。
 
   **083 本底交過 694 行**，2026-09-05 撤轉來：伊ê華語列 1,174 條讀了
   好好，毋過**族語列 0 條**（qc ê `formosan_rows: 0`）——本語料ê交付品
@@ -310,6 +383,57 @@ U+0022、`“` U+201C、`”` U+201D、全形ê `＂`／`＇`）、橫槓類、�
     for ch, n in tot.most_common():
         print('U+%04X %s %d' % (ord(ch), ch, n))
     "
+
+## 漢字ê異體佮簡體：一律改做台灣用法（使用者裁定 2026-09-09）
+
+**規矩**：華語列若出現簡體字抑是異體字，**直接改做台灣ê寫法，莫照畫面
+抄**。（播出端家己ê錯字猶原照抄——彼是無仝條，看 `brief.md`。）
+
+**掃法**：共 Big5 編袂出來ê漢字撈出來，逐个用目睭判。閣用 GB2312 篩一擺
+會使分兩堆——Big5 袂編、GB2312 編會出來ê是**簡體嫌疑**；兩爿攏袂編ê是
+**異體**。
+
+```python
+import glob, io
+bad = {}
+for f in glob.glob('Kari-SRT/aiyalaeho/1-ocr/2-vision/*/b*.tsv'):
+    for n, line in enumerate(io.open(f, encoding='utf-8'), 1):
+        parts = line.rstrip('\n').split('\t')
+        if len(parts) < 3:
+            continue
+        for ch in parts[2]:
+            if u'\u4e00' <= ch <= u'\u9fff':
+                try:
+                    ch.encode('big5')
+                except UnicodeEncodeError:
+                    bad.setdefault(ch, []).append((f, n))
+for ch in bad:
+    print(ch, len(bad[ch]), bad[ch][0])
+```
+
+**2026-09-09 掃著 10 个字 43 逝，改 7 个字 39 逝、18 集**：`裏`→`裡`
+（32 逝；068 cue330 仝一句內底「那裏…這裡」兩款寫法做伙出現，播出端
+家己就無一致）、`産`→`產`、`强`→`強`、`冨`→`富`（花蓮秀林鄉**富世**村）、
+`説`→`說`、`邨`→`村`（「邨落」＝村落）、`懡`→`麼`（「為什懡」是讀毋著
+字，毋是異體）。
+
+**改煞愛閣掃一擺。** 頭一輪我共 `邨` 排做「待查ê專有名詞」，改煞閣掃
+才看清楚伊ê詞是「邨落」——就是村落，普通名詞。**掃到賰ê攏是頂懸彼張
+表刁工留ê，才算清氣。**
+
+**這三个刁工留咧，莫閣共in當做問題掃出來**：
+
+| 字 | 出處 | 為啥物留 |
+|---|---|---|
+| `祢` | 096 cue301「祈願祢能寬心」 | 台灣基督教出版對神ê敬稱就是按呢寫，本底就是台灣用法 |
+| `瑠` | 106 cue373／374「瑪法瑠」 | 專有名詞（族群系統名），改字等於改名 |
+| `嶋` | 115 cue45「(新竹五峰)嶋瀨教會」 | 教會名 |
+
+後壁兩个查無現行ê寫法，**查無就莫振動**（使用者裁定 2026-09-09）。
+
+**改了後一定愛重新 ingest**：改 TSV 無重 ingest，`make_all` 出ê猶原是舊ê
+——看頂懸〈work 的 `transcripts.json` 也會過期〉彼節。改煞ê全套是
+`ingest`（逐集）→ `make_all` → `publish` → `rebuild --verify`。
 
 ## 已知缺陷：長 cue 內底藏著幾若句字幕（猶未補）
 

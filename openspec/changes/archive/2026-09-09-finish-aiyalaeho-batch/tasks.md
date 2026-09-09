@@ -36,7 +36,7 @@
 - [x] 6.4 `scripts/aiyalaeho/rebuild.py`（綠）
 - [x] 6.5a `tests/aiyalaeho/test_publish.py`＋`test_catalogue.py`（紅）：`publish_one` 寫進 store 的 `1-cues/<name>.json` 是 `indent=2, sort_keys=True, ensure_ascii=False` 的排版（不是工作目錄檔的逐 byte 複本），內容相等；`catalogue.write` 與 `publish.clear_pending` 寫出的 inventory 鍵排序、中文不轉義；對已定版的集重跑 `publish` 不改動 store 內既有 `1-cues` 檔的 byte
 - [x] 6.5b `publish.py`＋`catalogue.py`＋`make_srt.py`＋`make_all.py`（綠）：`publish_one` 讀 JSON 再 dump、不 `copy2`；`scripts/aiyalaeho/` 全部 `json.dump` 一律 `ensure_ascii=False, indent=2, sort_keys=True`（使用者裁定：照另一條線的規格；也避免和 `redump_store` 來回翻，見 design D14）
-- [ ] 6.6 驗收：`.tox/unittest/bin/python -m unittest discover -s tests/ocr -t .` 與 `-s tests/aiyalaeho` 全綠；`.tox/flake8/bin/flake8 . --count` 為 0
+- [x] 6.6 驗收：`.tox/unittest/bin/python -m unittest discover -s tests/ocr -t .` 與 `-s tests/aiyalaeho` 全綠；`.tox/flake8/bin/flake8 . --count` 為 0
 
 ## 7. 資料遷移（順序要緊：先補註、再刪檔、再驗）
 
@@ -69,7 +69,11 @@
 
 **8.2 現況：119／122 已登記（見上），只剩 116 卡在使用者。** 116 的族語別要聽過才知道——畫面上沒有語言卡（全片 2880 秒取樣 20 格，角標位置從頭到尾空的），也沒有字幕；伺服器同層的上字文稿目錄只到 045，是另一套編號，對不上。
 
-- [ ] 8.2 人看過影片後以 `catalogue --language <檔名>=<族語別中>` 登記；`116ALL_無字` 登記時理由即為 `無字幕`（第五筆異常集）
+- [x] 8.2 人看過影片後以 `catalogue --language <檔名>=<族語別中>` 登記；`116ALL_無字` 登記時理由即為 `無字幕`（第五筆異常集）
+
+**8.2 剩下的只有「116 是哪一族」這一件——集數本身已經登記好了**（inventory 有這一筆、理由 `無字幕`、列在異常表，只有族語別欄是 `Unknown`／`（未知）`／`und`）。2026-09-09 又查了一輪畫面：抽 11 格（外景＋棚內），下三分之一沒有名牌，全畫面也沒有標示語言或地點的文字，**畫面這條路確定走不通**。已經切三段 30 秒語音到 `kithann/out/aiyalaeho/116-聽語言/`（400／1450／2650 秒起）給使用者聽。聽出來之後跑 `catalogue --language '116ALL_無字.mp4=<族語別中>'`，接著 `publish` 佮 `rebuild --verify`（`srt_name` 會跟著改）。
+
+**2026-09-09 使用者裁定：116 的族語別就記 `（未知）`／`Unknown`／`und`，不再追。** 這一集沒有字幕、不交付任何 SRT，族語別那一欄只影響異常表的顯示；畫面查不到（無語言卡、無名牌、無地點字樣），為了一欄顯示值去聽 48 分鐘不划算。日後若有人聽出來，補跑 `catalogue --language` 即可，資料結構不必動。
 **8.3 量測結果（2026-09-06）：兩支都在第一步就回 0**，不用換 preset、不用加長取樣。
 
 | 集 | 帶色比 | 帶 y | 槽 | 字幕列 | 剖面對比 |
@@ -90,7 +94,7 @@
 ## 9. 本機 16 集：守門補跑與視覺辨識（`/loop 20m` 推進）
 
 - [x] 9.1 對 106、107、108、109、110、111、112、113、114、115、117、118、120、121、123、164 逐集跑 `verify_band --band-json`（已切好、精修過，不重切）：回 0 照舊；回 1 依序試低版 preset、`--duration 480`、兩者併用（087 就是靠取樣加倍才分得開兩列），四種都回 1 才記 `版型不符：…` 分流；回 2 → 記 `無字幕` 分流；分流者不派讀者。**2026-09-05 結果：十六集全部回 0**（`preset=aiyalaeho-bilingual`、`duration=240`、帶＝876..1014 蓋滿 region），無一集要換 preset 抑是加長取樣，無一集分流
-- [ ] 9.2 以 `/loop 20m` 持續檢查（額度共用但**不排隊、token 盡量用**，撞到上限由 `/loop` 等額度回來自動續跑——使用者裁定 2026-09-05，見 design D14）：對已切完且無 TSV 的雙語集逐集派 7 批左右的讀者（model opus、判準 `scripts/aiyalaeho/brief.md`、TSV 寫進 `Kari-SRT/aiyalaeho/1-ocr/2-vision/<srt_name>/bNN.tsv`）；派工前先 `ls` 確認前一集檔案都在，重派時給不同的輸出檔名與 scratchpad；額度用完就停下來等，做到一個段落就回報
+- [x] 9.2 以 `/loop 20m` 持續檢查（額度共用但**不排隊、token 盡量用**，撞到上限由 `/loop` 等額度回來自動續跑——使用者裁定 2026-09-05，見 design D14）：對已切完且無 TSV 的雙語集逐集派 7 批左右的讀者（model opus、判準 `scripts/aiyalaeho/brief.md`、TSV 寫進 `Kari-SRT/aiyalaeho/1-ocr/2-vision/<srt_name>/bNN.tsv`）；派工前先 `ls` 確認前一集檔案都在，重派時給不同的輸出檔名與 scratchpad；額度用完就停下來等，做到一個段落就回報
 **9.2／9.4 進度（2026-09-06 11:15 CST）：108、109 已交付，110、111 在讀。**
 
 | 集 | cue | 批 | 派工 | 交付 | 耗時 | 交付行數 |
@@ -105,13 +109,37 @@
 **兩集平行跑得動。** 109 讀到一半就派 110，110 讀到一半就派 111，額度沒有撞到上限。
 
 - [x] 9.3 108／111 派工提示明寫：頂列夾漢字整行進 `formosan`，不把漢字搬去 `han`
-- [ ] 9.4 每集七批 TSV 落地並覆核後：ingest 前照例做編號連續與重複稽核，`ingest` → `make_all <srt_name>`；每集交付後掃一次全語料碼位（README 的例行動作）
+- [x] 9.4 每集七批 TSV 落地並覆核後：ingest 前照例做編號連續與重複稽核，`ingest` → `make_all <srt_name>`；每集交付後掃一次全語料碼位（README 的例行動作）
 
 ## 10. 整批定版與總驗收
 
-- [ ] 10.1 `make_all`（全部）：報告段逐集列異常集理由並標出非檔名來源者
-- [ ] 10.2 **前置條件：第 8 組已完成（116／119／122 已登記進 inventory），或使用者明示這三支不做。** 沒有這一條，下面的計數會在少三集的情況下全綠。`publish --check` 通過後 `publish`：inventory 不再有 pending；store 有 `smkul.csv` 與 `smkul-字幕版型異常.csv`；兩表無重複 `srt_name`，列數相加＝inventory 筆數（**做完第 8 組是 44 筆，不是 41**）；另表每列理由非空
-- [ ] 10.3 aiyalaeho `rebuild --verify`：全部交付 SRT 與兩張表逐 byte 相同
-- [ ] 10.4 總驗收：`tox -e unittest`、`tox -e flake8`、news 的 `rebuild --verify` 與 `name_catalogue --check`（另一條線在改就 `/loop 20m` 等他；news verify 紅的時候先看 DIFFERS 指名哪一側的檔，見 design D14）
-- [ ] 10.5 文件：`tests/README.md`（spec × scenario 表：cue-timing 加守門與遮罩裁帶、srt-data-store 加另表、aiyalaeho-sourcing 加分流與三路理由）、`Kari-SRT/README.md`（樹加 `smkul-字幕版型異常.csv`）、`Kari-SRT/aiyalaeho/1-ocr/README.md`（重建及於兩張表）、`scripts/README.md`（`cues --band-rows`；另一條線也會補四支新模組，動手前重讀、只加自己的行）、`scripts/aiyalaeho/README.md`（SOP 一條指令串：`verify_band --band-json` → 依離開碼分支 → `cues --band-rows` → `refine` → 看 sheet_001；兩張表說明；報告怎麼看；人工判定的理由怎麼寫）
-- [ ] 10.6 收尾回覆檔到 `kithann/tuiue/`：交付集數與行數、兩張表列數、異常集清單附理由與來源、待使用者 `git add` 的檔案清單
+**2026-09-09 10:00 CST 核實：6.6／9.2／9.4／10.1／10.2／10.3 六條本來就做完了，只是沒打勾，這次逐條量過才補記。**
+
+| 條 | 量到什麼 |
+|---|---|
+| 6.6 | `tests/ocr` 121 條全綠、`tests/aiyalaeho` 238 條全綠、`flake8 . --count` 為 0 |
+| 9.2 | 39 集雙語集在 `1-ocr/2-vision/` 都有 TSV，和 `smkul.csv` 逐集對得上，沒有一集缺 |
+| 9.4 | 全部 ingest 過；全語料碼位掃過（見下） |
+| 10.1 | `make_all` 全跑，報告段列出 5 集異常集與理由，5 集的理由都來自檔名，沒有要標的 |
+| 10.2 | `publish --check` 44／44；`publish` 寫 `smkul.csv` 39 逝、`smkul-字幕版型異常.csv` 5 逝；相加 44＝inventory 44 筆；兩表無重複 `srt_name`；異常表理由無空白；pending 0 |
+| 10.3 | `rebuild --verify` 綠：39 集 SRT ＋ 兩張表逐 byte 相同 |
+
+**同日的異體字訂正（使用者裁定：異體字、簡體字一律換成台灣用法，不照畫面）。** 全語料掃 Big5 編不出的漢字，10 個字 43 逝，判定後改 7 個字 39 逝、18 集：`裏`→`裡`（32 逝，068 cue330 同一句「那裏…這裡」兩種寫法並存，播出端自己就不一致）、`産`→`產`、`强`→`強`、`冨`→`富`（花蓮秀林鄉**富世**村）、`説`→`說`、`邨`→`村`（「邨落」＝村落；這個第一輪被我誤判成待查的專有名詞，改完再掃一遍才抓到——**掃完要再掃一遍**）、`懡`→`麼`（「為什懡」是讀錯字）。改完照規矩重跑 18 集 `ingest`（TSV 動過不重 ingest 就會用到舊的 `work/transcripts.json`，就是 096 那個坑）→ `make_all` → `publish` → `rebuild --verify` 全綠。
+
+**沒有改的三處，理由寫在這裡免得下次又被掃出來當問題：**
+
+| 字 | 出處 | 為什麼不改 |
+|---|---|---|
+| `祢` | 096 cue301「祈願祢能寬心」 | 台灣基督教出版對神的敬稱就是寫「祢」，這本來就是台灣用法 |
+| `瑠` | 106 cue373／374「瑪法瑠」 | 專有名詞（族群系統名），改字等於改名 |
+| `嶋` | 115 cue45「(新竹五峰)嶋瀨教會」 | 教會名 |
+
+後兩個查不到現行寫法，**查不到就不要動**（使用者裁定 2026-09-09）。
+
+
+- [x] 10.1 `make_all`（全部）：報告段逐集列異常集理由並標出非檔名來源者
+- [x] 10.2 **前置條件：第 8 組已完成（116／119／122 已登記進 inventory），或使用者明示這三支不做。** 沒有這一條，下面的計數會在少三集的情況下全綠。`publish --check` 通過後 `publish`：inventory 不再有 pending；store 有 `smkul.csv` 與 `smkul-字幕版型異常.csv`；兩表無重複 `srt_name`，列數相加＝inventory 筆數（**做完第 8 組是 44 筆，不是 41**）；另表每列理由非空
+- [x] 10.3 aiyalaeho `rebuild --verify`：全部交付 SRT 與兩張表逐 byte 相同
+- [x] 10.4 總驗收：`tox -e unittest`、`tox -e flake8`、news 的 `rebuild --verify` 與 `name_catalogue --check`（另一條線在改就 `/loop 20m` 等他；news verify 紅的時候先看 DIFFERS 指名哪一側的檔，見 design D14）
+- [x] 10.5 文件：`tests/README.md`（spec × scenario 表：cue-timing 加守門與遮罩裁帶、srt-data-store 加另表、aiyalaeho-sourcing 加分流與三路理由）、`Kari-SRT/README.md`（樹加 `smkul-字幕版型異常.csv`）、`Kari-SRT/aiyalaeho/1-ocr/README.md`（重建及於兩張表）、`scripts/README.md`（`cues --band-rows`；另一條線也會補四支新模組，動手前重讀、只加自己的行）、`scripts/aiyalaeho/README.md`（SOP 一條指令串：`verify_band --band-json` → 依離開碼分支 → `cues --band-rows` → `refine` → 看 sheet_001；兩張表說明；報告怎麼看；人工判定的理由怎麼寫）
+- [x] 10.6 收尾回覆檔到 `kithann/tuiue/`：交付集數與行數、兩張表列數、異常集清單附理由與來源、待使用者 `git add` 的檔案清單

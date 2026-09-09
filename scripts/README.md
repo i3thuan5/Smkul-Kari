@@ -36,12 +36,12 @@
 
 | 檔 | 做什麼 |
 |---|---|
-| `cuelib.py` | 像素核心：遮罩、區域運算、取樣、cue 切分（Segmenter） |
+| `cuelib.py` | 像素核心：遮罩、區域運算、取樣、cue 切分（Segmenter）；`MaskSpec.band_rows` 會使共遮罩裁到字幕帶彼幾列，帶以外逐列算空 |
 | `band.py` | 字幕帶位置偵測（preset 載入與帶位判準） |
 | `ocr.py` | tesseract 輸出清理 |
 | `sheets.py` | contact sheet 產生（給視覺辨識讀） |
 | `transcripts.py` | 視覺逐字稿帳本：TSV 驗證匯入、transcripts.json／verified.json |
-| `cli.py` | `python -m scripts.ocr.cli`：detect／cues／ocr／srt／auto 五階段 |
+| `cli.py` | `python -m scripts.ocr.cli`：detect／cues／ocr／srt／auto 五階段；`cues --band-rows LO,HI` 用**絕對列**指定字幕帶，寫入 manifest ê是 region 內ê偏移（《開會了》靠這隻共遮罩裁到帶頂，畫面別位ê字免影響切 cue） |
 
 ## srtlib/——兩側共用
 

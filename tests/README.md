@@ -35,6 +35,7 @@ tests/
 |---|---|---|
 | cue-timing | 精修取樣密度／邊界取中點／偏移超限即擋下／缺輸入明確失敗 | `news/test_refine.py`（純邏輯）＋ `ocr/test_segmenter.py`（切分） |
 | cue-timing | 批次切 cue 前驗證字幕帶（紅帶低位通過／侵入擋下） | `news/test_verify_band.py` |
+| cue-timing | 切 cue ê遮罩會使裁到帶頂：無指定就佮逐畫素仝款、指定了帶外逐列攏空；`--band-rows` 用絕對列傳入，寫入 manifest ê是 region 內ê偏移 | `ocr/test_cuelib_band_rows.py`、`ocr/test_band_rows_option.py` |
 | subtitle-text-source | 指定 preset 每個入口都生效／名稱錯誤中止 | `ocr/test_presets.py`、`ocr/test_auto_options.py` |
 | subtitle-text-source | 只有經人校讀的視覺辨識可供字 | `ocr/test_import_tsv.py`（verified 記帳）、`news/test_vision_complete.py` |
 | —（引擎行為） | 像素遮罩／區域運算 | `ocr/test_mask.py`、`ocr/test_region.py` |
@@ -98,6 +99,8 @@ tests/
 | aiyalaeho-sourcing | 命名鍵是 `開會了_<集數3碼>_…`；佮新聞ê鍵袂相撞；work dir 就是彼个名 | `aiyalaeho/test_paths.py` |
 | aiyalaeho-sourcing | 無法解析ê檔名略過並指名，其他照常登記；人指定族語別會當補登記；重跑不重複登記；目錄無彼逝嘛照登 | `aiyalaeho/test_catalogue.py` |
 | cue-timing | 雙列帶前驗：兩列各佇家己ê槽／整帶漂十外 px 猶原過／單列只有華語過／無字幕集毋算失敗／新聞版型擋落來 | `aiyalaeho/test_verify_band.py` |
+| cue-timing | 守門ê離開碼分三路——通過 0、版型不符 1、無帶 2，批次流程才分會清；`--band-json` 寫出帶範圍、槽、分數佮問題清單 | `aiyalaeho/test_verify_band.py` |
+| aiyalaeho-sourcing | 版型異常集分流，理由三路來源（檔名ê字幕狀態字樣／量測／人工判定）；`--annotate` 干焦填空ê理由佮影片長度、既有理由袂予蓋掉、無事做回「未改」 | `aiyalaeho/test_catalogue.py` |
 | cue-timing | 0.5 秒留白、間距不足佇中點相接、袂出負值袂超片長、留白無寫轉去時間軸 | `aiyalaeho/test_make_srt.py` |
 | subtitle-text-source | 每條恆兩行帶標籤「族語：／華語：」；某列空白猶原出標籤行；兩列攏空無出；合併比兩行合成ê字串 | `aiyalaeho/test_make_srt.py` |
 | subtitle-text-source | 兩逝一 cue ê TSV：列名毋著／cue 無佇 sheet 頂懸／仝一 cue 兩批攏有——規批拒收 | `aiyalaeho/test_ingest.py` |
@@ -105,7 +108,10 @@ tests/
 | —（成本防線） | preset ê列懸度愛予一張 sheet 囥會落四條 cue（1.10 MP 預算；超過就恬恬加三成閱讀量） | `aiyalaeho/test_paths.py` |
 | srt-data-store | 進度表九欄佮順序；成果檔名＝srt_name；影片長度由時間軸推導；pending 不入定版表 | `aiyalaeho/test_tracker.py` |
 | srt-data-store | 0-cue 集算校讀完成、以 0 行交付、袂擋整批；整批未完成一字都無寫 | `aiyalaeho/test_publish.py` |
+| srt-data-store | 兩張表：正常集入 `smkul.csv`、版型異常集入 `smkul-字幕版型異常.csv`（十欄、逐逝理由非空、影片長度對 inventory 來）；異常集免校讀免時間軸嘛袂擋整批 | `aiyalaeho/test_tracker.py`、`aiyalaeho/test_publish.py` |
 | srt-data-store | 干焦用 store 重建雙列 SRT＋smkul.csv 逐 byte；缺件指名；pending 跳過 | `aiyalaeho/test_rebuild.py` |
+| srt-data-store | 重建同時比兩張表；異常集佇 `1-ocr/` 無檔嘛毋算缺件；無異常集ê時免第二張表 | `aiyalaeho/test_rebuild.py` |
+| —（判讀工具） | 連通元件：8-連通標號、面積算墨毋是算外框、干焦頂端落佇族語槽內ê元件算數、面積 1 ê反鋸齒濾掉（濾面積毋是濾闊——真ê `l` 柱就是一畫素闊） | `aiyalaeho/test_blobs.py` |
 
 ## 端對端（tests/e2e/）
 
