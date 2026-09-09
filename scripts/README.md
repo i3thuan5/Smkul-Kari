@@ -41,7 +41,7 @@
 | `ocr.py` | tesseract 輸出清理 |
 | `sheets.py` | contact sheet 產生（給視覺辨識讀） |
 | `transcripts.py` | 視覺逐字稿帳本：TSV 驗證匯入、transcripts.json／verified.json |
-| `cli.py` | `python -m scripts.ocr.cli`：detect／cues／ocr／srt／auto 五階段；`cues --band-rows LO,HI` 用**絕對列**指定字幕帶，寫入 manifest ê是 region 內ê偏移（《開會了》靠這隻共遮罩裁到帶頂，畫面別位ê字免影響切 cue） |
+| `cli.py` | `python -m scripts.ocr.cli`：detect／cues／ocr／srt／auto 五階段；`cues --band-rows LO,HI` 用**絕對列**指定字幕帶，寫入 manifest ê是 region 內ê偏移（《開會了》靠這隻共遮罩裁到帶頂，畫面別位ê字免影響切 cue）；`cues --mask-scale N` 覆寫 preset ê取樣倍率（無傳就照 preset，無 preset 就是 1＝逐畫素） |
 
 ## srtlib/——兩側共用
 
@@ -78,7 +78,7 @@
 | `sources.py` | 一集配一支檔的規則（母帶優先→時段相符→同名不同夾→一檔一集） |
 | `add_episodes.py`／`resolve_slug.py` | 逐支指定路徑登記；目錄索引與命名 |
 | `fetch_sftp.sh`／`run_cues.sh`／`sftp.sh`／`sftp-askpass.sh` | 影像側抓檔與切 cue（吃播出月份，清單對 inventory 提；密碼只以檔案存在；`sftp.sh` 收動詞＋獨立參數，路徑不進指令字串） |
-| `refine_cues.py`／`verify_band.py` | cue 邊界精修、字幕帶前驗 |
+| `refine_cues.py`／`verify_band.py` | cue 邊界精修（**愛 `--preset`／`--presets`**，精修愛佮切 cue 用仝一款判準，無講就拒絕走）、字幕帶前驗（順紲驗欄方向：字幕ê右緣有無猶佇比對遮罩內底） |
 | `ocr/stripname.py` | Strip ê檔名：用 cue ê起始時間，因為序號會綴重新編號走 |
 | `blank_runs.py` | 掠 vision TSV 內底ê長連紲空白：字幕印佇帶外ê段會規段變空白 |
 | `rescan_band.py` | 用改正ê帶重切一段，接轉原本ê cue 排、規集重新編號 |
@@ -145,3 +145,10 @@ ffmpeg 共來源全部聲軌攏紮入去封存，順紲算出**逐條來源聲�
 `/home/mkv-raw/`。伊無查目錄、無查 `smkul.csv`、無查 inventory，所以
 猶未登記ê母帶嘛轉會動；佮 `/home/news/mkv/` 彼爿無相干，重複ê照轉。
 按怎走看 `tools/mxf2mkv/README.md`。
+
+## `tools/`：無佇交付流程頂懸ê量測工具
+
+| 檔案 | 做啥 |
+| --- | --- |
+| `cuescore/score.py` | 一份時間軸對 store ê視覺辨識文字評分：**重覆對／吞句／漏切**三个數字，毋免影片。動任何切割參數（門檻、比對遮罩、解析度）了後就用這支量——`rebuild --verify` 掠袂著切割ê回歸，因為伊從頭到尾無碰遮罩 |
+| `measure/`、`mxf2mkv/` | 影片壓縮量測、mxf→mkv 轉檔 |

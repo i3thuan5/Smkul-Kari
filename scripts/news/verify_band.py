@@ -114,16 +114,36 @@ SMOOTH = 24
 SPIKE = 2.0
 
 
-def profile(path, region, spec, start, duration, fps=1.0):
+def profile(path, region, spec, start, duration, fps=1.0, col_rows=None):
+    """Mean ink per row AND per column, off one decode.
+
+    The column half rides along for free -- the frames are already here and
+    the mask is already computed -- and it is what says whether the layout's
+    text still sits where the preset's compare window expects it.
+
+    `col_rows` narrows the column half to the dialogue band and matters a
+    great deal: the probe deliberately reaches 120 rows BELOW the region so
+    a lower third can be seen, and the lower third's keyword and reporter
+    supers run further right than the dialogue does. Summed over the whole
+    probe, 032午 measured its right edge at x=1801 -- the name super -- and
+    the check refused a perfectly ordinary episode. Over the region's own
+    rows the same episode measures 1744, where the dialogue really ends.
+    """
     rows = np.zeros(region[3], dtype=np.int64)
+    cols = np.zeros(region[2], dtype=np.int64)
+    lo, hi = col_rows if col_rows else (0, region[3])
+    lo = max(int(lo), 0)
+    hi = min(int(hi), region[3])
     frames = 0
     for _, rgb in cuelib.stream_region(path, region, fps=fps,
                                        start=start, duration=duration):
-        rows += cuelib.text_mask(rgb, spec).sum(axis=1)
+        mask = cuelib.text_mask(rgb, spec)
+        rows += mask.sum(axis=1)
+        cols += mask[lo:hi, :].sum(axis=0)
         frames += 1
     if not frames:
         raise PipelineError("no frames decoded from %s" % path)
-    return rows / float(frames), frames
+    return rows / float(frames), cols / float(frames), frames
 
 
 def landmarks(rows):
@@ -149,6 +169,62 @@ def landmarks(rows):
     if ratio < SPIKE:
         return None, plateau, ratio
     return edge, plateau, ratio
+
+
+# Smoothing width for the column profile: about half a glyph, so a cliff
+# survives and the gaps between characters do not read as several cliffs.
+CLIFF_SMOOTH = 24
+# Where the cliff is called: a quarter of the profile's own peak.
+CLIFF_FRAC = 0.25
+# How much of the line the compare window has to hold before the comparison
+# means anything. Measured line widths: the 10th percentile is 420-546px, so
+# half of the shortest lines is a floor with room to spare.
+TEXT_IN_WINDOW = 200
+
+
+def right_cliff(cols, smooth=CLIFF_SMOOTH, frac=CLIFF_FRAC):
+    """Where the ink stops on the right, or None if there is none.
+
+    News subtitles are flush right -- measured over 27 episodes the right
+    edge sits at x=1735..1737, standard deviation 31-70px, against 460-470
+    for the left edge -- so the profile rises gently from the left and falls
+    off a cliff at the text's right edge. That cliff is a property of the
+    layout; the left edge is a property of how long the sentence was.
+    """
+    broad = np.convolve(cols, np.ones(smooth) / smooth, mode="same")
+    peak = float(broad.max())
+    if peak <= 0:
+        return None
+    hit = np.nonzero(broad >= peak * frac)[0]
+    if len(hit) == 0:
+        return None
+    return int(hit[-1])
+
+
+def judge_columns(cliff, window, margin=TEXT_IN_WINDOW):
+    """Does the compare window still hold the text? (absolute columns)
+
+    NOT "is the cliff where we expected it". 046晚 puts its right edge at
+    1631 against the usual 1736 and the fixed window cuts it perfectly well
+    (measured: repeated cues 48 -> 27, nothing dropped) because 1631 sits
+    inside the window with 390px of line to its left. A tolerance around an
+    expected value would have refused a batch that works.
+    """
+    if not window:
+        return []
+    lo, hi = int(window[0]), int(window[1])
+    if cliff is None:
+        return ["no ink found in the band at all, so the compare window "
+                "x=%d..%d cannot be checked" % (lo, hi)]
+    if cliff > hi:
+        return ["subtitle ink reaches x=%d, past the compare window's right "
+                "edge x=%d; the window would clip the ends of lines"
+                % (cliff, hi)]
+    if cliff < lo + margin:
+        return ["subtitle ink stops at x=%d, leaving less than %dpx of line "
+                "inside the compare window x=%d..%d; cut points would be "
+                "decided on a sliver" % (cliff, margin, lo, hi)]
+    return []
 
 
 # The left strip a persistent station bug sits in, skipped when measuring.
@@ -243,7 +319,10 @@ def main():
     spec = cuelib.MaskSpec.from_dict(preset.get("mask", {}))
 
     probe = probe_region(want)
-    rows, frames = profile(args.video, probe, spec, args.start, args.duration)
+    # Columns are summed over the region's own rows only -- see profile().
+    band_rows = (want[1] - probe[1], want[1] - probe[1] + want[3])
+    rows, cols, frames = profile(args.video, probe, spec, args.start,
+                                 args.duration, col_rows=band_rows)
 
     if not args.quiet:
         for i in range(0, probe[3], 4):
@@ -280,7 +359,23 @@ def main():
     # February masters put it at y=848, four pixels under the region, while a
     # January 卑南 episode puts it at y=917. Both are safe; only an edge that
     # lands within lo..hi is not.
+    # The column half of the same measurement: does the preset's compare
+    # window still hold this layout's text? Printed either way -- a guard
+    # that only speaks when it fails is a guard nobody can check.
+    window = (preset.get("mask", {}) or {}).get("compare_cols")
+    cliff_i = right_cliff(cols)
+    cliff = None if cliff_i is None else probe[0] + cliff_i
+    if window:
+        absolute = (want[0] + int(window[0]), want[0] + int(window[1]))
+        print("ink right edge x=%s  <- compare window x=%d..%d"
+              % ("none" if cliff is None else cliff, absolute[0],
+                 absolute[1]))
+    else:
+        print("no compare window declared; columns not checked")
+        absolute = None
+
     problems = judge(edge, plateau, lo, hi)
+    problems += judge_columns(cliff, absolute)
     if problems:
         for line in problems:
             print("FAIL:", line)

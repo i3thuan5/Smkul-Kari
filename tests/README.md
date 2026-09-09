@@ -26,7 +26,8 @@ tests/
 ```bash
 .tox/unittest/bin/python -m unittest discover -s tests/<組> -t .
 # 組：ocr（影像側引擎）srtlib（共用組裝）asrmt（語音側引擎）
-#     news／aiyalaeho（兩个語料ê編排）e2e（端對端，另走 tox -e e2etest）
+#     news／aiyalaeho（兩个語料ê編排）tools（量測工具）
+#     e2e（端對端，另走 tox -e e2etest）
 ```
 
 ## 影像側引擎（tests/ocr/ ↔ scripts/ocr/）

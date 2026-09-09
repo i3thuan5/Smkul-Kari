@@ -16,8 +16,8 @@ import sys
 from scripts.errors import PipelineError
 from scripts.news import paths
 
-SIZE = 72
-MIN_TAIL = 24
+SIZE = 24
+MIN_TAIL = 8
 BRIEF = os.path.join(os.path.dirname(__file__), "brief.md")
 # `or`, not a `get` default: an exported-but-empty CLAUDE_SCRATCH counts
 # as set, and `os.path.join("", name)` then hands the reader a

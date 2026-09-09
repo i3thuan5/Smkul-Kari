@@ -32,6 +32,7 @@ import subprocess
 import sys
 
 from scripts.news import paths
+from scripts.ocr import band as detector
 from scripts.ocr import cuelib
 from scripts import lowpri
 from scripts.errors import PipelineError
@@ -118,7 +119,7 @@ def label_frames(frames, kind, spec, min_ink, change):
     masks = []
     inks = []
     for _t, rgb in frames:
-        mask = cuelib.text_mask(rgb, spec)
+        mask = cuelib.frame_mask(rgb, spec)
         masks.append(mask)
         inks.append(int(mask.sum()))
 
@@ -217,13 +218,26 @@ def boundaries_of(cues):
     return out
 
 
-def _refine_boundaries(video, manifest, duration):
-    """Refine every boundary; returns the new times and the tallies."""
+def _refine_boundaries(video, manifest, duration, preset=None):
+    """Refine every boundary; returns the new times and the tallies.
+
+    The spec is built from two places on purpose. Thresholds and the
+    measured band rows come from the manifest, because they are properties
+    of this one episode and the timeline is the only place they exist. The
+    sampling factor and the compare window come from the layout preset,
+    because they are properties of the layout and the timeline deliberately
+    does not carry them (ruled 2026-09-09).
+    """
     cues = manifest["cues"]
     region = manifest["region"]
     spec = cuelib.MaskSpec.from_dict(manifest.get("mask", {}))
+    if preset is not None:
+        declared = cuelib.segment_spec(preset)
+        spec.scale = declared.scale
+        spec.compare_cols = declared.compare_cols
+        spec.compare_rows = declared.compare_rows
     seg = manifest.get("segmenter", {})
-    min_ink = seg.get("min_ink", 120)
+    min_ink = cuelib.effective_min_ink(seg.get("min_ink", 120), spec, region)
     change = seg.get("change", 0.35)
 
     new_start = {}
@@ -293,14 +307,14 @@ def write_refined(cues_path, manifest):
     return target
 
 
-def refine_episode(video, cues_path, dry_run=False):
+def refine_episode(video, cues_path, preset=None, dry_run=False):
     with open(cues_path, encoding="utf-8") as handle:
         manifest = json.load(handle)
     cues = manifest["cues"]
     duration = probe_duration(video)
 
     new_start, new_end, kept, shifts, problems = _refine_boundaries(
-        video, manifest, duration)
+        video, manifest, duration, preset)
     refined = len(shifts)
 
     result = []
@@ -336,18 +350,44 @@ def refine_episode(video, cues_path, dry_run=False):
     return stats
 
 
+def _preset_or_die(presets_path, name):
+    """The named layout, or a refusal that says which flag is missing."""
+    if not name:
+        raise PipelineError(
+            "愛用 --preset 講明這集是佗一款版型切ê（配 --presets 指定"
+            "檔案）。精修若用佮切 cue 無仝ê判準，邊界會恬恬走精，"
+            "報表頂懸看起來猶原正常")
+    if not presets_path:
+        raise PipelineError("--preset %r 需要 --presets 指定 presets.json"
+                            % name)
+    presets = detector.load_presets(presets_path)
+    if name not in presets:
+        raise PipelineError("presets.json 內底無 %r（有ê是：%s）"
+                            % (name, ", ".join(sorted(presets))))
+    return presets[name]
+
+
 def main():
     lowpri.be_nice()   # 長時間ê重工，莫kā機器食牢去
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("video")
     ap.add_argument("cues", help="cues.json to refine in place")
+    ap.add_argument("--presets", help="path to the caller's presets.json")
+    ap.add_argument("--preset",
+                    help="name the layout this episode was cut with; refining "
+                         "has to judge the band the same way cutting did")
     ap.add_argument("--dry-run", action="store_true",
                     help="report the shifts, write nothing")
     args = ap.parse_args()
+    # 版型先驗，才免路徑ê錯誤khàm去真正ê問題。
+    # 無版型就用佮切 cue 無仝ê判準，煞閣報一个整齊ê數字——恬恬走精
+    # 是這條規矩beh擋ê物件，佮 region「呼叫端指定、袂當家己臆」仝款。
+    preset = _preset_or_die(args.presets, args.preset)
     # cues.json 是就地改寫的，指錯目標就毀掉一集的時間軸
     args.video = paths.check_under(args.video, "video")
     args.cues = paths.check_under(args.cues, "cues")
-    stats = refine_episode(args.video, args.cues, dry_run=args.dry_run)
+    stats = refine_episode(args.video, args.cues, preset=preset,
+                           dry_run=args.dry_run)
     print(json.dumps(stats, ensure_ascii=False))
 
 

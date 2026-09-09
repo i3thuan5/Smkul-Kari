@@ -201,6 +201,7 @@ while IFS=$'\t' read -r slug remote <&3; do
         echo "$(date +%H:%M:%S) refine $slug"
         if ! nice -n 15 ionice -c 3 "$PY" -m scripts.news.refine_cues "$local_file" \
              "$("$PY" -m scripts.news.paths --coarse-of "$dst")" \
+             --presets "$PRESETS" --preset "$PRESET" \
              > "$LOG/$slug.refine.log" 2>&1; then
             echo "$(date +%H:%M:%S) WARN  refine $slug failed, keeping" \
                  "coarse timings -- see $LOG/$slug.refine.log"

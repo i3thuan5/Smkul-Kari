@@ -62,15 +62,29 @@ class TestRange(VisionPromptCase):
         self.assertIn("cue 289..576", text)
 
     def test_last_batch_stops_at_the_last_sheet(self):
-        """232 張是 72×3＋16；16 張ê尾批傷細，倂入前一批變 88 張。"""
+        """232 張是 72×3＋16。
+
+        `MIN_TAIL` 對 24 降做 8 了後（2026-09-09，批次大小改 24 順紲改ê），
+        16 張ê尾批**無夠細**，家己徛做一批矣。`MIN_TAIL` 是模組常數毋是
+        參數，所以連 `size=72` 這款寫死ê案例嘛綴leh變——本底掠做「傳
+        size=72 ê測試袂振動」，是掠毋著。
+        """
         text = self.brief(232, 3, size=72)
-        self.assertIn("`sheet_145.png`–`sheet_232.png`", text)
-        self.assertIn("cue 577..928", text)
-        self.assertIn("352 逝", text)
+        self.assertIn("`sheet_145.png`–`sheet_216.png`", text)
+        self.assertIn("cue 577..864", text)
+
+    def test_a_tail_shorter_than_the_floor_is_still_folded(self):
+        """尾批若真正細（8 張以下）猶原倂入前一批。
+
+        每一个讀者攏有固定開銷：捌量著一个 6 張ê尾批食了 47,623 token，
+        逐張 7,937，是 72 張彼个速率ê 4.2 倍。
+        """
+        text = self.brief(220, 3, size=72)
+        self.assertIn("`sheet_145.png`–`sheet_220.png`", text)
 
     def test_batch_past_the_end_is_an_error(self):
         with self.assertRaises(PipelineError):
-            self.brief(232, 4, size=72)
+            self.brief(232, 5, size=72)
 
     def test_line_count_is_cues_not_sheets(self):
         """逐張 4 條ê時 72 張是 288 逝——講「72 逝」讀者就寫了了無夠。"""
@@ -251,3 +265,36 @@ class TestEpisodeLookup(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestBatchSizeDefaults(unittest.TestCase):
+    """24 sheets a reader, and a tail floor that scales with it.
+
+    Each call in a reading session resends the whole conversation so far, so
+    a batch's cost grows roughly with the square of its length. Recomputed
+    off six transcripts by grouping usage per reply id -- a reply carrying
+    four Read calls occupies four log lines and each repeats the same usage,
+    so summing line by line double-counts -- one batch of 72 costs 1.5 to
+    1.9 times what three batches of 24 cost. Per sheet the cost is flat from
+    8 to 24 and climbs after: 14-15k at 24, 17.5k at 36, 20k at 48, 25k at
+    72.
+
+    MIN_TAIL has to come down with SIZE or the change does nothing: at 24
+    with the old floor of 24, every tail short of a full batch is folded in
+    and batches come out at 47.
+    """
+
+    def test_the_default_batch_is_twenty_four(self):
+        self.assertEqual(prompt.SIZE, 24)
+
+    def test_the_tail_floor_scales_with_it(self):
+        self.assertEqual(prompt.MIN_TAIL, 8)
+        self.assertLess(prompt.MIN_TAIL, prompt.SIZE)
+
+    def test_a_tail_that_would_have_been_folded_now_stands(self):
+        spans = prompt.plan(47)
+        self.assertEqual(spans, [(0, 24), (24, 47)])
+
+    def test_a_genuinely_tiny_tail_is_still_folded(self):
+        spans = prompt.plan(27)
+        self.assertEqual(spans, [(0, 27)])

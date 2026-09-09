@@ -21,7 +21,7 @@ long it should take.
 
 | Stage | Entry point | Resource | Per episode |
 |---|---|---|---|
-| **1. cues** | `fetch_sftp.sh` (download → verify band → cut → refine) | local CPU + network | ~5 min download, 6 min cut, 8.5 min refine |
+| **1. cues** | `fetch_sftp.sh` (download → verify band → cut → refine) | local CPU + network | ~5 min download, **~2 min cut**, 8.5 min refine |
 | **2. OCR** | vision subagents → `ingest` → `make_all` → `publish` | **Claude vision** (the ingest and assembly around it are seconds of CPU) | **~50 min** |
 | **3. asr** | `asrmt_batch` (audio → vosk → project → render) | local CPU | ~15 min |
 | **4. quality** | `asrmt_run --step mt` then `judge` → sonnet subagents → `ingest` → `--second` → fable subagents → `ingest` → `quality` | ai-labs service (free, single concurrency) then **Claude judging** | ~15 min translation, ~8 judging batches |
@@ -73,6 +73,16 @@ at a contact sheet (`kithann/out/mxf/<slug>.work/sheets/sheet_001.png`) to
 confirm the strips show the dialogue line and nothing else. A month can span
 folders, and layout follows the folder, so the band is verified once per
 folder, not once per month.
+
+The band check now measures both axes off the same decode. Rows as before:
+the dialogue plateau must sit inside the region and the red lower-third's
+edge must not. Columns are new: news subtitles are flush right (measured
+over 27 episodes, the ink's right edge sits at x=1735-1737 against a
+standard deviation of 460-470 for the left edge), and cutting compares only
+the columns the text occupies, so the check refuses a folder whose text no
+longer lands inside that window. It prints the measured right edge whether
+it passes or fails -- a guard that only speaks up when it fails is one
+nobody can check.
 
 ## 2. Contact sheets
 

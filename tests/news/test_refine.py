@@ -6,6 +6,7 @@ midpoint rule, boundary bookkeeping, and the all-or-nothing episode write.
 """
 import json
 import os
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -147,3 +148,87 @@ class TestRefineEpisode(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestRefineUsesTheSameJudgementAsTheCut(unittest.TestCase):
+    """Refining has to look at the band exactly the way cutting did.
+
+    Cutting samples the band and compares only the columns the text sits in;
+    both come off the layout preset, not the timeline (ruled 2026-09-09: the
+    timeline gains no new keys). Refining reads the timeline, so it has to be
+    handed the same preset or it will judge the same frames by a different
+    rule -- at full resolution over the whole band, where a moving picture
+    swamps the comparison and every window comes back unclassifiable. The
+    boundaries then silently keep their 0.2s-grid values and the episode
+    looks refined.
+
+    `min_ink` is the sharper edge of the same problem. The manifest records
+    the declared 120 (whole band, unsampled) and each side converts it for
+    what it is really looking at. If refining skips the conversion it
+    compares a windowed half-resolution mask against 120 and calls every
+    frame blank.
+    """
+
+    NEWS = {"region": [0, 722, 1920, 122],
+            "mask": {"outline": True, "scale": 2,
+                     "compare_cols": [1250, 1790],
+                     "compare_rows": [4, 114]}}
+
+    def _seen(self, preset):
+        """The (spec, min_ink) refine_boundary is actually called with."""
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        path = os.path.join(tmp.name, "ep.json")
+        manifest = {"region": [0, 722, 1920, 122], "mask": {},
+                    "segmenter": {"min_ink": 120, "change": 0.35},
+                    "cues": [{"index": 1, "start": 10.0, "end": 12.0}]}
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(manifest, handle)
+        seen = []
+
+        def fake_boundary(video, region, spec, min_ink, change, t0, kind,
+                          duration):
+            seen.append((spec, min_ink))
+            return None
+
+        with mock.patch.object(refine_cues, "probe_duration",
+                               return_value=1800.0), \
+                mock.patch.object(refine_cues, "refine_boundary",
+                                  side_effect=fake_boundary):
+            refine_cues.refine_episode("fake.mxf", path, preset=preset,
+                                       dry_run=True)
+        return seen[0]
+
+    def test_preset_sampling_and_window_reach_the_boundary_worker(self):
+        spec, min_ink = self._seen(self.NEWS)
+        self.assertEqual(spec.scale, 2)
+        self.assertEqual(tuple(spec.compare_cols), (1250, 1790))
+        self.assertEqual(tuple(spec.compare_rows), (4, 114))
+
+    def test_min_ink_is_converted_the_same_way_cutting_converts_it(self):
+        _spec, min_ink = self._seen(self.NEWS)
+        self.assertEqual(min_ink, 7)
+
+    def test_a_preset_declaring_neither_behaves_as_before(self):
+        spec, min_ink = self._seen({"region": [0, 876, 1920, 138],
+                                    "mask": {"outline": False}})
+        self.assertEqual(spec.scale, 1)
+        self.assertIsNone(spec.compare_cols)
+        self.assertEqual(min_ink, 120)
+
+
+class TestRefineRefusesWithoutALayout(unittest.TestCase):
+    """No preset on the command line means stop, not "carry on differently".
+
+    Same rule the band region already lives by: the caller states the layout
+    and the tool never guesses. Guessing here is worse than usual because
+    nothing fails -- the run reports a tidy count of refined boundaries that
+    were judged by the wrong rule.
+    """
+
+    def test_main_without_a_preset_raises(self):
+        with mock.patch.object(sys, "argv",
+                               ["refine_cues", "v.mxf", "c.json"]):
+            with self.assertRaises(PipelineError) as caught:
+                refine_cues.main()
+        self.assertIn("--preset", str(caught.exception))

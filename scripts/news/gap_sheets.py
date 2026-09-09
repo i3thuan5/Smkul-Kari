@@ -27,6 +27,24 @@ WORK = paths.WORK
 WORK_EXT = ".work"
 
 
+# Both tools here rebuild sheets for news work dirs only -- 開會了 has its
+# own pipeline and `scripts/aiyalaeho/README.md` lists gap_sheets among the
+# four news tools it does without. So the layout is read straight off the
+# news presets, with no flag for the caller to remember and get wrong; the
+# sheets a rebuild produces then match the ones `cues --sheets` produced.
+NEWS_PRESET = "titv-news"
+
+
+def news_sheet_layout(preset_name=NEWS_PRESET):
+    """(row_slots, compare_cols) declared by the news layout."""
+    with open(paths.ENGINE_PRESETS, encoding="utf-8") as handle:
+        presets = json.load(handle)
+    preset = presets.get(preset_name) or {}
+    mask = preset.get("mask", {}) or {}
+    return (preset.get("sheet", {}).get("row_slots"),
+            mask.get("compare_cols"))
+
+
 def already_read(dst):
     """True if somebody has already transcribed cues into this work dir.
 
@@ -64,7 +82,9 @@ def prepare(slug):
     with open(copied, "w", encoding="utf-8") as handle:
         json.dump(manifest, handle, ensure_ascii=False, indent=2,
                   sort_keys=True)
-    made = sheets.build_sheets(dst, manifest)
+    slots, cols = news_sheet_layout()
+    made = sheets.build_sheets(dst, manifest, row_slots=slots,
+                               compare_cols=cols)
 
     for name in ("transcripts.json", "verified.json"):
         with open(os.path.join(dst, name), "w", encoding="utf-8") as handle:

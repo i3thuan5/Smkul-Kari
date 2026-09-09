@@ -140,3 +140,134 @@ class TestBandPresence(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestFrameMask(unittest.TestCase):
+    """`frame_mask` is what the segmenter compares: sampled, then windowed.
+
+    The first test is the regression anchor for the whole change. Cutting a
+    cue used to call `text_mask` directly; if `frame_mask` at scale 1 with no
+    window ever stops matching it bit for bit, every timeline cut before the
+    change and every one cut after stop being comparable, and nothing else
+    in the pipeline would notice -- `rebuild --verify` rebuilds SRTs from
+    stored timelines and never touches a mask.
+    """
+
+    def _lit(self, size=(120, 120)):
+        """A dark frame with one white stroke across it."""
+        frame = np.full((size[0], size[1], 3), 30, dtype=np.uint8)
+        frame[52:60, 20:100] = 255
+        return frame
+
+    def test_unscaled_unwindowed_matches_text_mask_bit_for_bit(self):
+        frame = self._lit()
+        spec = cuelib.MaskSpec()
+        self.assertTrue(np.array_equal(cuelib.frame_mask(frame, spec),
+                                       cuelib.text_mask(frame, spec)))
+
+    def test_half_scale_keeps_the_glyph_and_about_a_quarter_of_the_ink(self):
+        frame = self._lit()
+        full = int(cuelib.text_mask(frame, cuelib.MaskSpec()).sum())
+        half = int(cuelib.frame_mask(frame, cuelib.MaskSpec(scale=2)).sum())
+        self.assertGreater(half, 0, "the glyph vanished at half scale")
+        self.assertGreater(half, full * 0.15)
+        self.assertLess(half, full * 0.45)
+
+    def test_window_blanks_outside_and_leaves_inside_alone(self):
+        frame = self._lit()
+        plain = cuelib.text_mask(frame, cuelib.MaskSpec())
+        spec = cuelib.MaskSpec(compare_cols=(40, 80), compare_rows=(50, 62))
+        got = cuelib.frame_mask(frame, spec)
+        self.assertEqual(int(got[:, :40].sum()), 0)
+        self.assertEqual(int(got[:, 80:].sum()), 0)
+        self.assertEqual(int(got[:50, :].sum()), 0)
+        self.assertEqual(int(got[62:, :].sum()), 0)
+        self.assertTrue(np.array_equal(got[50:62, 40:80],
+                                       plain[50:62, 40:80]))
+
+    def test_a_glyph_wholly_outside_the_window_reads_as_blank(self):
+        """The mechanism behind the 0.1% of cues the window drops.
+
+        Measured on four episodes: 5 subtitles out of 2,669 sit entirely
+        outside the compare window (a graphic covering the band, or a
+        detection so faint its ink is 437 against a subtitle's 2000-4000).
+        The segmenter then never opens a cue there. That is a deliberate
+        trade -- the same window cuts swallowed sentences from 87 to 43 on
+        one episode -- so it is locked down here rather than left to be
+        rediscovered as a surprise.
+        """
+        frame = self._lit()
+        spec = cuelib.MaskSpec(compare_cols=(0, 15))
+        self.assertEqual(int(cuelib.frame_mask(frame, spec).sum()), 0)
+
+
+class TestMaskSpecScaled(unittest.TestCase):
+    """Every length in the spec has to shrink together with the pixels.
+
+    Two of these have teeth. Leaving `band_probe` at full-frame coordinates
+    points 開會了's band test at the wrong columns, so a whole episode reads
+    as having no band at all. Leaving `band_rows` unscaled crops the wrong
+    rows, which is the very failure `band_rows` was added to fix.
+    """
+
+    def test_lengths_halve_and_thresholds_do_not(self):
+        spec = cuelib.MaskSpec(
+            outline_size=9, thin_size=7,
+            band_probe={"x": 60, "w": 40, "min_saturation": 60},
+            band_rows=(24, 114), compare_cols=(1250, 1790),
+            compare_rows=(4, 114), scale=2)
+        small = spec.scaled(2)
+        self.assertEqual(small.outline_size, 5)
+        self.assertEqual(small.band_probe["x"], 30)
+        self.assertEqual(small.band_probe["w"], 20)
+        self.assertEqual(small.band_probe["min_saturation"], 60)
+        self.assertEqual(tuple(small.band_rows), (12, 57))
+        self.assertEqual(tuple(small.compare_cols), (625, 895))
+        self.assertEqual(tuple(small.compare_rows), (2, 57))
+        # intensities are not lengths
+        self.assertEqual(small.white_min, spec.white_min)
+        self.assertEqual(small.max_spread, spec.max_spread)
+        self.assertEqual(small.dark_max, spec.dark_max)
+        # already applied, so the copy must not scale a second time
+        self.assertEqual(small.scale, 1)
+
+    def test_none_fields_stay_none(self):
+        small = cuelib.MaskSpec().scaled(2)
+        self.assertIsNone(small.band_probe)
+        self.assertIsNone(small.band_rows)
+        self.assertIsNone(small.compare_cols)
+        self.assertIsNone(small.compare_rows)
+
+    def test_factor_one_is_a_no_op(self):
+        spec = cuelib.MaskSpec(outline_size=9, compare_cols=(10, 20))
+        same = spec.scaled(1)
+        self.assertEqual(same.outline_size, 9)
+        self.assertEqual(tuple(same.compare_cols), (10, 20))
+
+
+class TestMaskSpecStaysOutOfTheManifest(unittest.TestCase):
+    """The three new fields are deliberately NOT serialised.
+
+    Ruled 2026-09-09: the timeline gains no new keys. These three are
+    declared by the layout preset, so the preset is where they live; only
+    values that are *measured* per episode (`band_rows`) have nowhere else
+    to go and are written to the timeline. Anyone who "tidies up" by adding
+    them to the key tables breaks that split, so the key set is asserted.
+    """
+
+    KEYS = {"white_min", "max_spread", "dark_max", "outline", "outline_size",
+            "thin", "thin_size", "band_probe", "band_rows"}
+
+    def test_to_dict_carries_exactly_the_old_keys(self):
+        spec = cuelib.MaskSpec(scale=2, compare_cols=(1250, 1790),
+                               compare_rows=(4, 114))
+        self.assertEqual(set(spec.to_dict().keys()), self.KEYS)
+
+    def test_from_dict_ignores_the_three(self):
+        spec = cuelib.MaskSpec.from_dict(
+            {"scale": 2, "compare_cols": [1250, 1790],
+             "compare_rows": [4, 114], "white_min": 200})
+        self.assertEqual(spec.white_min, 200)
+        self.assertEqual(spec.scale, 1)
+        self.assertIsNone(spec.compare_cols)
+        self.assertIsNone(spec.compare_rows)

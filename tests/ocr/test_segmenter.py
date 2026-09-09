@@ -175,3 +175,82 @@ class TestSegmenterCallback(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestCompareWindowDoesNotReachTheStrips(unittest.TestCase):
+    """The window decides cut points and nothing else.
+
+    The segmenter is handed two separate things per frame: the RGB it keeps
+    for the strip, and the mask it compares. Narrowing the mask must not
+    narrow the strip. If it ever does, Claude Vision is shown the right-hand
+    slice of a right-aligned line and reads a sentence with its first half
+    missing -- and it looks like a perfectly ordinary short subtitle, so
+    nobody downstream can tell.
+    """
+
+    def _frames(self):
+        """Six frames of one steady line, with picture on the left."""
+        out = []
+        for index in range(6):
+            rgb = np.zeros((8, 60, 3), dtype=np.uint8)
+            rgb[:, :, :] = index * 7          # left picture keeps moving
+            rgb[2:6, 40:56] = 255             # the line itself, on the right
+            out.append(rgb)
+        return out
+
+    def _cut(self, spec):
+        seg = cuelib.Segmenter(frame_dt=0.2, min_ink=4, change=0.35,
+                               min_stable=2, min_duration=0.30)
+        for index, rgb in enumerate(self._frames()):
+            seg.feed(index * 0.2, rgb, cuelib.frame_mask(rgb, spec))
+        return seg.finish(6 * 0.2)
+
+    def test_composite_is_identical_with_and_without_a_window(self):
+        plain = self._cut(cuelib.MaskSpec(outline=False))
+        windowed = self._cut(cuelib.MaskSpec(outline=False,
+                                             compare_cols=(36, 60)))
+        self.assertEqual(len(plain), 1)
+        self.assertEqual(len(windowed), 1)
+        self.assertTrue(np.array_equal(plain[0].composite(),
+                                       windowed[0].composite()))
+
+    def test_a_line_wholly_outside_the_window_opens_no_cue(self):
+        cues = self._cut(cuelib.MaskSpec(outline=False, compare_cols=(0, 20)))
+        self.assertEqual(cues, [])
+
+
+class TestWindowStopsPictureFromSplittingOneLine(unittest.TestCase):
+    """Why the window exists at all.
+
+    A line that never changes still gets cut apart when the picture beside
+    it changes: measured on one episode, 24.9% of all cues repeat the
+    previous cue's text, and the mask distance of an unchanged line runs
+    0.17-0.43 against a 0.35 threshold. Comparing only the columns the text
+    occupies removes the noise instead of raising the threshold -- raising
+    it was measured to trade repeats away for swallowed sentences roughly
+    one for one.
+
+    The picture here changes in steps, not every frame, because that is what
+    footage does (a shot cut) and because a mask that changes every single
+    frame trips a different fault entirely: nothing ever confirms and the
+    segmenter returns no cues at all.
+    """
+
+    def _cut(self, spec):
+        seg = cuelib.Segmenter(frame_dt=0.2, min_ink=4, change=0.35,
+                               min_stable=2, min_duration=0.30)
+        for index in range(12):
+            rgb = np.zeros((8, 60, 3), dtype=np.uint8)
+            shot = index // 3                 # the picture cuts every 3
+            rgb[:, shot * 6:shot * 6 + 14] = 255   # stays left of 36
+            rgb[2:6, 40:56] = 255             # the line, never changing
+            seg.feed(index * 0.2, rgb, cuelib.frame_mask(rgb, spec))
+        return seg.finish(12 * 0.2)
+
+    def test_whole_band_splits_the_steady_line(self):
+        self.assertGreater(len(self._cut(cuelib.MaskSpec(outline=False))), 1)
+
+    def test_window_keeps_it_as_one_cue(self):
+        cues = self._cut(cuelib.MaskSpec(outline=False,
+                                         compare_cols=(36, 60)))
+        self.assertEqual(len(cues), 1)

@@ -52,7 +52,9 @@ $PY -m scripts.ocr.cli cues "$V" -o "$W" \
     --preset aiyalaeho-bilingual \
     --band-rows "$(python3 -c "import json,sys;b=json.load(open(sys.argv[1]))['band'];print('%d,%d'%(b[0],b[1]))" "$B")" \
     --sheets < /dev/null && \
-$PY -m scripts.news.refine_cues "$V" "$W/1-cues/cues.json"
+$PY -m scripts.news.refine_cues "$V" "$W/1-cues/cues.json" \
+    --presets scripts/aiyalaeho/presets.json \
+    --preset aiyalaeho-bilingual
 
 # 3. 視覺辨識：subagent 一批讀 24 張 sheet，TSV 直接寫進
 #    Kari-SRT/aiyalaeho/1-ocr/2-vision/<srt_name>/bNN.tsv

@@ -1,72 +1,74 @@
 {
   "aiyalaeho-bilingual": {
-    "note": "'a'iyalaeho: 開會了 - one Formosan row above one Chinese row, on an opaque yellow-to-red gradient band at the foot of the frame. The band is a saturated colour, so the plain white-pixel test is enough and the dark-outline one is not needed; `band_probe` reads a slice of the left edge the text never reaches, which is what tells a frame with no band (titles, credits) from one carrying a subtitle. Measured over 12 samples in each of the 38 subtitled episodes, the band drifts by episode: the Formosan row runs y=893..947 and the Chinese row y=950..1011, so the Chinese slot runs to y=1012 rather than stopping at 1008: three episodes (094, 111, 117) put its glyph bottoms at 1008..1011 and a 60px slot clipped them. Not to the region's foot at 1014, though -- the strip height feeds the contact sheet's packing budget, and at 66px a cue's block came to 560px against a 558px budget, which dropped the sheets from four cues to three and would have cost a third more reading for two pixels. Measured below 1011 there is nothing to keep: ink per row is 2 and 1 at y=1012 and 1013 on 094, and zero on 068. The top row is named `formosan`, not for any one language: this programme covers eleven of them and the row carries whichever the episode is in, Chinese words included where the speaker used them. SELECT THIS WITH `--preset`: file names in this corpus carry no reliable common substring, so there is deliberately no `match` here.",
+    "lines": [
+      {
+        "h": 60,
+        "lang": "eng",
+        "name": "formosan",
+        "ocr_scale": 2,
+        "y": 12
+      },
+      {
+        "h": 64,
+        "lang": "chi_tra",
+        "name": "han",
+        "ocr_scale": 1,
+        "y": 72
+      }
+    ],
+    "mask": {
+      "band_probe": {
+        "min_saturation": 60,
+        "w": 60,
+        "x": 0
+      },
+      "max_spread": 50,
+      "outline": false,
+      "scale": 2,
+      "white_min": 180
+    },
+    "note": "'a'iyalaeho: 開會了 - one Formosan row above one Chinese row, on an opaque yellow-to-red gradient band at the foot of the frame. The band is a saturated colour, so the plain white-pixel test is enough and the dark-outline one is not needed; `band_probe` reads a slice of the left edge the text never reaches, which is what tells a frame with no band (titles, credits) from one carrying a subtitle. Measured over 12 samples in each of the 38 subtitled episodes, the band drifts by episode: the Formosan row runs y=893..947 and the Chinese row y=950..1011, so the Chinese slot runs to y=1012 rather than stopping at 1008: three episodes (094, 111, 117) put its glyph bottoms at 1008..1011 and a 60px slot clipped them. Not to the region's foot at 1014, though -- the strip height feeds the contact sheet's packing budget, and at 66px a cue's block came to 560px against a 558px budget, which dropped the sheets from four cues to three and would have cost a third more reading for two pixels. Measured below 1011 there is nothing to keep: ink per row is 2 and 1 at y=1012 and 1013 on 094, and zero on 068. The top row is named `formosan`, not for any one language: this programme covers eleven of them and the row carries whichever the episode is in, Chinese words included where the speaker used them. SELECT THIS WITH `--preset`: file names in this corpus carry no reliable common substring, so there is deliberately no `match` here. 切 cue ê遮罩用 `scale` 2（半解析）：三集實測重覆對 0／0／78、吞句 0，佮全解析無差。**刻意無宣告 `compare_cols` 佮 `sheet.row_slots`**——這个節目ê字幕壓佇袂透光ê漸層帶頂懸，畫面本底就入袂去遮罩（三集重覆對是0／0／78，無彼个病）；中錨定比對遮罩佇 085／068 完全無作用、佇 094 kā78 削做 36 soah憑空加 2 條吞句。圖條裁切嘛袂使：實測會kā族語列ê撇號佮 i ê點剃薄，族語列精確率 98.6%→76.8%。",
     "region": [
       0,
       876,
       1920,
       138
-    ],
-    "mask": {
-      "outline": false,
-      "white_min": 180,
-      "max_spread": 50,
-      "band_probe": {
-        "x": 0,
-        "w": 60,
-        "min_saturation": 60
-      }
-    },
-    "lines": [
-      {
-        "name": "formosan",
-        "y": 12,
-        "h": 60,
-        "lang": "eng",
-        "ocr_scale": 2
-      },
-      {
-        "name": "han",
-        "y": 72,
-        "h": 64,
-        "lang": "chi_tra",
-        "ocr_scale": 1
-      }
     ]
   },
   "aiyalaeho-bilingual-low": {
-    "note": "Same programme, same band, but sitting about 14px lower in the frame: measured over 750 frames each, 087 puts its Formosan row at 918..943 and its Chinese row at 966..1003, and 094 at 923..951 and 974..1011. `aiyalaeho-bilingual` splits its two slots at y=948, which lands inside 094's Formosan row, so `verify_band` refused both episodes -- correctly: cue boundaries taken from ink changes in the wrong rows have nothing to do with where the subtitles change. The valley between the two rows measures y=962 on 087, so this preset splits there: Formosan 902..962, Chinese 962..1014. The Chinese slot runs to the region's foot because 094's glyph bottoms reach 1011. Row heights are 60 and 52, which is a shorter block than the standard preset's, so the contact sheets pack the same four cues or better. SELECT THIS WITH `--preset`: like the standard one it deliberately carries no `match`, because the file names in this corpus share no reliable substring.",
+    "lines": [
+      {
+        "h": 60,
+        "lang": "eng",
+        "name": "formosan",
+        "ocr_scale": 2,
+        "y": 26
+      },
+      {
+        "h": 52,
+        "lang": "chi_tra",
+        "name": "han",
+        "ocr_scale": 1,
+        "y": 86
+      }
+    ],
+    "mask": {
+      "band_probe": {
+        "min_saturation": 60,
+        "w": 60,
+        "x": 0
+      },
+      "max_spread": 50,
+      "outline": false,
+      "scale": 2,
+      "white_min": 180
+    },
+    "note": "Same programme, same band, but sitting about 14px lower in the frame: measured over 750 frames each, 087 puts its Formosan row at 918..943 and its Chinese row at 966..1003, and 094 at 923..951 and 974..1011. `aiyalaeho-bilingual` splits its two slots at y=948, which lands inside 094's Formosan row, so `verify_band` refused both episodes -- correctly: cue boundaries taken from ink changes in the wrong rows have nothing to do with where the subtitles change. The valley between the two rows measures y=962 on 087, so this preset splits there: Formosan 902..962, Chinese 962..1014. The Chinese slot runs to the region's foot because 094's glyph bottoms reach 1011. Row heights are 60 and 52, which is a shorter block than the standard preset's, so the contact sheets pack the same four cues or better. SELECT THIS WITH `--preset`: like the standard one it deliberately carries no `match`, because the file names in this corpus share no reliable substring. 切 cue ê遮罩用 `scale` 2（半解析）：三集實測重覆對 0／0／78、吞句 0，佮全解析無差。**刻意無宣告 `compare_cols` 佮 `sheet.row_slots`**——這个節目ê字幕壓佇袂透光ê漸層帶頂懸，畫面本底就入袂去遮罩（三集重覆對是0／0／78，無彼个病）；中錨定比對遮罩佇 085／068 完全無作用、佇 094 kā78 削做 36 soah憑空加 2 條吞句。圖條裁切嘛袂使：實測會kā族語列ê撇號佮 i ê點剃薄，族語列精確率 98.6%→76.8%。",
     "region": [
       0,
       876,
       1920,
       138
-    ],
-    "mask": {
-      "outline": false,
-      "white_min": 180,
-      "max_spread": 50,
-      "band_probe": {
-        "x": 0,
-        "w": 60,
-        "min_saturation": 60
-      }
-    },
-    "lines": [
-      {
-        "name": "formosan",
-        "y": 26,
-        "h": 60,
-        "lang": "eng",
-        "ocr_scale": 2
-      },
-      {
-        "name": "han",
-        "y": 86,
-        "h": 52,
-        "lang": "chi_tra",
-        "ocr_scale": 1
-      }
     ]
   }
 }

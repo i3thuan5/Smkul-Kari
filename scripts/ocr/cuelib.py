@@ -178,7 +178,8 @@ class MaskSpec(object):
 
     def __init__(self, white_min=185, max_spread=45, dark_max=95,
                  outline=True, outline_size=9, thin=False, thin_size=7,
-                 band_probe=None, band_rows=None):
+                 band_probe=None, band_rows=None, scale=1,
+                 compare_cols=None, compare_rows=None):
         self.white_min = white_min
         self.max_spread = max_spread
         self.dark_max = dark_max
@@ -204,6 +205,59 @@ class MaskSpec(object):
         # This is the SEGMENTER's view, not the reader's: strips are cut
         # from the preset's `lines` and are not affected.
         self.band_rows = band_rows
+        # How far to subsample before masking: 1 is every pixel, 2 is every
+        # other row and column. The mask is the expensive half of cutting a
+        # cue -- measured 17.62 ms a frame over a 1920x122 band -- and a
+        # subtitle's strokes are far wider than one pixel, so halving costs
+        # a quarter of the work and leaves the cut points where they were.
+        self.scale = scale
+        # (lo, hi) columns and rows the segmenter compares, or None for all
+        # of them. Distinct from `band_rows`: that one is MEASURED per
+        # episode and therefore recorded in the timeline; these two are
+        # DECLARED by the layout preset and stay there (ruled 2026-09-09,
+        # the timeline gains no new keys).
+        #
+        # News subtitles are flush right: measured over 27 episodes the ink's
+        # right edge sits at x=1735-1737 with a standard deviation of 31-70
+        # px, while the left edge wanders by 460-470. Everything left of the
+        # text is therefore picture, and picture is what pushes the mask
+        # distance of an unchanged line up to 0.17-0.43 against a 0.35
+        # threshold -- which is how one sentence became several cues, 24.9%
+        # of the whole store. Comparing only the columns the text actually
+        # occupies cut repeated cues by 44-69% on four episodes AND cut
+        # swallowed sentences at the same time (87 to 43 on one), because
+        # this raises the signal rather than moving the threshold.
+        #
+        # 開會了 declares neither: its subtitles are centred on an opaque
+        # band, so no picture reaches the mask and there is nothing to gain.
+        self.compare_cols = compare_cols
+        self.compare_rows = compare_rows
+
+    def scaled(self, factor):
+        """A copy of this spec measured in subsampled pixels.
+
+        Thresholds are intensities and do not move; every length does.
+        `scale` is set to 1 in the copy because the sampling it asks for has
+        already happened by the time this copy is used -- scaling twice
+        would crop the wrong rows.
+        """
+        step = int(factor)
+        if step <= 1:
+            return self
+        out = MaskSpec(
+            white_min=self.white_min, max_spread=self.max_spread,
+            dark_max=self.dark_max, outline=self.outline,
+            outline_size=_odd_size(self.outline_size // step),
+            thin=self.thin, thin_size=_odd_size(self.thin_size // step),
+            band_rows=_halve_span(self.band_rows, step),
+            compare_cols=_halve_span(self.compare_cols, step),
+            compare_rows=_halve_span(self.compare_rows, step))
+        if self.band_probe:
+            probe = dict(self.band_probe)
+            probe["x"] = int(probe.get("x", 0)) // step
+            probe["w"] = max(int(probe.get("w", 60)) // step, 1)
+            out.band_probe = probe
+        return out
 
     @classmethod
     def from_dict(cls, data):
@@ -272,6 +326,106 @@ def text_mask(rgb, spec):
             white = (low > spec.white_min) & ((high - low) < spec.max_spread)
             mask &= ~erode(white, spec.thin_size)
     return _within_band(mask, spec.band_rows)
+
+
+def _odd_size(size):
+    """A box size `dilate` can use: odd, and below 3 it is a no-op anyway."""
+    size = int(size)
+    if size < 3:
+        return 1
+    return size | 1
+
+
+def _halve_span(span, step):
+    """(lo, hi) in subsampled pixels, or None."""
+    if span is None:
+        return None
+    return (int(span[0]) // step, int(span[1]) // step)
+
+
+def segment_spec(preset):
+    """The mask spec for cutting, with the preset's sampling and window on it.
+
+    `MaskSpec.from_dict` deliberately does not know about `scale`,
+    `compare_cols` or `compare_rows`: those three are declared by the layout
+    and stay in the preset, so that the timeline gains no new keys (ruled
+    2026-09-09). Lifting them off the preset is therefore this function's
+    whole job, and forgetting to call it is a silent fall back to
+    full-resolution, whole-band comparison.
+    """
+    mask = preset.get("mask", {}) if preset else {}
+    spec = MaskSpec.from_dict(mask)
+    spec.scale = int(mask.get("scale", 1) or 1)
+    spec.compare_cols = mask.get("compare_cols")
+    spec.compare_rows = mask.get("compare_rows")
+    return spec
+
+
+def effective_min_ink(declared, spec, region):
+    """`--min-ink` is quoted for the whole band unsampled; convert it.
+
+    The number is 120 in the README, the skill and the notes, and it stays
+    120 in the manifest. What the segmenter actually receives is a mask of
+    only the compared window, at only `scale` resolution, so the threshold
+    has to come down by the same area. `refine_cues` runs the identical
+    conversion off the identical preset -- if the two ever disagree, one of
+    them reads every frame as blank and says nothing about it.
+    """
+    height, width = int(region[3]), int(region[2])
+    rows = spec.compare_rows or (0, height)
+    cols = spec.compare_cols or (0, width)
+    kept = max(int(rows[1]) - int(rows[0]), 0) * \
+        max(int(cols[1]) - int(cols[0]), 0)
+    whole = height * width
+    if whole <= 0:
+        return declared
+    step = max(int(getattr(spec, "scale", 1) or 1), 1)
+    scaled = declared * (float(kept) / whole) / (step * step)
+    return max(int(scaled), 1)
+
+
+def frame_mask(rgb, spec):
+    """The mask the segmenter compares two frames on.
+
+    `text_mask` answers "which pixels look like glyph"; this answers "which
+    of those the cut point is allowed to depend on". Keeping them apart is
+    deliberate: `verify_band`, `blank_runs` and `reread` all want the plain,
+    full-resolution answer, and `text_mask` stays theirs.
+
+    At `scale` 1 with no window this returns exactly what `text_mask`
+    returns, bit for bit. That equivalence is the regression anchor for the
+    whole sampling change -- `rebuild --verify` rebuilds delivered SRTs from
+    stored timelines and never calls a mask, so nothing else downstream
+    would notice the day it stopped holding.
+    """
+    step = int(getattr(spec, "scale", 1) or 1)
+    if step > 1:
+        rgb = rgb[::step, ::step]
+        spec = spec.scaled(step)
+    mask = text_mask(rgb, spec)
+    return _within_window(mask, spec.compare_rows, spec.compare_cols)
+
+
+def _within_window(mask, rows, cols):
+    """Blank everything outside the compared window; `None` leaves it be.
+
+    The `None` path returns the very same array it was handed, which is what
+    keeps `frame_mask` bit-identical to `text_mask` for every caller that
+    declares no window (all of 開會了, and news before this change).
+    """
+    if rows is None and cols is None:
+        return mask
+    if rows is not None:
+        lo = max(int(rows[0]), 0)
+        hi = min(int(rows[1]), mask.shape[0])
+        mask[:lo, :] = False
+        mask[hi:, :] = False
+    if cols is not None:
+        lo = max(int(cols[0]), 0)
+        hi = min(int(cols[1]), mask.shape[1])
+        mask[:, :lo] = False
+        mask[:, hi:] = False
+    return mask
 
 
 def _within_band(mask, band_rows):

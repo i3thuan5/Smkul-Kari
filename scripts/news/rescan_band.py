@@ -57,6 +57,7 @@ import sys
 
 from scripts.errors import PipelineError
 from scripts import lowpri
+from scripts.news import gap_sheets
 from scripts.news import paths
 from scripts.ocr import sheets
 from scripts.ocr import stripname
@@ -310,7 +311,9 @@ def rebuild_sheets(work, book):
     folder = os.path.join(work, "sheets")
     if os.path.isdir(folder):
         shutil.rmtree(folder)
-    made = sheets.build_sheets(work, book)
+    slots, cols = gap_sheets.news_sheet_layout()
+    made = sheets.build_sheets(work, book, row_slots=slots,
+                               compare_cols=cols)
     with open(os.path.join(work, "transcripts.json"), "w",
               encoding="utf-8") as handle:
         json.dump({}, handle, ensure_ascii=False, indent=2,

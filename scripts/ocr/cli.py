@@ -134,7 +134,7 @@ def _region_spec_lines(video, args, key, preset):
             region.append(int(part))
     elif preset is not None and not args.autodetect:
         region = list(preset["region"])
-        spec = cuelib.MaskSpec.from_dict(preset.get("mask", {}))
+        spec = cuelib.segment_spec(preset)
         lines = preset.get("lines")
         print("using preset '%s'" % key)
     if region is None:
@@ -166,13 +166,18 @@ def _split_region_lines(video, region, spec, lang):
 
 
 def _feed_frames(video, region, spec, seg, args, total):
-    """Stream the band through the segmenter; returns (last_ts, seen)."""
+    """Stream the band through the segmenter; returns (last_ts, seen).
+
+    `frame_mask`, not `text_mask`: the segmenter is the one caller that may
+    look at a subsampled, windowed view of the band. The frame handed to
+    `seg.feed` stays full resolution, so the strips it keeps are untouched.
+    """
     last_ts = args.start
     seen = 0
     for ts, frame in cuelib.stream_region(video, region, args.fps,
                                           start=args.start,
                                           duration=args.duration):
-        seg.feed(ts, frame, cuelib.text_mask(frame, spec))
+        seg.feed(ts, frame, cuelib.frame_mask(frame, spec))
         last_ts = ts
         seen += 1
         if args.progress and seen % (int(args.fps) * 120) == 0:
@@ -267,10 +272,21 @@ def stage_cues(args):
             record["images"][line["name"]] = os.path.join("strips", name)
         records.append(record)
 
+    # --mask-scale overrides what the preset declared; neither given means
+    # 1, which is byte-for-byte the behaviour before sampling existed.
+    override = getattr(args, "mask_scale", None)
+    if override is not None:
+        spec.scale = max(int(override), 1)
+    if spec.scale > 1 or spec.compare_cols or spec.compare_rows:
+        print("segmenting on scale %d, cols %s, rows %s of the region "
+              "(strips unchanged)"
+              % (spec.scale, spec.compare_cols, spec.compare_rows))
+
     frame_dt = 1.0 / float(args.fps)
     seg = cuelib.Segmenter(
         frame_dt=frame_dt,
-        min_ink=args.min_ink,
+        min_ink=cuelib.effective_min_ink(args.min_ink, spec,
+                                         region),
         change=args.change,
         min_stable=args.min_stable,
         min_duration=args.min_duration,
@@ -303,8 +319,13 @@ def stage_cues(args):
     print("wrote %s" % path)
 
     if args.sheets:
+        # Both come off the preset, never the manifest: they describe the
+        # layout, not this episode (ruled 2026-09-09).
+        slots = (preset or {}).get("sheet", {}).get("row_slots")
         made = contact.build_sheets(workdir, manifest,
-                                    megapixels=args.sheet_megapixels)
+                                    megapixels=args.sheet_megapixels,
+                                    row_slots=slots,
+                                    compare_cols=spec.compare_cols)
         print("wrote %d contact sheet(s) to %s"
               % (made, os.path.join(workdir, "sheets")))
     return 0
@@ -756,6 +777,11 @@ def add_cue_options(parser):
                              "ends (strips are unaffected). Measure them "
                              "with the caller's band check, e.g. "
                              "scripts.aiyalaeho.verify_band --band-json")
+    parser.add_argument("--mask-scale", type=int, default=None,
+                        help="subsample the band by this factor before "
+                             "masking (overrides the preset; 1 is every "
+                             "pixel). Cut points only -- strips and contact "
+                             "sheets are built from full-resolution frames")
     parser.add_argument("--fps", type=float, default=5.0,
                         help="frames sampled per second (default 5)")
     parser.add_argument("--start", type=float, default=0.0)
