@@ -63,14 +63,14 @@
 
 ## 9. 驗收
 
-- [ ] 9.1 `tox -e unittest`、`tox -e flake8` 通過
-- [ ] 9.2 `tox -e rebuild`（`rebuild --verify`）通過，集數＝inventory 非 pending 筆數；語音側 59 集 2-srt-raw、試點 3-srt-ai／4-srt-quality 逐 byte 相同
-- [ ] 9.3 `python3 -m scripts.news.name_catalogue --check` 通過
-- [ ] 9.4 回覆檔寫 `kithann/tuiue/`：試點數字、成本實測、待使用者做的 `git add -A`
+- [x] 9.1 `tox -e unittest`、`tox -e flake8` 通過
+- [x] 9.2 `tox -e rebuild`（`rebuild --verify`）通過，集數＝inventory 非 pending 筆數；語音側 59 集 2-srt-raw、試點 3-srt-ai／4-srt-quality 逐 byte 相同
+- [x] 9.3 `python3 -m scripts.news.name_catalogue --check` 通過
+- [x] 9.4 回覆檔寫 `kithann/tuiue/`：試點數字、成本實測、待使用者做的 `git add -A`
 
 ## 10. 全部已辨識集數試做
 
 - [x] 10.1 `asrmt_run --step mt` 對所有已有 `2-srt-raw` 的集數逐集跑（`run_in_background`、`&&` 串、`set -o pipefail`；ai-labs 單併發，一集 12–15 分鐘，全部約半天）；每集落地可續跑
-- [ ] 10.2 每集 `--step judge` 寫 Sonnet 批次 → subagent `model: sonnet` 逐批回覆 → `--step ingest`；再 `--step judge --second` → subagent `model: fable` → `--step ingest` → `--step quality`。批次大小視第一集實測的 token 用量決定（100 或 200 條一批）
-- [ ] 10.3 全程用 `/loop 20m` 檢查進度：mt 做到第幾集、judge 收了幾批、拒收與失敗列出來；有內容的進度寫 `kithann/tuiue/`，純「還在跑」不寫
-- [ ] 10.4 全部做完：`rebuild --verify` 對每集的 `2-srt-raw`／`3-srt-ai`／`4-srt-quality` 逐 byte 通過；三級分布、總 token 用量與實際成本寫進 `2-asr/README.md` 與回覆檔
+- [x] 10.2 每集 `--step judge` 寫 Sonnet 批次 → subagent `model: sonnet` 逐批回覆 → `--step ingest`；再 `--step judge --second` → subagent `model: fable` → `--step ingest` → `--step quality`。批次大小視第一集實測的 token 用量決定（100 或 200 條一批）
+- [x] 10.3 全程用 `/loop 20m` 檢查進度：mt 做到第幾集、judge 收了幾批、拒收與失敗列出來；有內容的進度寫 `kithann/tuiue/`，純「還在跑」不寫
+- [x] 10.4 全部做完：`rebuild --verify` 對每集的 `2-srt-raw`／`3-srt-ai`／`4-srt-quality` 逐 byte 通過；三級分布、總 token 用量與實際成本寫進 `2-asr/README.md` 與回覆檔

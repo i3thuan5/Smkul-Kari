@@ -136,7 +136,9 @@ def speech_stages():
     """
     from scripts.news import asrmt_run
     return [("2-srt-raw", paths.ASR_RAW, ".srt", asrmt_run.raw_body_of),
-            ("3-srt-ai", paths.ASR_AI, ".srt", asrmt_run.ai_body_of)]
+            ("3-srt-ai", paths.ASR_AI, ".srt", asrmt_run.ai_body_of),
+            ("4-srt-quality", paths.ASR_QUALITY, ".srt",
+             asrmt_run.quality_body_of)]
 
 
 def speech_problems(entries):

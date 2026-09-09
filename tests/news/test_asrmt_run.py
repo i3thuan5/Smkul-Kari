@@ -12,6 +12,7 @@ import tempfile
 import unittest
 from unittest import mock
 
+from scripts.asrmt import judge
 from scripts.asrmt import mtclient
 from scripts.news import asrmt_run
 from scripts.news import paths
@@ -384,6 +385,48 @@ class TestJudgingSteps(TestTranslationStep):
                             "glossary.tsv")
         self.assertTrue(os.path.exists(path))
 
+    def test_the_batch_is_big_enough_to_be_worth_an_agent(self):
+        """一批愛夠大，若無固定開銷食掉一半。
+
+        逐个 agent ê固定開銷量著約 9 萬到 10 萬 token（系統提示、判定
+        規則、詞表，逐回合閣重送一擺），逐列ê邊際成本才 1300。50 列
+        一批ê時，固定開銷佔欲一半——雅美尾批 3 列嘛開 5 萬 1。
+
+        使用者裁定 2026-09-08：**一批至少 200 列，愈大愈好，用會著
+        sonnet context ê 50%；超過 15 分鐘無要緊，先省 token。**
+        第二輪 fable 仝款。
+
+        揀 500：一列量著 204 bytes，500 列約 102KB、4 萬 1 token ê
+        材料，加規則佮詞表大約佔 20 萬 context ê四分之一，離 50% 猶
+        有偌濟通予 agent 想。無揀「規集一批」（上大彼集 966 列）ê
+        因端有兩个：一批去予退ê時，了ê是規集ê工，毋是半集；閣有，
+        材料家己就食 45% ê context，賰無偌濟通推理。省ê差額才一成
+        外。
+        """
+        self.assertGreaterEqual(asrmt_run.BATCH_SIZE, 200)
+
+    def test_rewriting_batches_over_an_uningested_reply_is_refused(self):
+        """回覆猶未收就閣寫一擺批次，會kā飛咧ê彼幾个agent害死。
+
+        `step_judge` 寫批次進前會kā本版ê請求檔攏刣掉重寫。快取若佇這
+        中間加了幾若條，賰ê條目就會重新分批——原本 s03 彼五十條會徙
+        去 s02 佮 s03 中央。彼陣iáu咧做ê agent 讀ê是舊ê s03，寫轉來ê
+        回覆貼佇新ê s03 頂懸，編號全部走精，koh袂有人看會出來。
+
+        所以：有本版ê回覆檔猶未收，就毋准重寫。先 `--step ingest`。
+        """
+        written = asrmt_run.step_judge(self.NAME)
+        self._reply(written[0], {"1": "高", "2": "中"})
+        with self.assertRaises(PipelineError) as caught:
+            asrmt_run.step_judge(self.NAME)
+        self.assertIn("ingest", str(caught.exception))
+
+    def test_rewriting_after_the_reply_is_ingested_is_fine(self):
+        written = asrmt_run.step_judge(self.NAME)
+        self._reply(written[0], {"1": "高", "2": "中"})
+        asrmt_run.step_ingest(self.NAME)
+        self.assertEqual(asrmt_run.step_judge(self.NAME), [])
+
     def test_the_first_judge_gets_a_batch_of_everything(self):
         written = asrmt_run.step_judge(self.NAME)
         self.assertEqual(len(written), 1)
@@ -407,19 +450,73 @@ class TestJudgingSteps(TestTranslationStep):
                 keys.append(line.split("\t")[0])
         self.assertEqual(keys, ["1"])
 
-    def test_writing_a_new_batch_clears_the_old_reply(self):
-        """問題換過矣，舊ê答案就袂使閣算數。
+    def test_the_batch_name_carries_the_prompt_version(self):
+        """版本入去檔名，就免「清掉才閣寫」。
 
-        判定ê定義改過（prompt 換版）ê時，`pending` 會kā規集閣提出來
-        問一擺，批次檔用仝款ê名重寫。舊ê回覆檔若留咧，`ingest` 會
-        提著伊——編號拄好對得起來，所以**袂當場歹去**，是恬恬kā舊
-        定義下跤ê答案當做新ê收落去。彼比整批拒收較危險。
+        本底ê做法是寫新批次進前kā仝前綴ê檔攏刣掉——因為舊ê回覆檔
+        佮新ê請求檔編號拄好相仝ê時，`ingest` 會kā舊定義下跤ê答案當
+        做新ê收落去。
+
+        毋過彼刣ê毋若是舊ê：**猶咧走ê agent，伊ê請求檔佮伊寫好ê
+        回覆檔嘛做伙予人刣掉**。今仔日「回報講寫好、檔案無佇咧」
+        彼八擺，泰半是按呢來ê——毋是 agent 失敗，是我家己刣ê。
+
+        版本入檔名了後，無仝版本本底就無仝名，免刣，跑咧ê嘛袂去予
+        害著。
+        """
+        written = asrmt_run.step_judge(self.NAME)
+        self.assertIn(judge.PROMPT_VERSION, os.path.basename(written[0]))
+
+    def test_a_new_batch_leaves_a_running_agents_reply_alone(self):
+        """跑咧ê agent 寫入來ê物件袂使去予後一擺ê寫批次刣掉。
+
+        這馬是兩重ê：第二擺 `step_judge` 家己就予擋落來（見
+        `_refuse_over_uningested`），就算擋無著，`_clear_batches` 嘛
+        袂去振動著回覆檔。
         """
         written = asrmt_run.step_judge(self.NAME)
         self._reply(written[0], {"1": "高", "2": "中"})
-        again = asrmt_run.step_judge(self.NAME)
-        reply = again[0][:-len(".tsv")] + ".reply.tsv"
-        self.assertFalse(os.path.exists(reply))
+        reply = written[0][:-len(".tsv")] + ".reply.tsv"
+        with self.assertRaises(PipelineError):
+            asrmt_run.step_judge(self.NAME)
+        self.assertTrue(os.path.exists(reply))
+        asrmt_run._clear_batches(self._folder(), judge.PREFIX[judge.FIRST])
+        self.assertTrue(os.path.exists(reply))
+
+    def test_an_older_versions_reply_is_not_mistaken_for_this_ones(self):
+        """舊版ê回覆檔留咧無要緊——名無仝，`ingest` 揣袂著伊。"""
+        folder = asrmt_run.judge_folder(self.NAME)
+        stale = os.path.join(folder, "s01.v0.reply.tsv")
+        with open(stale, "w", encoding="utf-8") as handle:
+            handle.write("1\t高\n2\t高\n")
+        written = asrmt_run.step_judge(self.NAME)
+        self._reply(written[0], {"1": "低", "2": "低"})
+        asrmt_run.step_ingest(self.NAME)
+        cache = judge.QualityCache(paths.QUALITY_CACHE)
+        _rows, items = asrmt_run._judge_items(self.NAME)
+        self.assertEqual(cache.get(judge.FIRST, items[0]), "低")
+
+    def test_the_same_versions_batch_is_rewritten_not_accumulated(self):
+        """仝一版閣寫一擺，是重寫，毋是閣加一份。
+
+        本底這條測ê是「寫新批次愛kā舊回覆檔刣掉」——彼是版本猶未
+        入檔名彼陣ê保護：無仝定義ê批次檔仝名，舊答案會予人當做新ê
+        收落去。
+
+        版本入檔名了後彼个危險無矣（無仝版本無仝名），毋過清仝一版
+        ê檔猶原著愛——按呢重寫ê時陣，批次數目變少ê話，賰彼幾份舊ê
+        才袂留咧。
+        """
+        written = asrmt_run.step_judge(self.NAME, size=1)
+        self.assertEqual(len(written), 2)
+        again = asrmt_run.step_judge(self.NAME, size=50)
+        self.assertEqual(len(again), 1)
+        folder = asrmt_run.judge_folder(self.NAME)
+        left = []
+        for entry in sorted(os.listdir(folder)):
+            if entry.startswith("s") and entry.endswith(".tsv"):
+                left.append(entry)
+        self.assertEqual(len(left), 1)
 
     def test_it_does_not_clear_the_other_judges_files(self):
         written = asrmt_run.step_judge(self.NAME)

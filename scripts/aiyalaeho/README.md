@@ -249,6 +249,33 @@ ps -eo pid,etime,cmd -ww | grep -E '[o]cr.cli cues|[r]efine_cues'
 掠轉來。莫干焦看 log ê結論，愛看 log ê**時間**佮 checker ê mtime 對會
 起來袂。
 
+## work 的 `transcripts.json` 也會過期——TSV 訂正了要**重新 ingest**
+
+**`make_srt` 讀的是 work 的 `transcripts.json`，不是 store 的 TSV。**
+所以 TSV 在 ingest 之後被訂正過的話，`make_all` 產出的還是舊內容，
+**而且一路交付出去都沒人看得出來**。
+
+2026-09-08 這樣中過一次：096 的 `b06.tsv` 在 ingest 之後被訂正
+（簡體 `统` → 正體 `統`），可是沒有重新 ingest，**交付的 SRT 就帶著
+那個簡體字**。是 `publish` 第一次真的寫入、`rebuild --verify` 才抓到
+——它從 store 重建，和交付的比對，差一個字。
+
+**規矩**：
+- **TSV 動過就要重新 `ingest`**，再 `make_all`。
+- 不確定有沒有動過的話，這條可以掃出來：
+
+      for w in kithann/out/aiyalaeho/*.work; do
+          n=$(basename "$w" .work)
+          t="$w/transcripts.json"
+          d="Kari-SRT/aiyalaeho/1-ocr/2-vision/$n"
+          [ -f "$t" ] && [ -d "$d" ] || continue
+          newest=$(ls -t "$d"/b*.tsv 2>/dev/null | head -1)
+          [ -n "$newest" ] && [ "$newest" -nt "$t" ] && echo "TSV 較新：$n"
+      done
+
+- **正本的把關還是 `rebuild --verify`**——它就是設計來抓這一類的：
+  store（TSV＋cues）重建出來的，要和交付的逐 byte 相同。
+
 ## 一集交出去了後：全語料掃碼位（三分鐘，掠著過真ê代誌）
 
 每一集 ingest 煞，kā已交ê TSV 攏總掃一遍標點ê碼位。這是**協調ê人**做

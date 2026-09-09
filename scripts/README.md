@@ -114,6 +114,7 @@
 | `make_srt.py` | 單集組裝：每條兩行帶標籤，走共用組裝鏈（0.5 秒留白仝款） |
 | `make_all.py`／`publish.py`／`tracker.py`／`rebuild.py` | 整批組裝、定版、九欄進度表、離線重建驗證 |
 | `presets.json` | `aiyalaeho-bilingual`（黃底雙列帶；本底寄佇 `news/presets.json`，這改搬轉來家己遮） |
+| `blobs.py` | 連通元件（8-連通ê `label`／`boxes`，佮「族語逝ê墨底」ê `deepest_bottom`）——環境無 scipy，讀者逐擺家己重寫就逐擺無仝，收做一支才免 |
 | `brief.md` | 視覺辨識讀者判準ê**正本**（逐批ê提示攏對這份提，判準才袂逐批走鐘） |
 
 news 有而遮無ê四支：`fetch_sftp.sh`（素材已經佇本機）、`plan_month.py`

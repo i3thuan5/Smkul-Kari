@@ -49,16 +49,41 @@ JSON = ".json"
 MT_URL = "https://ai-labs.ilrdf.org.tw/kari-seejiq-tnpusu-ai-hmjil"
 MODEL_ID = "ILRDF/kaldi_formosan_250514_%s"
 
-# How many entries one judging batch carries. A hundred is what the
-# vision pass and the translation batches settled on: big enough that the
-# per-request overhead is noise, small enough that a rejected batch is
-# cheap to redo.
-# 50，毋是 100。量著兩項限制：一批 100 條ê agent 逐擺 12 分，逾時ê
-# 機會大，而且逾時ê代價是規批重來；koh有，資料歹ê批次 agent 話特別
-# 濟，撞著 64K 輸出上限——彼比逾時較歹揀，因為伊看起來像成功。50
-# 條兩項攏閃會開，固定開銷（逐个 agent 約 9 萬 token）加五成，毋過
-# token 毋是瓶頸，牆鐘才是。
-BATCH_SIZE = 50
+# How many entries one judging batch carries.
+#
+# 500，本底是 50。改ê因端是固定開銷：逐个 agent 量著 9 萬到 10 萬
+# token 是固定ê（系統提示、判定規則、詞表，逐回合重送一擺），逐列
+# ê邊際成本才 1300。50 列一批ê時，固定開銷佔欲一半——雅美尾批賰
+# 3 列，照常開 5 萬 1。
+#
+# 使用者裁定 2026-09-08：一批至少 200 列，愈大愈好，用會著 sonnet
+# context ê 50%；超過 15 分鐘無要緊，先省 token。第二輪 fable 仝款
+# （伊本底就一兩批爾，改了無差）。
+#
+# 揀 500 無揀「規集一批」：一列量著 204 bytes，500 列約 102KB、4 萬
+# 1 token ê材料，加規則佮詞表約佔 20 萬 context ê四分之一。上大彼
+# 集 966 列，一批食 45% ê context，賰無偌濟通推理，而且一批去予退
+# ê時了ê是規集ê工。省ê差額才一成外，無值得。
+#
+# 頭起先ê理路留咧做參考：50 是為著「一批 12 分、逾時ê機會細」佮
+# 「資料歹ê批次話濟，會撞著 64K 輸出上限」。逾時彼項使用者講會使放
+# 予伊久。輸出上限彼項猶原會出現，毋過**毋是綴批次大細直直大**：
+# 2026-09-08 量著，500 列ê大批做十外擺攏無代誌，倒是 124 列佮 150
+# 列ê細批撞著。彼是 agent 家己ê變異——有ê話濟有ê話少。
+#
+# 派工講話ê寫法愛**量化**才有效。實測三个層次：「莫逐條寫分析」
+# 擋袂牢；「回予我ê可見文字對頭到尾干焦一逝」較好，猶原有ê會過
+# 分；「你唯一會使輸出ê可見文字是尾彼逝『高 N 中 N 低 N』，無超過
+# 15 字」才穩。卡那卡那富 038午 s02 三擺才過，就是按呢一層一層絚
+# 起來ê。
+#
+# 派工講話會使減少，毋過擋袂全：「回予我ê可見文字對頭到尾干焦一
+# 逝」比「莫逐條寫分析」有效，124 列佮 150 列補派了就過。毋過布農
+# 035晚 賰ê 418 列，加了嚴ê講法猶原撞著，落尾是切做 200 列一批才
+# 過。所以：**撞著ê時莫干焦改講話，共彼集切較細（用 `step_judge`
+# ê `size=` 參數）**。切了後愛先kā收過ê回覆檔改名囥起來，若無新舊
+# 編號會相撞。
+BATCH_SIZE = 500
 
 # inventory 的族語別(英) 與 HF 模型 repo 的拼法有五處不同
 MODEL_NAME_FIX = {"SaySiyat": "Saisiyat", "Pinuyumayan": "Puyuma",
@@ -417,20 +442,58 @@ def write_glossary(srt_name, rows):
 
 
 def _clear_batches(folder, prefix):
-    """Drop this judge's old batch and reply files.
+    """Drop this judge's batch files for the version being written.
 
-    A new batch is a new question -- the definition changed, or the
-    material did -- and the file names repeat, so an old reply left
-    lying there would be ingested against the new request. The entry
-    numbers would still line up, so nothing would fail; yesterday's
-    answers would just quietly become today's. Rejecting a whole batch
-    on a bad id is the loud failure; this is the quiet one.
+    Only this version's: the file names carry the prompt version, so an
+    older version's reply can never be read as this one's -- `ingest`
+    simply does not look at it.
+
+    That naming is what makes this safe. Clearing *everything* with the
+    prefix, which is what this did at first, also removed the request
+    and reply files of agents **still working**, and their finished
+    replies with them. Most of the "said it wrote the file, the file is
+    not there" cases in the first day's batch were this, not the agents.
     """
+    tail = "." + judge.PROMPT_VERSION + ".tsv"
     for entry in sorted(os.listdir(folder)):
-        if entry == "glossary.tsv":
-            continue
-        if entry.startswith(prefix) and entry.endswith(".tsv"):
+        if entry.startswith(prefix) and entry.endswith(tail):
             os.remove(os.path.join(folder, entry))
+
+
+def _refuse_over_uningested(folder, prefix, cache, name, items):
+    """Do not rewrite the batches while a reply is sitting there unread.
+
+    `_clear_batches` removes this version's request files and they are
+    written again from whatever the cache still owes. Let a few entries
+    land in the cache between the two runs and the remainder splits
+    differently -- the fifty rows that were `s03` now straddle `s02` and
+    `s03`. An agent still working off the old `s03` answers with ids the
+    new `s03` does not hold, and nothing downstream can tell.
+
+    An *ingested* reply is harmless: its rows are in the cache, so they
+    leave `pending` and the rewrite is over settled ground. What has to
+    stop the rewrite is a reply nobody has read yet.
+    """
+    by_index = {}
+    for item in items:
+        by_index[str(item["index"])] = item
+    tail = "." + judge.PROMPT_VERSION + ".reply.tsv"
+    waiting = []
+    for entry in sorted(os.listdir(folder)):
+        if not entry.startswith(prefix) or not entry.endswith(tail):
+            continue
+        with open(os.path.join(folder, entry), encoding="utf-8") as handle:
+            for line in handle:
+                key = line.split("\t")[0].strip()
+                item = by_index.get(key)
+                if item is not None and cache.get(name, item) is None:
+                    waiting.append(entry)
+                    break
+    if waiting:
+        raise PipelineError(
+            "%d 个回覆檔猶未收就欲重寫批次，按呢會kā咧做ê agent 害死"
+            "——先走 `--step ingest`：%s"
+            % (len(waiting), "、".join(waiting[:5])))
 
 
 def step_judge(srt_name, second=False, size=BATCH_SIZE):
@@ -453,6 +516,8 @@ def step_judge(srt_name, second=False, size=BATCH_SIZE):
                 % len(owing))
     left = judge.pending(items, cache, name)
     folder = judge_folder(srt_name)
+    _refuse_over_uningested(folder, judge.PREFIX[name],
+                            cache, name, items)
     _clear_batches(folder, judge.PREFIX[name])
     written = judge.write_batches(left, folder,
                                   judge.PREFIX[name], size=size)
@@ -474,10 +539,11 @@ def step_ingest(srt_name, second=False):
     folder = judge_folder(srt_name)
     taken = 0
     waiting = []
+    tail = "." + judge.PROMPT_VERSION + ".tsv"
     for entry in sorted(os.listdir(folder)):
         if not entry.startswith(judge.PREFIX[name]):
             continue
-        if not entry.endswith(".tsv") or entry.endswith(".reply.tsv"):
+        if not entry.endswith(tail):
             continue
         request = os.path.join(folder, entry)
         reply = request[:-len(".tsv")] + ".reply.tsv"

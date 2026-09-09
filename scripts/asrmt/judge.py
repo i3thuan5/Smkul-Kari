@@ -187,7 +187,11 @@ def write_batches(items, folder, prefix, size=100):
 
 
 def _write_one(folder, prefix, number, batch):
-    path = os.path.join(folder, "%s%02d.tsv" % (prefix, number))
+    # 版本入去檔名：無仝版本ê批次本底就無仝名，所以免「清掉才閣
+    # 寫」。彼款清法會kā**猶咧走ê agent** ê請求檔佮伊拄寫好ê回覆檔
+    # 做伙刣掉——「回報講寫好、檔案無佇咧」大部份是án-ne來ê。
+    path = os.path.join(folder, "%s%02d.%s.tsv"
+                        % (prefix, number, PROMPT_VERSION))
     with open(path, "w", encoding="utf-8") as handle:
         for item in batch:
             fields = [str(item["index"])]
@@ -207,6 +211,27 @@ def _read_rows(path):
             key, _tab, rest = line.partition("\t")
             rows.append((key.strip(), rest))
     return rows
+
+
+BLANKET_FLOOR = 10
+
+
+def _is_blanket_low(seen):
+    """規批攏低敢是破綻？逐條有正面證據ê機會傷細。
+
+    量著ê破綻：0高 0中 50低。隔壁批仝一款材料低干焦 2%–14%，上䆀
+    彼幾批低到 84% 嘛猶原留幾若條中。連一條中都無才是「無咧逐條
+    判」ê記號。
+
+    干焦掠低：規批中是判定規則家己講ê「無把握一律給中」，是合法
+    ê結果。尾批賰幾條ê時無算，三條攏低是真有可能ê。
+    """
+    if len(seen) < BLANKET_FLOOR:
+        return False
+    for label in seen.values():
+        if label != "低":
+            return False
+    return True
 
 
 def ingest_reply(request_path, reply_path, cache, name, items):
@@ -241,6 +266,11 @@ def ingest_reply(request_path, reply_path, cache, name, items):
     for key in wanted:
         if key not in seen:
             errors.append("id %s 無回覆" % key)
+
+    if not errors and _is_blanket_low(seen):
+        errors.append(
+            "規批 %d 條攏判低、連一條中都無——低愛逐條有正面ê證據，"
+            "遮是裁判改用通則咧掃。這批愛換一个裁判重判" % len(seen))
 
     if errors:
         raise PipelineError(

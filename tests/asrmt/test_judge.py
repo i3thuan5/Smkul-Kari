@@ -150,7 +150,8 @@ class TestBatches(BatchFixture):
         items = judge.materials(rows(250), translate)
         paths = judge.write_batches(items, self.folder, "s", size=100)
         self.assertEqual(len(paths), 3)
-        self.assertTrue(paths[0].endswith("s01.tsv"))
+        self.assertTrue(paths[0].endswith("s01.%s.tsv"
+                                          % judge.PROMPT_VERSION))
         self.assertEqual(len(self._read(paths[2]).splitlines()), 50)
 
     def test_every_row_is_id_then_the_material_columns(self):
@@ -225,6 +226,62 @@ class TestIngest(CacheFixture):
                                self.cache, "sonnet", self.items)
         self.assertIn("還好", str(caught.exception))
         self.assertIsNone(self.cache.get("sonnet", self.items[0]))
+
+
+class TestBlanketLow(CacheFixture):
+    """規批攏判「低」ê回覆，是裁判改用一條通則咧掃，毋是逐條咧判。
+
+    量著ê：阿美 032晚 s07 佮雅美 033晚 s13 兩批，攏是 0高 0中 50低。
+    隔壁批仝一款材料，低干焦 1 到 7 條（2%–14%）；上䆀ê彼幾批
+    （阿美 s08、s09、s10）低到 32、42、34 條，猶原留 18、8、16 條
+    中。**連一條中都無**才是破綻：低愛逐條有正面ê證據（碎片、幻覺、
+    抑是對著隔壁條），50 條逐條攏有，機會誠細。
+
+    干焦退「攏是低」，無退「攏是中」——判定規則家己就寫「無把握
+    一律給中」，規批中是照規矩做ê合法結果（噶瑪蘭 s10 就是 0高
+    50中 0低）。低無仝：低是講這條袂使用，是有力ê主張。
+    """
+
+    def _batch(self, count, label):
+        items = judge.materials(rows(count), translate)
+        request = judge.write_batches(items, self.folder, "s")[0]
+        lines = []
+        for item in items:
+            lines.append("%d\t%s" % (item["index"], label))
+        path = os.path.join(self.folder, "s01.reply.tsv")
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("\n".join(lines) + "\n")
+        return request, path, items
+
+    def test_a_whole_batch_of_low_is_refused(self):
+        request, reply, items = self._batch(12, "低")
+        with self.assertRaises(PipelineError) as caught:
+            judge.ingest_reply(request, reply, self.cache, "sonnet", items)
+        self.assertIn("低", str(caught.exception))
+        self.assertIsNone(self.cache.get("sonnet", items[0]))
+
+    def test_a_whole_batch_of_medium_is_kept(self):
+        request, reply, items = self._batch(12, "中")
+        got = judge.ingest_reply(request, reply, self.cache, "sonnet", items)
+        self.assertEqual(got, 12)
+
+    def test_one_medium_among_the_lows_is_enough(self):
+        items = judge.materials(rows(12), translate)
+        request = judge.write_batches(items, self.folder, "s")[0]
+        lines = ["1\t中"]
+        for item in items[1:]:
+            lines.append("%d\t低" % item["index"])
+        path = os.path.join(self.folder, "s01.reply.tsv")
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("\n".join(lines) + "\n")
+        got = judge.ingest_reply(request, path, self.cache, "sonnet", items)
+        self.assertEqual(got, 12)
+
+    def test_a_batch_too_short_to_judge_is_kept(self):
+        """尾批賰三條ê時，三條攏低是真有可能ê，莫掠做破綻。"""
+        request, reply, items = self._batch(3, "低")
+        got = judge.ingest_reply(request, reply, self.cache, "sonnet", items)
+        self.assertEqual(got, 3)
 
 
 class TestCache(CacheFixture):

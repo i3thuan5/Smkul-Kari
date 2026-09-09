@@ -160,6 +160,36 @@ class TestParseNoise(unittest.TestCase):
             paths.check_srt_name(entry["srt_name"])
 
 
+class TestUnknownLanguage(unittest.TestCase):
+    """116 無語言卡嘛無字幕，族語別記做「（未知）」。使用者裁定 2026-09-08。
+
+    伊佮 088／090／098 仝款是「無字幕」ê異常集，差ê是彼幾支ê檔名有
+    族語別、伊無。人聽過才有法度命名，毋過等袂得——所以先用「（未知）」
+    登記入去，按呢 44 支影片ê帳才做會平（無登記ê話 inventory 少一筆）。
+    """
+
+    def test_the_unknown_language_is_accepted(self):
+        got, problem = catalogue.parse("116ALL_無字.mp4", language="（未知）")
+        self.assertEqual(problem, "")
+        self.assertEqual(got["族語別(中)"], "（未知）")
+        self.assertEqual(got["族語別(英)"], "Unknown")
+        self.assertEqual(got["集數"], "116")
+
+    def test_its_code_is_the_standard_undetermined_one(self):
+        # `und` 是 ISO 639-2／639-3 家己對「未確定」ê答案，毋是咱掰ê。
+        got, _ = catalogue.parse("116ALL_無字.mp4", language="（未知）")
+        self.assertEqual(got["語言代號"], "und")
+
+    def test_its_srt_name_is_a_valid_key(self):
+        got, _ = catalogue.parse("116ALL_無字.mp4", language="（未知）")
+        paths.check_srt_name(got["srt_name"])
+        self.assertTrue(got["srt_name"].startswith("開會了_116_"))
+
+    def test_the_file_name_still_supplies_the_reason(self):
+        # 檔名ê `無字` token 照常變做理由，佮語言是毋是知影無關係。
+        self.assertEqual(catalogue.subtitle_state(["無字"]), "無字幕")
+
+
 class TestParseRefusals(unittest.TestCase):
     def test_a_name_with_no_language_is_reported_not_guessed(self):
         # 119-混雜.mp4／122-混雜.mp4：檔名無族語別，人看過才會當命名。

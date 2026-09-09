@@ -99,6 +99,27 @@ python3 -m scripts.transcode.archive_batch --all-masters --no-upload
 - **可以跟別的流程同時跑**：一集一把鎖（`O_EXCL`），搶到同一集的那個會
   印「別人在轉」跳過，不會互相刪檔。
 
+### 隨身硬碟批次（未登記母帶，mxf → mkv）
+
+跟上面的 `archive_batch` 是兩支不同工具：這支只掃資料夾裡的 `.mxf`，
+不查目錄、不查 `smkul.csv`、不查 inventory，給還沒登記進族語新聞流程
+的母帶用（例如隨身硬碟）。細節見 [tools/mxf2mkv/README.md](tools/mxf2mkv/README.md)。
+
+```bash
+# 先看路徑對應對不對（不會動任何本機／遠端檔案）
+python3 -m tools.mxf2mkv --src /media/hong/USB/2月原始mxf檔 --dry-run
+
+# 先轉兩支試水溫
+python3 -m tools.mxf2mkv --src /media/hong/USB/2月原始mxf檔 --limit 2
+
+# 全部轉，轉完一支就上傳一支（可中斷、遠端已有的自動跳過）
+python3 -m tools.mxf2mkv --src /media/hong/USB/2月原始mxf檔
+```
+
+上傳目的地是 `/home/mkv-raw/`，跟 `archive_batch` 的 `/home/news/mkv/`
+互不相干、重複的照轉。序列處理（同一顆碟的 I/O 會互搶），不同硬碟
+可以各自起一個同時跑。執行紀錄與對照表在 `kithann/mxf2mkv/`。
+
 ## 驗收（每次改程式後）
 
 ```bash

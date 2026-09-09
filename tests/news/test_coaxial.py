@@ -143,3 +143,22 @@ class TestSweep(Fixture):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSpeechStagesAreAllListed(unittest.TestCase):
+    """語音側三个交付階段攏愛入去逐 byte 重建ê名單。
+
+    本底名單干焦有 2-srt-raw 佮 3-srt-ai，4-srt-quality 無列。
+    `rebuild --verify` 就一直講「攏仝款」，其實伊連看都無看彼一
+    層——阿美 032晚 彼份判定是舊版 prompt 判ê，材料換過了後根本
+    重建袂出來，猶原過關。**無列入名單ê階段毋是「猶未做」，是
+    「無人咧顧」。**
+    """
+
+    def test_every_speech_stage_has_a_rebuilder(self):
+        from scripts.news import rebuild
+        listed = []
+        for name, _base, _suffix, _build in rebuild.speech_stages():
+            listed.append(name)
+        self.assertEqual(listed,
+                         ["2-srt-raw", "3-srt-ai", "4-srt-quality"])
