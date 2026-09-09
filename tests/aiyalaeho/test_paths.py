@@ -356,5 +356,40 @@ class TestBandJson(unittest.TestCase):
         self.assertRaises(PipelineError, paths.band_json, "../x")
 
 
+class TestTextLayout(unittest.TestCase):
+    """上字文稿是獨立ê一層，佮 1-ocr/ 平行、無共款ê編號規則。
+
+    這層無 srt_name 這个鍵（001–045 ê集號佮上字文稿無影片，袂使照
+    check_srt_name ê格式驗），所以毋免、嘛袂使共 stage_path()。
+    """
+
+    def test_it_sits_beside_1_ocr_not_inside_it(self):
+        self.assertEqual(paths.TEXT_STORE,
+                         os.path.join(paths.AIYA_STORE, "text"))
+        self.assertNotIn(paths.OCR_STORE, paths.TEXT_STORE)
+        self.assertNotIn(paths.TEXT_STORE, paths.OCR_STORE)
+
+    def test_the_pair_csv_is_under_the_text_store(self):
+        self.assertEqual(paths.TEXT_PAIRS,
+                         os.path.join(paths.TEXT_STORE, "1-句對.csv"))
+
+    def test_work_copy_is_under_kithann_not_the_store(self):
+        self.assertTrue(paths.TEXT_WORK.startswith(paths.KITHANN + os.sep),
+                        paths.TEXT_WORK)
+        self.assertNotIn(paths.KARI, paths.TEXT_WORK)
+
+    def test_work_copy_lands_inside_the_allowed_roots(self):
+        # check_under() 是規个 repo 仝一个防線，這條干焦確認 TEXT_WORK
+        # 無漏共這條防線出去。
+        from scripts.datadirs import check_under
+        self.assertEqual(check_under(paths.TEXT_WORK, "text 工作區"),
+                         paths.TEXT_WORK)
+
+    def test_remote_is_the_upstream_folder_not_a_local_path(self):
+        self.assertTrue(paths.TEXT_REMOTE.startswith("/"))
+        self.assertIn("開會了", paths.TEXT_REMOTE)
+        self.assertIn("上字文稿", paths.TEXT_REMOTE)
+
+
 if __name__ == "__main__":
     unittest.main()

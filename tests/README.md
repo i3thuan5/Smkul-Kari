@@ -113,6 +113,8 @@ tests/
 | srt-data-store | 重建同時比兩張表；異常集佇 `1-ocr/` 無檔嘛毋算缺件；無異常集ê時免第二張表 | `aiyalaeho/test_rebuild.py` |
 | —（判讀工具） | 連通元件：8-連通標號、面積算墨毋是算外框、干焦頂端落佇族語槽內ê元件算數、面積 1 ê反鋸齒濾掉（濾面積毋是濾闊——真ê `l` 柱就是一畫素闊） | `aiyalaeho/test_blobs.py` |
 
+**上字文稿平行語料**（`aiyalaeho-text-corpus`，`tests/aiyalaeho/text/` ↔ `scripts/aiyalaeho/text/`）：表放彼个子目錄家己ê `README.md`，無囥佇遮。
+
 ## 端對端（tests/e2e/）
 
 | spec | scenario | 測試檔 |

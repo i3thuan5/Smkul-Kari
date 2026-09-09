@@ -143,6 +143,23 @@ TRACKER_STORE = os.path.join(AIYA_STORE, "smkul.csv")
 ABNORMAL_STORE = os.path.join(AIYA_STORE, "smkul-字幕版型異常.csv")
 ABNORMAL_CACHE = os.path.join(WORK, "smkul-字幕版型異常.csv")
 
+# The upstream text transcripts sit beside 1-ocr/, not inside it: they are
+# a different technique (typed by hand, not read off the picture) for a
+# different, non-overlapping set of episodes (001-045, no video) -- see
+# scripts.aiyalaeho.text. One stage so far, still numbered "1-" in case a
+# video timeline ever follows it.
+TEXT_STORE = os.path.join(AIYA_STORE, "text")
+TEXT_PAIRS = os.path.join(TEXT_STORE, "1-句對.csv")
+
+# Staging copy of the 243 source files, refetched from SFTP each run --
+# unlike the news side's fetch_sftp.sh, this corpus is 9.2 MB total, so
+# there is no disk pressure to manage and nothing here is kept once
+# 1-句對.csv is built.
+TEXT_WORK = os.path.join(KITHANN, "out", "aiyalaeho-text")
+
+# Where fetch.sh lists and downloads from.
+TEXT_REMOTE = "/docker/ilrdf-corpus/族語節目/開會了_a_iyalaeho=上字文稿"
+
 # presets.json is corpus knowledge -- which programme is laid out how -- so
 # it is part of the code and lives beside it.
 ENGINE_PRESETS = os.path.join(HERE, "presets.json")

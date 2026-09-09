@@ -10,7 +10,10 @@ context: |
   三層都確認後才建立 proposal（換機器也一樣，此規則隨 repo 走）：
   1. Kari-SRT（資料）：目錄分層「語料→技術→編號階段」、檔案產出
      順序與輸出入對應
-  2. tests/（測試）：測試檔結構、與 spec scenario 的對照
+  2. tests/（測試）：測試檔結構，加一張 spec × scenario × 測試檔對照表。
+     scenario 寫「會出錯的具體情形」，不是功能名——寫法與好壞例子見
+     CLAUDE.md〈TDD 規定〉。這一層攤出來的表就是日後補進
+     tests/README.md 的那幾列。
   3. scripts/（程式）：package 分層（照共用性）與模組歸位
   不要等到 apply 才出現新檔案。
 
@@ -22,6 +25,9 @@ rules:
   design:
     - design 附完整檔案樹（含 tests/ 與資料目錄），標明每檔由哪支
       程式產、吃什麼輸入
+    - design 附 spec × scenario × 測試檔對照表；scenario 寫具體會錯的
+      情形，來源優先序是「自己踩過的坑 ＞ 量測到的資料性質 ＞ spec
+      條文」，前兩者要在 explore 階段就量出來
     - 資料產出目錄用編號階段命名（如 1-words/、2-entries/），編號
       即產出順序，另附 README 說明輸出入對應；README 等產出文件
       不記 design／task 編號
