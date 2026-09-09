@@ -22,15 +22,30 @@ Only episodes whose vision pass is finished are published. A half-read
 episode has no SRT yet, so shipping its cues would put an input in the store
 for a deliverable that is not there -- exactly the inconsistency
 `rebuild --verify` exists to catch.
+
+The unit of that judgement is **one episode**, not a batch. It was the whole
+inventory once, then a broadcast month (2026-08-31), and is now per-episode
+(2026-09-09) -- because each of the two narrowings found the same thing: the
+wider unit was holding finished work hostage to unrelated work. January had
+58 episodes not yet cut, and that kept 006午 -- cut, refined, read and
+verified -- out of the store, while the only copy of its timeline sat in a
+work dir whose master had already been deleted.
+
+Per-episode stays self-consistent because no episode vouches for another:
+`publishable` already demands that this episode was cut, refined and fully
+read; `smkul.csv` lists only the non-pending ones; and `rebuild --verify`
+walks only the non-pending ones. Publishing one moves that one from pending
+to delivered and puts its own inputs in the store. Nothing is claimed about
+the rest.
 """
 import argparse
 import json
 import os
-import shutil
 import sys
 
 from scripts.news import make_all
 from scripts.news import paths
+from scripts.news import redump_store
 from scripts.news import tracker
 from scripts.errors import PipelineError
 
@@ -40,10 +55,9 @@ WORK = paths.WORK
 def publishable(entry):
     """(source work dir, reason it cannot be published).
 
-    A reason is only a failure when the episode is pending -- see gate(). An
-    already-delivered episode whose work dir has been cleared away is simply
-    nothing to do: its inputs are in the store, which is exactly why the work
-    dir was safe to delete.
+    A reason only holds back this one episode. An already-delivered episode
+    whose work dir has been cleared away is simply nothing to do: its inputs
+    are in the store, which is exactly why the work dir was safe to delete.
     """
     if entry["truncated"]:
         return "", "略過（%s）" % entry["truncated"]
@@ -69,19 +83,15 @@ def months_of(entries):
 
 
 def gate(entries, month=None):
-    """Pending episodes in `month` that are not finished -- why it is held.
+    """Pending episodes in `month` that are not finished -- why each waits.
 
-    Publishing is a whole-*batch* step, not a per-episode one: it clears the
-    pending flags and writes the tracker, and both are claims about the
-    batch. Half of them would leave the store saying it holds deliverables
-    it does not -- the inconsistency `rebuild --verify` exists to find.
+    This is a **query**, not the gate. `main` no longer consults it before
+    writing: an unfinished episode holds back only itself (see the module
+    docstring). What it is still good for is answering "what is this batch
+    waiting on", which is what a person wants when a month is dragging.
 
-    A batch is a **broadcast month**, the same unit `plan_month.py` and
-    `fetch_sftp.sh` work in. This used to walk the whole inventory instead,
-    which meant registering January held February back even though the two
-    months share nothing; 使用者裁定 2026-08-31 that they must not. Passing
-    no month keeps the old whole-inventory behaviour for callers that want
-    a single verdict.
+    Scope is a **broadcast month**, the same unit `plan_month.py` and
+    `fetch_sftp.sh` work in; passing no month walks the whole inventory.
     """
     blocked = []
     for entry in entries:
@@ -125,12 +135,23 @@ def publish_one(entry, work, cues_dir=None):
     on" arm was written for that file, which legitimately is absent for
     most episodes. A timeline is never optional, and sharing that arm is
     what made a missing one silent.
+
+    Read and re-dumped rather than `shutil.copy2`-ed, because the store's
+    JSON has to be readable by a person (see CLAUDE.md) and the work dir's
+    copy is not: its keys are in insertion order. Copying it verbatim
+    overwrote the store's sorted layout, so one publish rewrote 74 already
+    delivered files whose content had not changed at all -- and the next
+    re-dump of the store would flip them straight back. Same fix the
+    aiyalaeho side already carries.
     """
     folder = paths.KARI_CUES if cues_dir is None else cues_dir
     source = refined_timeline(entry, work)
     target = paths.stage_path(folder, entry["srt_name"], ".json")
     os.makedirs(os.path.dirname(target), exist_ok=True)
-    shutil.copy2(source, target)
+    with open(source, encoding="utf-8") as handle:
+        manifest = json.load(handle)
+    with open(target, "w", encoding="utf-8") as handle:
+        handle.write(redump_store.dump(manifest))
     return [os.path.basename(folder)]
 
 
@@ -162,9 +183,9 @@ def clear_pending(entries, published):
 
     `published` is the set of srt_names that were. It used to clear every
     pending flag in the inventory, which was right while publishing was
-    whole-inventory; now that a month can go out while another is still
-    being read, clearing them all would mark the unpublished month
-    delivered -- the store would claim a deliverable that is not there.
+    whole-inventory; now that one episode can go out while its neighbours
+    are still being read, clearing them all would mark unread episodes
+    delivered -- the store would claim deliverables that are not there.
     """
     cleared = 0
     for entry in entries:
@@ -187,20 +208,12 @@ def main(argv=None):
 
     entries = paths.load_inventory()
 
-    # Decide everything before writing anything: publishing is
-    # all-or-nothing *within a broadcast month*. A month that is still
-    # being read holds only itself back now, not the finished ones.
-    held = {}
-    for month in months_of(entries):
-        blocked = gate(entries, month)
-        if blocked:
-            held[month] = blocked
-
+    # Decide everything before writing anything. The unit is one episode:
+    # each is judged by `publishable` alone, and an unfinished one holds
+    # back only itself. Nothing here vouches for anything else -- see the
+    # module docstring for why that keeps the store self-consistent.
     ready = []
     for entry in entries:
-        month = paths.month_of(entry["srt_name"])
-        if month in held:
-            continue
         work, reason = publishable(entry)
         if reason:
             print("skip  %-46s %s" % (entry["srt_name"], reason))
@@ -209,19 +222,11 @@ def main(argv=None):
         if args.check:
             print("ready %s" % entry["srt_name"])
 
-    for month in sorted(held):
-        print("\nhold  %s：%d 集猶未讀完，這個月無寫"
-              % (month, len(held[month])))
-        for name, reason in held[month][:10]:
-            print("  %-46s %s" % (name, reason))
-
-    # Empty `ready` on its own is not a failure: an inventory that is
-    # wholly delivered has nothing to copy, and the tracker still gets
-    # written. It is a failure only when work was held and none went out.
-    if held and not ready:
-        print("\n無一个月份好勢，啥物都無寫")
-        return 1
-
+    # An empty `ready` is not a failure. It means either that everything
+    # is already delivered, or that no episode of this batch has finished
+    # yet -- and the `skip` line above already named the step each one is
+    # stuck at. Returning non-zero here made batch scripts read "not my
+    # turn yet" as "something broke".
     if args.check:
         print("\n%d of %d episode(s) ready to publish (nothing written)"
               % (len(ready), len(entries)))

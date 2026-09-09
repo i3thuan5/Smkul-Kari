@@ -166,13 +166,25 @@ class TestMakeAll(Batch):
 
 
 class TestPublish(Batch):
-    def test_an_unfinished_pending_episode_holds_the_batch(self):
-        self.add(82, cues=2)
+    def test_an_unfinished_episode_holds_back_only_itself(self):
+        """無做煞ê彼集擋家己就好，擋別集袂牢（2026-09-09 改逐集）。
+
+        本底這條是 `holds_the_batch`：一集無好勢，規批一字都無寫。
+        新聞彼爿踏著坑——2021-01 有 58 集猶未切 cue，共已經切好、
+        精修好、讀煞ê 006午 擋牢，而彼集ê時間軸干焦踮工作目錄。
+        """
+        done, _work = self.add(82, cues=2)
         self.add(85, cues=3, read=[1])
         make_all.main([])
-        self.assertEqual(publish.main([]), 1)
-        self.assertFalse(os.path.exists(self.delivered))
-        self.assertTrue(self.entries[0].get("pending"))
+        self.assertEqual(publish.main([]), 0)
+        self.assertTrue(os.path.exists(os.path.join(self.cues,
+                                                    done + ".json")))
+        after = paths.load_inventory(self.inventory)
+        by = {}
+        for one in after:
+            by[one["srt_name"]] = one
+        self.assertNotIn("pending", by[done])
+        self.assertTrue(by["開會了_085_Amis_阿美"].get("pending"))
 
     def test_a_finished_batch_is_written_and_cleared(self):
         name, _work = self.add(82, cues=2)

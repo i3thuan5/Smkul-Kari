@@ -152,25 +152,74 @@ class TestPublishWritesTheDeliverable(Fixture):
             written = json.load(handle)
         self.assertNotIn("pending", written[0])
 
-    def test_refuses_while_a_pending_episode_is_unfinished(self):
-        # No .B.work at all: registered, but nobody has read it yet.
+    def test_an_unfinished_episode_is_skipped_not_refused(self):
+        # No .B.work at all: registered, but nobody has read it yet. It is
+        # simply not published -- it is not an error. Returning non-zero
+        # here made batch scripts read "not my turn yet" as "something
+        # broke" (2026-09-09: gate is per-episode).
         self._json(self.inventory, [dict(ENTRY, pending=True)])
-        self.assertEqual(self._run(), 1)
-        self.assertFalse(os.path.exists(self.store_tracker))
+        self.assertEqual(self._run(), 0)
+        with open(self.inventory, encoding="utf-8") as handle:
+            written = json.load(handle)
+        self.assertTrue(written[0]["pending"])
+        month = os.path.join(self.cues_dir,
+                             paths.month_of(ENTRY["srt_name"]))
+        self.assertFalse(os.path.exists(month))
 
-    def test_writes_nothing_at_all_when_blocked(self):
-        # All-or-nothing: a second, finished episode must not be published
-        # while the first is still being read, or the store ends up holding
-        # inputs for a deliverable that is not there.
+    def test_a_finished_episode_goes_out_beside_an_unread_one(self):
+        # Per-episode (2026-09-09): the finished one is published, the one
+        # still being read keeps its pending flag and puts nothing in the
+        # store. It used to be all-or-nothing, which is what kept 006午 --
+        # cut, refined, read and verified -- out of the store because 58
+        # other January episodes had not been cut.
         other = dict(ENTRY, slug="9999_002_1999-01-02_午間_Test_測試",
                      srt_name="19990102_002_午間_Test_測試", pending=True)
         self._json(self.inventory, [dict(ENTRY, pending=True), other])
         self._finished_episode()
-        self.assertEqual(self._run(), 1)
+        self.assertEqual(self._run(), 0)
         month = os.path.join(self.cues_dir,
                              paths.month_of(ENTRY["srt_name"]))
         self.assertEqual(os.listdir(month),
                          [ENTRY["srt_name"] + ".json"])
+        with open(self.inventory, encoding="utf-8") as handle:
+            written = json.load(handle)
+        by = {}
+        for one in written:
+            by[one["srt_name"]] = one
+        self.assertNotIn("pending", by[ENTRY["srt_name"]])
+        self.assertTrue(by[other["srt_name"]]["pending"])
+
+    def test_the_store_copy_is_rewritten_readable_not_copied_byte_wise(self):
+        """Store ê JSON 愛照〈Kari-SRT/ ê內容愛人讀有〉排版過。
+
+        本底是 `shutil.copy2`，共工作目錄彼份原封不動搬入去。工作目錄
+        彼份是切 cue ê時陣寫ê，鍵ê順序是插入順序；store 彼爿ê正本是
+        排序過ê。按呢一擺 publish 就共 store 排好ê排版蓋轉去舊款，
+        兩爿來回反——2026-09-09 實際踏著：一擺 publish 共 74 份已經
+        定版ê檔攏改著，內容一模一樣，干焦鍵序無仝。
+        """
+        self._json(self.inventory, [dict(ENTRY, pending=True)])
+        self._finished_episode()
+        self.assertEqual(self._run(), 0)
+        target = paths.stage_path(self.cues_dir, ENTRY["srt_name"], ".json")
+        with open(target, encoding="utf-8") as handle:
+            body = handle.read()
+        self.assertEqual(body, json.dumps(CUES, ensure_ascii=False,
+                                          indent=2, sort_keys=True) + "\n")
+        self.assertEqual(json.loads(body), CUES)
+
+    def test_republishing_does_not_change_the_stored_bytes(self):
+        """已經定版ê集閣走一擺 publish，store 內底ê byte 袂使振動。"""
+        self._json(self.inventory, [dict(ENTRY, pending=True)])
+        self._finished_episode()
+        self._run()
+        target = paths.stage_path(self.cues_dir, ENTRY["srt_name"], ".json")
+        with open(target, "rb") as handle:
+            first = handle.read()
+        self._run()
+        with open(target, "rb") as handle:
+            second = handle.read()
+        self.assertEqual(first, second)
 
     def test_a_delivered_episode_needs_no_work_dir(self):
         # Work dirs are caches and get cleared away once published. Nothing

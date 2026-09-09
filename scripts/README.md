@@ -116,6 +116,7 @@
 | `presets.json` | `aiyalaeho-bilingual`（黃底雙列帶；本底寄佇 `news/presets.json`，這改搬轉來家己遮） |
 | `blobs.py` | 連通元件（8-連通ê `label`／`boxes`，佮「族語逝ê墨底」ê `deepest_bottom`）——環境無 scipy，讀者逐擺家己重寫就逐擺無仝，收做一支才免 |
 | `brief.md` | 視覺辨識讀者判準ê**正本**（逐批ê提示攏對這份提，判準才袂逐批走鐘） |
+| `text/oledoc.py`／`decode.py`／`parse.py`／`lang.py`／`split.py`／`pairs.py` | 上字文稿（001–045，無影片、佮上面攏無關）轉族華平行語料：OLE2 讀取、副檔名分派解碼、排版判定、語言代號、多重分隔符 AI 判讀、組出 `1-句對.csv`；詳見 [Kari-SRT/aiyalaeho/text/README.md](../Kari-SRT/aiyalaeho/text/README.md) |
 
 news 有而遮無ê四支：`fetch_sftp.sh`（素材已經佇本機）、`plan_month.py`
 （無月份批次，登記併入 `catalogue.py`）、`gap_sheets.py`（無 `.B.work`

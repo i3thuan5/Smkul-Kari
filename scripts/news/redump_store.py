@@ -33,7 +33,13 @@ import sys
 from scripts.news import paths
 
 
-def _dump(doc):
+def dump(doc):
+    """The store's readable shape, as one string.
+
+    Public because `publish` writes into the same folders: if the two
+    disagree by so much as a trailing newline, every publish rewrites
+    what the last redump wrote and the next redump flips it back.
+    """
     return json.dumps(doc, ensure_ascii=False, indent=2,
                       sort_keys=True) + "\n"
 
@@ -42,7 +48,7 @@ def redump_json(path):
     """Rewrite one JSON file in the readable shape; did it change?"""
     with open(path, encoding="utf-8") as handle:
         before = handle.read()
-    after = _dump(json.loads(before))
+    after = dump(json.loads(before))
     if after == before:
         return False
     with open(path, "w", encoding="utf-8") as handle:
@@ -96,7 +102,7 @@ def _would_change(path):
     if path.endswith(".jsonl"):
         after = _jsonl_text(before)
     else:
-        after = _dump(json.loads(before))
+        after = dump(json.loads(before))
     return after != before
 
 

@@ -10,10 +10,18 @@ the per-episode input the offline rebuild needs to put an SRT back
 together without a video -- `1-cues/<srt_name>.json` -- plus the delivered
 progress table and the clearing of the pending flags.
 
-All or nothing: while any registered episode is still unread, nothing is
-written at all. Half a batch would leave the store claiming deliverables
-it does not have, which is the inconsistency `rebuild --verify` exists to
-find.
+The unit is **one episode**, not the batch. An unread episode holds back
+only itself; the finished ones go out. This was all-or-nothing until
+2026-09-09, when the news side hit the cost of it: January had 58 episodes
+not yet cut, and that kept 006午 -- cut, refined, read and verified -- out
+of the store, while the only copy of its timeline sat in a work dir whose
+master had already been deleted.
+
+Per-episode stays self-consistent because no episode vouches for another:
+`publishable` already demands that this one was cut, refined and fully
+read; the delivered table lists only the non-pending ones; and the offline
+rebuild walks only the non-pending ones. Publishing one moves that one
+from pending to delivered and puts its own inputs in the store.
 """
 import argparse
 import json
@@ -52,7 +60,12 @@ def publishable(entry):
 
 
 def gate(entries):
-    """Registered episodes that are not finished -- why we cannot publish."""
+    """Registered episodes that are not finished -- why each one waits.
+
+    A **query**, not the gate: `main` no longer consults it before writing
+    (see the module docstring). It answers "what is this batch waiting on",
+    which is what a person wants when a batch is dragging.
+    """
     blocked = []
     for entry in entries:
         if not tracker.is_pending(entry):
@@ -128,8 +141,9 @@ def main(argv=None):
 
     entries = paths.load_inventory()
 
-    # Decide everything before writing anything.
-    blocked = gate(entries)
+    # Decide everything before writing anything. The unit is one episode:
+    # each is judged by `publishable` alone, and an unfinished one holds
+    # back only itself.
     ready = []
     for entry in entries:
         work, reason = publishable(entry)
@@ -139,12 +153,6 @@ def main(argv=None):
         ready.append((entry, work))
         if args.check:
             print("ready %s" % entry["srt_name"])
-
-    if blocked:
-        print("\n%d 集猶未做煞，一字都無寫：" % len(blocked))
-        for name, reason in blocked[:10]:
-            print("  %-30s %s" % (name, reason))
-        return 1
 
     if args.check:
         print("\n%d／%d 集會使定版（試跑，無寫入）"

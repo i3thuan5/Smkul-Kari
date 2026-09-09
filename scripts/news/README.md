@@ -101,7 +101,7 @@ python3 -m scripts.news.add_episodes '族語新聞/110.1-110.10/7月/21NL005_37�
 # 3. 出 contact sheet（全部 cue 都上）
 python3 -m scripts.news.gap_sheets <slug> …
 # 4. 視覺辨識 → ingest → make_all（同上）
-# 5. 整批做完才能 publish：清 pending、遷 cues、定版 smkul.csv
+# 5. publish：逐集判斷，做好的就定版、清 pending、遷 cues
 python3 -m scripts.news.publish
 python3 -m scripts.news.rebuild --verify
 ```
@@ -120,7 +120,7 @@ python3 -m scripts.news.rebuild --verify
 
 - `rebuild --verify` **跳過** pending 集數，不要求它們的 cues／TSV／SRT
 - `smkul.csv` 的交付版也**不列** pending 集數
-- `publish.py` 整批把關通過後才清掉旗標
+- `publish.py` 逐集判斷：這一集做完就清掉旗標、定版；同批其他集未完成不會擋住它（2026-09-09 改逐集，之前是整批）
 
 於是批次做到一半，store 仍然自洽，`rebuild --verify` 全程可以是綠的。三個
 標記語意不重疊：`truncated`（來源不完整，永不交付）、`partial`（已交付但
@@ -1330,7 +1330,7 @@ sheet 讀了一遍，還多花了建兩次 contact sheet 的工。真正的價�
 | `sources.py` | 一集配一支檔的四條規則；揀袂出來就跳過並回報 |
 | `resolve_slug.py` | 用 `ilrdf-corpus.csv` 把路徑對成 work dir／SRT 名稱 |
 | `paths.py` | 全部路徑的單一出處；`stage_path()` 是階段目錄唯一出口；`--var` 供 shell 取值 |
-| `publish.py` | 整批把關→清 `pending`、遷 `cues`、定版 `smkul.csv` |
+| `publish.py` | 逐集把關→清 `pending`、遷 `cues`、定版 `smkul.csv`（未完成的集只擋自己，不擋同批其他集）|
 | `rebuild.py` | 從 Kari-SRT 離線重建全部 SRT 並逐 byte 驗證 |
 | `Kari-SRT/news/1-ocr/2-vision/` | 視覺逐字稿 TSV（全部 cue，文字唯一來源）|
 
