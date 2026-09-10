@@ -102,16 +102,16 @@ class TestSheetPacking(unittest.TestCase):
             self.assertLessEqual(height, sheets.LONG_EDGE, name)
 
     def test_the_worst_case_geometry_has_not_moved(self):
-        # 上界的數字：上闊ê圖條 1866（`MAX_TILE`），一張 1990 寬，高度
-        # 上限 1848 px（⌈1990/28⌉=72 个 patch 闊，4784÷72=66 个 patch
-        # 懸），block 134，一張 13 條。對不起來就是版型、裝箱規則、抑是
-        # **送圖／辨識彼端ê上限**改過矣，這个檔案頭前彼段分析愛重做一
-        # 遍——彼幾个數字是別人兜ê服務條件，毋是咱保證會著ê。
+        # 上界的數字：上闊ê圖條 1864（`MAX_TILE`），一張 1988 闊——**拄
+        # 拄好 71 个 patch，無賰半欄**——高度上限 1876 px（4784÷71=67
+        # 个 patch 懸），block 134，一張 14 條。對不起來就是版型、裝箱
+        # 規則、抑是**送圖／辨識彼端ê上限**改過矣，這个檔案頭前彼段分析
+        # 愛重做一遍——彼幾个數字是別人兜ê服務條件，毋是咱保證會著ê。
         preset = self.presets["titv-news"]
-        self.assertEqual(widest_sheet(preset), 1990)
-        self.assertEqual(sheets._height_bound(1990), 1848)
+        self.assertEqual(widest_sheet(preset), 1988)
+        self.assertEqual(sheets._height_bound(1988), 1876)
         self.assertEqual(block_height(preset), 134)
-        self.assertEqual(sheets._height_bound(1990) // 134, 13)
+        self.assertEqual(sheets._height_bound(1988) // 134, 14)
 
     def test_no_sheet_can_be_over_the_delivery_limit(self):
         """連上闊彼張都愛佇送圖彼端ê 2000 px 以內。
@@ -119,18 +119,21 @@ class TestSheetPacking(unittest.TestCase):
         送圖ê工具會kā長邊超過 2000 ê圖等比例縮細（2026-09-09 量ê：
         818x2484 ê組合圖送過去，家己註「displayed at 659x2000」），
         字綴咧糊，**無一个所在會報錯**。畫面本身是 1920 闊，加 gutter
-        佮留白是 2044，拄仔好超過——所以圖條上闊剪到 `MAX_TILE`
-        （2000 − 108 − 16 − 10），剪ê是倒手爿ê背景。
+        佮留白是 2044，拄仔好超過——所以圖條上闊剪到 `MAX_TILE`，剪ê
+        是倒手爿ê背景。
 
-        剪10 px ê餘裕（`SPARE`）是刁工留ê：拄拄好 2000 傷ân，隨位
-        振動幾个畫素就恬恬過線。
+        `SPARE` 彼 10 px ê餘裕是刁工留ê（拄拄好 2000 傷ân，隨位振動
+        幾个畫素就恬恬過線），閣**共規張搝落來貼齊 patch 邊界**：一張
+        算ê是 `⌈闊/28⌉` 欄，1990 佮 2016 仝款算 72 欄，賰彼 26 px 是
+        買了擲掉ê。1988 是拄拄好 71 欄。
         """
         for name in self.presets:
             self.assertLessEqual(widest_sheet(self.presets[name]),
                                  DELIVERY_LIMIT_PX, name)
-        self.assertEqual(sheets.GUTTER + sheets.MAX_TILE
-                         + sheets.TILE_MARGIN,
-                         sheets.LONG_EDGE - sheets.SPARE)
+        page = sheets.GUTTER + sheets.MAX_TILE + sheets.TILE_MARGIN
+        self.assertEqual(page, sheets.MAX_PAGE)
+        self.assertEqual(page % sheets.PATCH, 0)
+        self.assertLessEqual(page, sheets.LONG_EDGE - sheets.SPARE)
 
     def test_the_rescan_band_still_packs_like_the_rest(self):
         """`rescan_band.REGION` 也要守，而且**預算不是它自己的寬度**。

@@ -293,6 +293,21 @@ class TestInkColumns(unittest.TestCase):
         mask = np.zeros((122, self.WIDTH), dtype=bool)
         self.assertIsNone(sheets._ink_columns(mask))
 
+    def test_the_widest_page_lands_on_a_patch_boundary(self):
+        """The last patch column is paid for whole or not at all.
+
+        A page is charged `ceil(w/28)` columns, so 1990px costs the same
+        72 columns as 2016 would: 26px of it is bought and thrown away.
+        Trimming two more pixels off the widest strip drops the page to
+        1988, which is 71 columns exactly. It is small -- 0.2% on a news
+        episode, nothing on 開會了, because hardly any strip is that wide
+        -- but it costs nothing at all: what those two pixels held is
+        background, on the side of the strip the subtitle never reaches.
+        """
+        page = sheets.GUTTER + sheets.MAX_TILE + sheets.TILE_MARGIN
+        self.assertEqual(page % sheets.PATCH, 0)
+        self.assertLessEqual(page, sheets.LONG_EDGE - sheets.SPARE)
+
     def test_a_strip_can_never_be_wider_than_a_page_allows(self):
         """The far left goes before anything else is decided.
 
@@ -471,19 +486,30 @@ class TestSheetHeight(SheetFixture):
         self.assertEqual(self._widest_sheet(made), self._rows(400 + 124))
 
     def test_a_wide_sheet_holds_fewer_rows(self):
-        # Wide enough that the token limit bites before the long edge.
-        # 2100 is past what a page may carry, so the strip comes back
-        # trimmed to `MAX_TILE` and the page is 1990: 72 patches across,
-        # so only 66 down.
+        """The widest page there can be, against a narrow one.
+
+        2100 is past what a page may carry, so the strip comes back
+        trimmed to `MAX_TILE` and its page is 1988: 71 patch columns
+        across, so only 67 down (1876px), where a narrow page is stopped
+        by the long edge at 2000.
+
+        The rows have to be taller than a subtitle for that gap to show:
+        124px of difference is less than one 134px block, so at the news
+        layout both pages hold 14 either way. It is real for anything
+        taller -- 200px rows are 10 against 9 -- and it is the reason the
+        packing sorts by width in the first place.
+        """
         wide = []
         narrow = []
         for _ in range(40):
             wide.append(2100)
             narrow.append(400)
-        widest = self._widest_sheet(self._sheets(wide, flush_right=True))
-        self.assertLess(widest,
-                        self._widest_sheet(self._sheets(narrow)))
-        self.assertEqual(widest, self._rows(sheets.MAX_TILE + 124))
+        tall = 188
+        widest = self._widest_sheet(
+            self._sheets(wide, strip_h=tall, flush_right=True))
+        self.assertLess(widest, self._widest_sheet(
+            self._sheets(narrow, strip_h=tall)))
+        self.assertEqual(widest, self._rows(sheets.MAX_PAGE, tall))
 
     def test_a_blank_strip_cannot_widen_a_page_either(self):
         """The strip with no ink at all takes the same trim.

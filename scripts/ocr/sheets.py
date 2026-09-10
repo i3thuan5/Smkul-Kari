@@ -253,13 +253,22 @@ VISUAL_TOKENS = 4784
 # **This assumes subtitles are never left-aligned.** A corpus that puts
 # them on the left has to be measured again before it comes through here.
 #
-# SPARE is asked for by the user (2026-09-10): trim 10px more than the
-# arithmetic needs, so a page is 1990 rather than exactly 2000 and a
-# change of a few pixels anywhere does not silently put it over.
+# SPARE is asked for by the user (2026-09-10): trim a little more than the
+# arithmetic needs, so that a change of a few pixels anywhere does not
+# silently put a page over the limit.
+#
+# The widest page is then taken down to a whole number of patch columns.
+# A page is charged `ceil(w/28)` columns however far into the last one it
+# reaches, so 1990px costs the same 72 columns as 2016 would -- 26px
+# bought and thrown away. 1988 is 71 columns exactly. Two pixels of
+# background, on the side the subtitle never reaches, for a whole column:
+# small (0.2% of an episode's visual tokens, since hardly any strip is
+# that wide) but free.
 GUTTER = 108
 TILE_MARGIN = 16
 SPARE = 10
-MAX_TILE = LONG_EDGE - GUTTER - TILE_MARGIN - SPARE
+MAX_PAGE = ((LONG_EDGE - SPARE) // PATCH) * PATCH
+MAX_TILE = MAX_PAGE - GUTTER - TILE_MARGIN
 
 
 def _height_bound(page_w):
