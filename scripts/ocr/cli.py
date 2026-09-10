@@ -323,7 +323,6 @@ def stage_cues(args):
         # layout, not this episode (ruled 2026-09-09).
         slots = (preset or {}).get("sheet", {}).get("row_slots")
         made = contact.build_sheets(workdir, manifest,
-                                    megapixels=args.sheet_megapixels,
                                     row_slots=slots,
                                     compare_cols=spec.compare_cols)
         print("wrote %d contact sheet(s) to %s"
@@ -799,7 +798,6 @@ def add_cue_options(parser):
     parser.add_argument("--sheets", action="store_true", default=True,
                         help="also build contact sheets for vision OCR")
     parser.add_argument("--no-sheets", dest="sheets", action="store_false")
-    parser.add_argument("--sheet-megapixels", type=float, default=1.10)
     parser.add_argument("--progress", action="store_true", default=True)
 
 

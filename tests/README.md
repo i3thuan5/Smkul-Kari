@@ -17,7 +17,8 @@ tests/
 ├── news/         族語新聞編排層測試（來源選擇、月份計畫、完整性、
 │                 asrmt_run、smkul、tracker、refine、paths 保護…）
 ├── aiyalaeho/    《開會了》編排層測試（檔名解析、雙槽驗版型、雙列
-│                 組裝、九欄進度表、0-cue 交付、離線重建）
+│   │             組裝、九欄進度表、0-cue 交付、離線重建）
+│   └── langcheck/  逐條語言判定（對照表佇該目錄ê README）
 └── e2e/          fixture.py  test_roundtrip（合成影片端對端，tox -e e2etest）
 ```
 
@@ -41,6 +42,8 @@ tests/
 | subtitle-text-source | 只有經人校讀的視覺辨識可供字 | `ocr/test_import_tsv.py`（verified 記帳）、`news/test_vision_complete.py` |
 | —（引擎行為） | 像素遮罩／區域運算 | `ocr/test_mask.py`、`ocr/test_region.py` |
 | —（引擎行為） | sheet→TSV→匯入迴圈、glossary | `ocr/test_sheets.py` |
+| subtitle-text-source | 圖條ê欄裁切：背景ê墨水對畫面另外彼爿用細空隙連過來／頂一逝ê字滲入圖條ê頂墘（111 cue 228「任何墨水」是 279..1725，字其實干焦佇 799..1295）／族語逝結尾ê撇號一欄才一兩个畫素，一定愛留（「逐欄墨水 ≥3」彼版kā 085 四十逝ê撇號削去） | `ocr/test_sheets.py`（`TestInkColumns`）|
+| subtitle-text-source | 組合圖ê尺寸：一條滿版圖條kā規集 327 張攏撐做 2044 闊／閣加一條就超過 ⌈闊/28⌉×⌈懸/28⌉ ≤ 4784 抑是長邊 2000（超過送圖彼端會恬恬kā規張縮細）／一條圖條家己就超過上限嘛袂使hőng放揀／照闊度排了後 `sheets.json` ê cue 集合愛佮 `cues.json` 完全仝款、編號佮圖條袂使拆散／檔名取彼張上早ê彼條 cue／整條發亮ê圖條（滿版圖卡、報紙翻拍）會做出 2044 闊、超過送圖彼端ê 2000，愛佇**算 ink 進前**對倒手爿剪——算煞才夾，倒手爿彼團亮背景會贏去「墨水上濟彼團」kā裁切帶走；空白圖條無墨水通裁，嘛愛套仝一个上限 | `ocr/test_sheets.py`（`TestSheetWidth`、`TestSheetHeight`、`TestWidthSorting`）|
 | —（引擎行為） | 辨識輸出清理 | `ocr/test_ocr_prep.py` |
 
 ## 共用組裝（tests/srtlib/ ↔ scripts/srtlib/）
@@ -80,6 +83,10 @@ tests/
 | subtitle-text-source | 文稿不供字／中間產物不擋交付 | `news/test_make_one.py`、`news/test_make_srt.py` |
 | asr-bilingual-srt | 音檔時長不符指名中止／續跑跳過已完成步驟 | `news/test_asrmt_run.py` |
 | —（工作流防線） | 不覆蓋已校讀 work dir、批次 sheet 歸屬、TSV 整批拒收 | `news/test_gap_guard.py`、`news/test_batches.py`、`news/test_ingest.py` |
+| subtitle-text-source | 交付 TSV 照 cue 編號排序：組合圖照闊度排了後，讀者是照 703、612、699 這款順序寫落來ê，落 store 愛遞增；仝一條 cue ê兩逝（族語佇頂、華語佇下）袂使對調；`12` 袂使排佇 `9`頭前 | `news/test_ingest.py` |
+| —（工作流防線） | 組合圖ê懸度上限釘佇辨識端ê解析層佮送圖工具ê長邊 2000（2044 闊 → 1820 懸、一張 13 條）：版型變懸、換模型、抑是換送圖ê工具就紅——超過干焦是圖hőng縮細、字綴咧細，無一个所在會報錯（實測 818x2484 送過去，家己註「displayed at 659x2000」）| `news/test_sheet_packing.py` |
+| —（工作流防線） | 批次邊界兩支工具愛講仝款ê話：`batches` 發 TSV ê名（b01、b02…）、`prompt` 照彼个號碼寫提示，51 張ê時遮切三批、彼切兩批，**仝一批 cue hőng派兩擺、掛兩个名**，`ingest` 擋規集（「cue X 佇兩个檔攏有」）；批次對 24 張改做 4 張了後，尾批短ê情形變做常態 | `news/test_batches.py`、`news/test_vision_prompt.py` |
+| —（成本防線） | 批次大小綴組合圖打包走：一張對 4 條變 ~25 條，`SIZE` 若留咧 24 就是 600 條／批（量著會噴彼點 196 ê三倍），改 4 張才閣是 ~100 條；`brief.md` ê `{…}` 鍵無換掉會直接印佇讀者面頭前，袂報錯 | `news/test_vision_prompt.py` |
 | —（參數防線） | 名字不得帶路徑成分／路徑只准落在資料資料夾／sftp 路徑不得含引號換行 | `news/test_paths.py`、`news/test_sftp_cli.py` |
 
 ## 一集配一支檔（tests/news/ ↔ scripts/news/）
@@ -104,6 +111,7 @@ tests/
 | aiyalaeho-sourcing | 版型異常集分流，理由三路來源（檔名ê字幕狀態字樣／量測／人工判定）；`--annotate` 干焦填空ê理由佮影片長度、既有理由袂予蓋掉、無事做回「未改」 | `aiyalaeho/test_catalogue.py` |
 | cue-timing | 0.5 秒留白、間距不足佇中點相接、袂出負值袂超片長、留白無寫轉去時間軸 | `aiyalaeho/test_make_srt.py` |
 | subtitle-text-source | 每條恆兩行帶標籤「族語：／華語：」；某列空白猶原出標籤行；兩列攏空無出；合併比兩行合成ê字串 | `aiyalaeho/test_make_srt.py` |
+| aiyalaeho-language-check | 逐條語言判定ê規組（字元分類、辭典蒸餾、詞庫比對、方言別正音、兩張 CSV）——27 逝ê對照表佇 `aiyalaeho/langcheck/README.md` | `aiyalaeho/langcheck/*.py` |
 | subtitle-text-source | 兩逝一 cue ê TSV：列名毋著／cue 無佇 sheet 頂懸／仝一 cue 兩批攏有——規批拒收 | `aiyalaeho/test_ingest.py` |
 | srt-data-store | store 版面（`aiyalaeho/1-ocr/{1-cues,2-vision,3-srt}`、不分層）；inventory 欄位宣告 | `aiyalaeho/test_paths.py` |
 | —（成本防線） | preset ê列懸度愛予一張 sheet 囥會落四條 cue（1.10 MP 預算；超過就恬恬加三成閱讀量） | `aiyalaeho/test_paths.py` |

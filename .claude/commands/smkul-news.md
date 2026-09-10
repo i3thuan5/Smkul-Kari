@@ -103,10 +103,10 @@ transcripts, so it is safe to re-run.
 ## 3. Vision pass
 
 ```bash
-python3 -m scripts.news.batches <slug> --size 24     # lists the sheet batches
+python3 -m scripts.news.batches <slug>               # lists the sheet batches
 ```
 
-Farm each batch to a subagent, 24 sheets each, writing a TSV straight to
+Farm each batch to a subagent, 4 sheets each, writing a TSV straight to
 `Kari-SRT/news/1-ocr/2-vision/<年-月>/<srt_name>/bNN.tsv`. Two things the
 prompt must say, both learned the hard way:
 
@@ -197,7 +197,15 @@ store's README says so out loud.
 Measured on the February batch (35 episodes, `1-ocr/1-cues/` and
 `1-ocr/2-vision/` are the record): **835 cues, 178 contact sheets and 8.2
 reading batches per episode**, and the vision pass ran at about **10 batches
-an hour** (13 episodes ≈ 102 batches in a 10.5 h session). Fetch-and-cut costs
+an hour** (13 episodes ≈ 102 batches in a 10.5 h session).
+
+> **2026-09-09**: the sheet count above was measured when a sheet held 4 cues.
+> Sheets now hold about 25, so an episode packs into roughly 33 of them rather
+> than 178. **The batch and hour figures survive**: a batch was 24 sheets x 4
+> cues and is now 4 sheets x ~25 cues, so it is the same ~100 cues of work,
+> just delivered in 4 images instead of 24 — which is where the saving comes
+> from. Cue counts per episode are unchanged. Take the live numbers from
+> `sheets.json`, not from this paragraph. Fetch-and-cut costs
 6.3 min per episode including the download; the speech side (`asrmt_batch`,
 through `2-srt-raw`) costs 15 min per episode and can run alongside the vision
 pass.

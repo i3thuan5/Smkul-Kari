@@ -12,6 +12,7 @@ import json
 import os
 
 from scripts.news import paths
+from scripts.news.vision_tools import prompt
 from scripts.errors import PipelineError
 
 WORK = paths.WORK
@@ -38,6 +39,22 @@ def pending_sheets(work):
     return out
 
 
+def spans(count, size=None):
+    """Where to cut `count` pending sheets into batches: a list of (lo, hi).
+
+    Delegates to the reader brief's own planner instead of cutting here, so
+    the two cannot drift: this module hands out the TSV names (b01, b02...)
+    and `prompt` writes the brief for each of those numbers. They used to
+    disagree about a short tail -- 51 sheets came out as three batches here
+    and two there -- which sent two readers at the same cues under two
+    names, and `ingest` refuses the episode ("cue X appears in both").
+
+    `size` defaults to `prompt.SIZE` rather than to a number of its own,
+    for the same reason: one knob, not two that have to be kept equal.
+    """
+    return prompt.plan(count, size or prompt.SIZE, prompt.MIN_TAIL)
+
+
 def srt_name_of(slug):
     """The name Kari-SRT files this episode's transcripts under.
 
@@ -56,7 +73,7 @@ def srt_name_of(slug):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("slug")
-    ap.add_argument("--size", type=int, default=24)
+    ap.add_argument("--size", type=int, default=None)
     ap.add_argument("--limit", type=int, default=0)
     args = ap.parse_args()
     args.slug = paths.check_name(args.slug, "slug")
@@ -66,13 +83,17 @@ def main():
     sheets = pending_sheets(work)
     print("# %s: %d sheet(s) pending" % (args.slug, len(sheets)))
     made = 0
-    for start in range(0, len(sheets), args.size):
-        batch = sheets[start:start + args.size]
+    for lo, hi in spans(len(sheets), args.size):
+        batch = sheets[lo:hi]
         made += 1
         if args.limit and made > args.limit:
             break
-        names = [n for n, _ in batch]
-        cues = sorted(c for _, cs in batch for c in cs)
+        names = []
+        cues = []
+        for name, on in batch:
+            names.append(name)
+            cues += on
+        cues = sorted(cues)
         print("\n=== batch %02d  (%d sheets, %d cues) ===" %
               (made, len(names), len(cues)))
         print("DIR %s/sheets/" % work)

@@ -104,7 +104,7 @@ def run_end_to_end(tmpdir, band, entries, lang, label, fps=5.0):
         autodetect=True, fps=fps,
         start=0.0, duration=None, min_ink=120, change=0.35, min_stable=2,
         min_duration=0.30, samples=60, lang=lang, sheets=False,
-        sheet_megapixels=1.1, progress=False)
+        progress=False)
     subs2srt.stage_cues(args)
 
     with open(datadirs.cues_to_read(work), encoding="utf-8") as handle:

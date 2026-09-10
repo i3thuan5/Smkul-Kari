@@ -117,6 +117,7 @@
 | `blobs.py` | 連通元件（8-連通ê `label`／`boxes`，佮「族語逝ê墨底」ê `deepest_bottom`）——環境無 scipy，讀者逐擺家己重寫就逐擺無仝，收做一支才免 |
 | `brief.md` | 視覺辨識讀者判準ê**正本**（逐批ê提示攏對這份提，判準才袂逐批走鐘） |
 | `text/oledoc.py`／`decode.py`／`parse.py`／`lang.py`／`split.py`／`pairs.py` | 上字文稿（001–045，無影片、佮上面攏無關）轉族華平行語料：OLE2 讀取、副檔名分派解碼、排版判定、語言代號、多重分隔符 AI 判讀、組出 `1-句對.csv`；詳見 [Kari-SRT/aiyalaeho/text/README.md](../Kari-SRT/aiyalaeho/text/README.md) |
+| `langcheck/script.py`／`dictionary.py`／`vocab.py`／`mark.py`／`report.py` | 交付 SRT 逐條ê語言判定：字元分類（Unicode 類別，毋是 ASCII 範圍）、官方族語辭典 xlsx 蒸餾做詞庫（標準函式庫讀，無 openpyxl）、逐族詞庫命中率佮方言別正音、逐條標記、兩張 CSV。**干焦讀 `3-srt/`**，離線、無叫模型；詳見 [Kari-SRT/aiyalaeho/1-ocr/4-語言檢查/README.md](../Kari-SRT/aiyalaeho/1-ocr/4-語言檢查/README.md) |
 
 news 有而遮無ê四支：`fetch_sftp.sh`（素材已經佇本機）、`plan_month.py`
 （無月份批次，登記併入 `catalogue.py`）、`gap_sheets.py`（無 `.B.work`

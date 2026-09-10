@@ -27,8 +27,30 @@ WORK = paths.WORK
 WORK_SUFFIX = ".B.work"
 
 
+def _cue_order(row):
+    """Sort key: by cue number, keeping unnumbered rows at the end.
+
+    An unnumbered row is a batch `_audit_row` will reject; it is kept and
+    written back so that the rejection still names it.
+    """
+    index = row.split("\t")[0]
+    if index.isdigit():
+        return (0, int(index))
+    return (1, 0)
+
+
 def normalise(path):
-    """Restore the empty third field on confirmed-blank rows."""
+    """Restore the blank third field, and put the rows in cue order.
+
+    The sheets are packed widest-with-widest, so one of them carries cue
+    703, 612, 699... and the reader writes its TSV in the order it saw
+    them. `Kari-SRT/` is read by people, and numbers that jump about make
+    it unreadable, so the order is restored here rather than asked for in
+    the reading brief -- the machine is the reliable one.
+
+    The sort is stable, which is what keeps 開會了's two lines of one cue
+    (formosan above han) in the order the reader wrote them.
+    """
     rows = []
     with open(path, encoding="utf-8") as handle:
         for line in handle:
@@ -39,6 +61,7 @@ def normalise(path):
             while len(parts) < 3:
                 parts.append("")
             rows.append("\t".join(parts[:3]))
+    rows.sort(key=_cue_order)
     with open(path, "w", encoding="utf-8") as handle:
         handle.write("\n".join(rows) + "\n")
     return rows

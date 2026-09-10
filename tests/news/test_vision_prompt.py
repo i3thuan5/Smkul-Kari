@@ -5,6 +5,7 @@
 """
 import json
 import os
+import re
 import tempfile
 import unittest
 from unittest import mock
@@ -74,13 +75,16 @@ class TestRange(VisionPromptCase):
         self.assertIn("cue 577..864", text)
 
     def test_a_tail_shorter_than_the_floor_is_still_folded(self):
-        """尾批若真正細（8 張以下）猶原倂入前一批。
+        """尾批若真正細（`MIN_TAIL` 以下）猶原倂入前一批。
 
-        每一个讀者攏有固定開銷：捌量著一个 6 張ê尾批食了 47,623 token，
-        逐張 7,937，是 72 張彼个速率ê 4.2 倍。
+        每一个讀者攏有固定開銷（~19k token），閣派一个讀者去讀彼幾
+        張並無較俗。地板對 8 落到 2（2026-09-09，批次改 4 張順紲改ê）
+        了後，這條ê尾巴愛跟leh縮：本底 220 張（尾 4 張）已經**倂
+        袂著**矣，愛用 217 張（尾 1 張）才閣試著這條路。`MIN_TAIL`
+        是模組常數毋是參數，所以連 `size=72` 這款寫死ê案例嘛綴leh變。
         """
-        text = self.brief(220, 3, size=72)
-        self.assertIn("`sheet_145.png`–`sheet_220.png`", text)
+        text = self.brief(217, 3, size=72)
+        self.assertIn("`sheet_145.png`–`sheet_217.png`", text)
 
     def test_batch_past_the_end_is_an_error(self):
         with self.assertRaises(PipelineError):
@@ -101,11 +105,33 @@ class TestPlan(unittest.TestCase):
                                                 (144, 216)])
 
     def test_short_tail_is_folded_into_the_batch_before_it(self):
-        self.assertEqual(prompt.plan(294, 72), [(0, 72), (72, 144),
-                                                (144, 216), (216, 294)])
+        """289 = 72×4＋1，尾 1 張佇地板（2）以下，倂入去。
+
+        本底遮寫 294（尾 6 張），彼是地板猶原是 8 ê時ê數字；地板落
+        到 2 了後 6 張家己徛做一批矣。
+        """
+        self.assertEqual(prompt.plan(289, 72), [(0, 72), (72, 144),
+                                                (144, 216), (216, 289)])
+
+    def test_a_tail_at_the_floor_stands_on_its_own(self):
+        """拄仔好 `MIN_TAIL` 張ê尾**無**倂——地板是「以下」才倂。"""
+        self.assertEqual(prompt.plan(290, 72), [(0, 72), (72, 144),
+                                                (144, 216), (216, 288),
+                                                (288, 290)])
 
     def test_tail_long_enough_stays_on_its_own(self):
         self.assertEqual(prompt.plan(120, 72), [(0, 72), (72, 120)])
+
+    def test_a_size_below_one_is_an_error_not_a_hang(self):
+        """`lo += size` 若無行進前，彼个迴圈永遠袂煞。
+
+        `batches --size -1` 行會到遮：argparse 收負數收甲真歡喜，
+        `size or SIZE` 看 -1 是真ê就放伊過。**症頭是規支恬恬卡牢**，
+        無輸出、無錯誤，看起來親像咧做工。
+        """
+        for bad in (0, -1):
+            with self.assertRaises(PipelineError):
+                prompt.plan(10, bad)
 
     def test_shorter_than_one_batch_is_one_batch(self):
         self.assertEqual(prompt.plan(20, 72), [(0, 20)])
@@ -141,6 +167,17 @@ class TestScratch(VisionPromptCase):
 
     def test_placeholder_is_filled_in(self):
         self.assertNotIn("{scratch}", self.brief(232, 1, size=72))
+
+    def test_no_placeholder_is_left_behind(self):
+        """`brief.md` 內底逐个 `{…}` 攏愛hőng換掉，一个都莫賰。
+
+        賰落來ê `{sheets}` 這款物件袂報錯，是**直接印佇讀者面頭前**
+        ê一句死字。逐擺佇 brief.md 加新ê鍵，`_brief` ê `fill` 若無
+        綴leh加就是按呢。所以莫干焦顧一个鍵，規包掠。
+        """
+        text = self.brief(232, 1, size=72)
+        left = re.findall(r"\{[a-z_]+\}", text)
+        self.assertEqual(left, [], "brief.md 有無換ê鍵：%s" % left)
 
 
 class TestTsvName(VisionPromptCase):
@@ -268,33 +305,70 @@ if __name__ == "__main__":
 
 
 class TestBatchSizeDefaults(unittest.TestCase):
-    """24 sheets a reader, and a tail floor that scales with it.
+    """一批 4 張，尾批地板綴leh落。
 
-    Each call in a reading session resends the whole conversation so far, so
-    a batch's cost grows roughly with the square of its length. Recomputed
-    off six transcripts by grouping usage per reply id -- a reply carrying
-    four Read calls occupies four log lines and each repeats the same usage,
-    so summing line by line double-counts -- one batch of 72 costs 1.5 to
-    1.9 times what three batches of 24 cost. Per sheet the cost is flat from
-    8 to 24 and climbs after: 14-15k at 24, 17.5k at 36, 20k at 48, 25k at
-    72.
+    **代先愛知ê是：這改毋是「省錢」，是kā批次搝倒轉來原本ê大細。**
+    組合圖ê打包改了後（`LONG_EDGE` 壓 2000、逐張各自算闊），新聞
+    一張對 4 條 cue 變做 ~25 條。`SIZE` 若無綴leh改：
 
-    MIN_TAIL has to come down with SIZE or the change does nothing: at 24
-    with the old floor of 24, every tail short of a full batch is folded in
-    and batches come out at 47.
+        24 張 × 4 條（舊打包）  =  96 條／批   ← 本底就是按呢
+        24 張 × 25 條（新打包） = 600 條／批   ← 無改就變按呢
+         4 張 × 25 條（新打包） = 100 條／批   ← 改了
+
+    600 條是量著會噴ê彼點（196）ê三倍。**打包彼改恬恬kā批次弄大
+    六倍**，這改是kā伊搝倒轉去 ~100 條——用 cue 算，佮本底ê 96 條
+    差不多仝。省ê是仝款ê工課用 4 張圖送，毋是 24 張。
+
+    這組數字是量出來ê，毋是揀ê。一擺讀者ê對話會kā到今為止規段
+    閣送一擺，所以一批ê開銷大約綴長度ê平方走。組合圖改做逐張
+    裝 ~25 條 cue（`LONG_EDGE` 壓 2000）了後，用實讀量三个點
+    （逐點攏是 Opus、真正讀、費用照 `message.id` 歸併）：
+
+        cue 數   張數   回覆數   尖峰 context   每 cue
+           56     4      28       66,121      $0.0236
+           98     7      34       86,042      $0.0196
+          196    14     102      145,474      $0.0327
+
+    **56–98 這一段是平ê，到 196 明顯翹起來。** 關鍵毋是圖有偌大，
+    是**回覆數**：196 條愛 102 則，98 條干焦 34 則——批次細到某一
+    个程度，讀者就無閣入去「逐條懷疑、逐條覆核」彼个模式，cache
+    讀對 9.56M 落到 2.02M。往下猶原有底：56 彼點總開銷 $1.32 對
+    98 彼點 $1.92，才差 1.45 倍，cue 數 soah 差 1.75 倍——逐个
+    讀者起手彼份固定開銷（~19k token）咧kā伊搝倒轉去。
+
+    所以目標是**一批 60–100 條 cue**。新聞逐張 ~25 條，就是 4 張。
+
+    `MIN_TAIL` 愛綴 `SIZE` 落，若無這改就無意義：地板若懸過批次
+    大小，逐个無夠一批ê尾攏hőng倂入去。2 張 ~50 條，猶原徛會住
+    （56 彼點量著 $0.0236）；1 張 ~25 條就無值得閣派一个讀者。
+
+    **《開會了》莫用這个數字。** 彼爿逐張 ~14 條，仝款ê 60–100 條
+    是 5–7 張，而且彼爿ê族語列有撇號ê字形問題（`'` hőng寫做 `"`），
+    愛先kā判準補齊才通改批次。彼爿走ê是別一份 brief。
     """
 
-    def test_the_default_batch_is_twenty_four(self):
-        self.assertEqual(prompt.SIZE, 24)
+    def test_the_default_batch_is_four_sheets(self):
+        self.assertEqual(prompt.SIZE, 4)
 
     def test_the_tail_floor_scales_with_it(self):
-        self.assertEqual(prompt.MIN_TAIL, 8)
+        self.assertEqual(prompt.MIN_TAIL, 2)
         self.assertLess(prompt.MIN_TAIL, prompt.SIZE)
 
-    def test_a_tail_that_would_have_been_folded_now_stands(self):
-        spans = prompt.plan(47)
-        self.assertEqual(spans, [(0, 24), (24, 47)])
+    def test_a_batch_lands_in_the_measured_band(self):
+        """4 張逐張 ~25 條 = ~100 條，就是量著上俗彼點（98）。"""
+        self.assertLessEqual(prompt.SIZE * 25, 100)
+        self.assertGreaterEqual(prompt.SIZE * 25, 60)
 
-    def test_a_genuinely_tiny_tail_is_still_folded(self):
-        spans = prompt.plan(27)
-        self.assertEqual(spans, [(0, 27)])
+    def test_a_two_sheet_tail_stands_on_its_own(self):
+        """2 張 ~50 條猶原徛會住，莫倂入去kā前一批弄到 150 條。"""
+        spans = prompt.plan(6)
+        self.assertEqual(spans, [(0, 4), (4, 6)])
+
+    def test_a_one_sheet_tail_is_folded(self):
+        """1 張 ~25 條無值得閣派一个讀者（起手就 ~19k token）。"""
+        spans = prompt.plan(5)
+        self.assertEqual(spans, [(0, 5)])
+
+    def test_fifty_one_sheets_is_thirteen_batches(self):
+        """058晨 壓 2000 了後ê實際張數。"""
+        self.assertEqual(len(prompt.plan(51)), 13)

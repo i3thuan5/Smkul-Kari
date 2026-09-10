@@ -25,19 +25,87 @@ def ink_bbox(rgb, spec, pad=6):
     return _ink_columns(cuelib.text_mask(rgb, spec), pad)
 
 
-def _ink_columns(mask, pad=6):
-    """(x0, x1) around every column with ink, or None when there is none.
+# A column carrying this many lit pixels is a stroke rather than a stray:
+# it is enough to tell the subtitle's run from bright background, and low
+# enough that no run of type fails to reach it.
+STRONG_INK = 3
+# Two strong runs further apart than this are different things. A line of
+# type never leaves this much white inside itself -- the widest gap
+# measured inside one was a phrase break of about 80px -- while the
+# picture's own bright patches sit hundreds of pixels away.
+FAR_GAP = 200
+# ...but ink this close to the chosen run belongs to it however faint it
+# is. This is what keeps an apostrophe: `'` is three or four columns of
+# one or two lit pixels, a few px past the last glyph.
+NEAR_GAP = 30
+# Below this there is no run to choose between; keep every lit column.
+MIN_STRONG_COLUMNS = 8
 
-    Any ink at all counts, unlike the row crop next door: a single stroke at
-    the edge of a line is a character, and trimming by "most of the ink"
-    was measured to shave apostrophes and the dots off i's.
+
+def _ink_columns(mask, pad=6):
+    """(x0, x1) around the columns the subtitle occupies, or None.
+
+    Two jobs pull against each other here. Ink that is not the subtitle has
+    to go: the mask is a brightness threshold, so on news it catches dry
+    grass and newspaper pages across the whole 1920, and on 開會了 the
+    lower line's strip catches the bottom edge of the line above it -- on
+    111's cue 228 "any ink" spans 279..1725 for a seven-character line that
+    occupies 799..1295. Keeping that ink made every Claude Vision input
+    sheet in an episode as wide as its worst strip.
+
+    But every stroke of the subtitle has to stay, including the ones the
+    mask barely registers. Choosing by ink alone does not do that: asking
+    for `STRONG_INK` in every column shaved 40 of 085's formosan lines,
+    all of them ending in `'`, because an apostrophe lights one or two
+    pixels per column.
+
+    So the two questions are separated. Strong ink decides **which** run is
+    the subtitle -- runs more than `FAR_GAP` apart are different things,
+    and the one carrying the most ink wins. Any ink then decides **where
+    that run ends**, growing the answer outwards while the next lit column
+    is within `NEAR_GAP`.
+
+    Columns further left than `MAX_TILE` from the right edge are dropped
+    before either question is asked, so that the strip can never make a
+    page too wide to be delivered at full size; see that constant.
     """
-    cols = np.nonzero(mask.sum(axis=0) > 0)[0]
-    if len(cols) == 0:
+    # The far left goes before anything else is decided, not after. Trim
+    # the answer instead and a bright left edge can win the run and take
+    # the crop with it, and the line is gone with nothing reporting it.
+    dropped = max(mask.shape[1] - MAX_TILE, 0)
+    if dropped:
+        mask = mask[:, dropped:]
+    cols = mask.sum(axis=0)
+    lit = np.nonzero(cols > 0)[0]
+    if len(lit) == 0:
         return None
-    x0 = max(int(cols[0]) - pad, 0)
-    x1 = min(int(cols[-1]) + pad + 1, mask.shape[1])
-    return (x0, x1)
+    strong = np.nonzero(cols >= STRONG_INK)[0]
+    if len(strong) < MIN_STRONG_COLUMNS:
+        lo, hi = int(lit[0]), int(lit[-1])
+    else:
+        runs = []
+        start = prev = int(strong[0])
+        for column in strong[1:]:
+            column = int(column)
+            if column - prev > FAR_GAP:
+                runs.append((start, prev))
+                start = column
+            prev = column
+        runs.append((start, prev))
+        best = None
+        for first, last in runs:
+            weight = int(cols[first:last + 1].sum())
+            if best is None or weight > best[0]:
+                best = (weight, first, last)
+        lo, hi = best[1], best[2]
+        while True:
+            near = lit[(lit >= lo - NEAR_GAP) & (lit <= hi + NEAR_GAP)]
+            grown_lo, grown_hi = int(near.min()), int(near.max())
+            if grown_lo == lo and grown_hi == hi:
+                break
+            lo, hi = grown_lo, grown_hi
+    return (dropped + max(lo - pad, 0),
+            dropped + min(hi + pad + 1, mask.shape[1]))
 
 
 def slot_crop(mask, slots):
@@ -124,8 +192,13 @@ def _cue_blocks(workdir, manifest, spec, row_slots=None, compare_cols=None):
                 else:
                     undecided += 1
             top, bottom = rows if rows else (0, img.height)
-            if box is not None or rows is not None:
-                left, right = box if box is not None else (0, img.width)
+            # A strip with no ink at all has nothing to crop to, but it
+            # must still take the trim: at full frame width it is the one
+            # thing left that can make a page too wide to be delivered
+            # whole (25 of 058晨's 1,284 strips are blank).
+            left, right = box if box is not None else (
+                max(img.width - MAX_TILE, 0), img.width)
+            if (left, right) != (0, img.width) or rows is not None:
                 img = img.crop((left, top, right, bottom))
             tiles.append(img)
         if tiles:
@@ -139,27 +212,117 @@ def _cue_blocks(workdir, manifest, spec, row_slots=None, compare_cols=None):
     return blocks, undecided, decided, blank
 
 
-def _sheet_width(blocks, gutter):
-    max_tile = 0
-    for _, _, tiles, _start in blocks:
-        for tile in tiles:
-            max_tile = max(max_tile, tile.width)
-    return gutter + max_tile + 16
+# Claude reads an image in 28x28 patches and is charged
+# `ceil(w/28) * ceil(h/28)` visual tokens for it. Opus 5 reads at the high
+# resolution tier: 4784 visual tokens. Go past that and the API scales the
+# whole page down -- the glyphs with it -- without saying so anywhere.
+# The previous budget here was a flat 1.10 megapixels, which was the
+# standard tier (1568/1568) and left two thirds of a page unused.
+#
+# The long edge is 2000 rather than the model's own 2576 because the tool
+# that hands a sheet to the reader resizes anything longer: measured
+# 2026-09-09, an 818x2484 sheet arrived annotated "displayed at 659x2000".
+# Every pixel above 2000 is therefore paid for and then thrown away, and
+# what the reader gets is a blurred one -- the two who read those sheets
+# went on to crop and enlarge every page to tell `I` from `l`, which cost
+# several times what the packing had saved. Capping here costs nothing:
+# on 058晨 it is 51 sheets instead of 40 for the same 106k visual tokens.
+#
+# All three numbers belong to somebody else's service, so changing the
+# model, the tier, or the tool that delivers the image means measuring
+# them again.
+PATCH = 28
+LONG_EDGE = 2000
+VISUAL_TOKENS = 4784
+
+# The page a strip sits on is `GUTTER + strip + TILE_MARGIN` wide, so a
+# strip wider than this makes a page the delivery tool has to shrink. The
+# frame is 1920 and the gutter and margin come to 124, which is 2044 --
+# over by 44 -- so the widest strips have to give the far left back.
+#
+# What is being given back is background, not type. Measured on three
+# episodes, only 1.2% of strips are wide enough to be trimmed at all, and
+# every one of those has its ink starting at column 0, which is a bright
+# picture (a graphic card, a newspaper page), never a subtitle: news
+# subtitles are anchored at the right, x≈1736, and the longest line in
+# these episodes -- 23 characters at 62px -- still starts at x≈310.
+# 開會了's lines are centred and start at x=654 (p1: 166); the only strips
+# it has with ink further left are blank gradient band with a reflection
+# in it, 46-69px wide, no type at all.
+#
+# **This assumes subtitles are never left-aligned.** A corpus that puts
+# them on the left has to be measured again before it comes through here.
+#
+# SPARE is asked for by the user (2026-09-10): trim 10px more than the
+# arithmetic needs, so a page is 1990 rather than exactly 2000 and a
+# change of a few pixels anywhere does not silently put it over.
+GUTTER = 108
+TILE_MARGIN = 16
+SPARE = 10
+MAX_TILE = LONG_EDGE - GUTTER - TILE_MARGIN - SPARE
 
 
-def build_sheets(workdir, manifest, megapixels=1.10, row_slots=None,
-                 compare_cols=None):
+def _height_bound(page_w):
+    """The tallest a page this wide can be and still not be scaled down."""
+    patches = -(-page_w // PATCH)
+    return min(LONG_EDGE, (VISUAL_TOKENS // max(patches, 1)) * PATCH)
+
+
+def _sheet_width(widest_tile, gutter):
+    """The page width a sheet whose widest strip is `widest_tile` needs.
+
+    One sheet's own strips decide this, not the episode's. Taking the
+    widest strip anywhere in the work dir -- what this did before --
+    charged every sheet for the worst one: on 058晨 all 327 sheets came
+    out 2044 px wide while the median strip was 1230, because 5% of the
+    strips catch bright background across the full 1920.
+    """
+    return gutter + widest_tile + TILE_MARGIN
+
+
+def _block_size(tiles, gap):
+    """(height, width) one cue's block occupies on a sheet."""
+    height = gap
+    width = 0
+    for tile in tiles:
+        height += tile.height + 2
+        width = max(width, tile.width)
+    return height, width
+
+
+def _by_width(blocks, gap):
+    """The cues re-ordered widest-with-widest.
+
+    A sheet is as wide as its widest strip, so one 1900px strip among
+    600px ones makes every line on that sheet cost three times what it
+    needs to. Sorting empties the penalty out: measured on 058晨 it takes
+    the episode from 59.2% of the current visual tokens to 40.4%, and a
+    sheet of 14 cues then costs the same per cue as a sheet of 4.
+
+    A sheet then no longer covers one stretch of programme, which nothing
+    downstream may depend on: a cue's number and clock travel with its
+    strip in the same block, `sheets.json` is the one sheet-to-cue map,
+    and `verified.json` is keyed by cue number so a part-finished read
+    still resumes.
+    """
+    order = list(blocks)
+    order.sort(key=lambda block: (_block_size(block[2], gap)[1], block[0]))
+    return order
+
+
+def build_sheets(workdir, manifest, row_slots=None, compare_cols=None):
     """Tile cue strips into a few big images for a vision model to read.
 
     Reading 800 separate crops costs 800 round trips; reading 40 sheets costs
-    40. The budget is expressed in megapixels because that is what actually
-    limits a vision model -- overshoot it and the page gets downscaled and the
-    glyphs stop being legible, which defeats the point.
+    40. So a page is grown until one more strip would push it past what the
+    reader can take in at full size -- overshoot and the page gets downscaled
+    and the glyphs stop being legible, which defeats the point. See
+    `_height_bound` for where that limit comes from.
     """
     sheets_dir = os.path.join(workdir, "sheets")
     os.makedirs(sheets_dir, exist_ok=True)
     spec = cuelib.MaskSpec.from_dict(manifest.get("mask", {}))
-    gutter = 108
+    gutter = GUTTER
     gap = 10
     try:
         font = ImageFont.truetype(LABEL_FONT, 34)
@@ -174,27 +337,32 @@ def build_sheets(workdir, manifest, megapixels=1.10, row_slots=None,
               "%d blank" % (decided, undecided,
                             100.0 * undecided_share(undecided, decided,
                                                     blank), blank))
-    sheet_w = _sheet_width(blocks, gutter)
-    budget_h = int(megapixels * 1000000 / max(sheet_w, 1))
-
     made = 0
     batch = []
     height = 0
-    for index, clock, tiles, start in blocks:
-        block_h = gap
-        for tile in tiles:
-            block_h += tile.height + 2
+    widest = 0
+    for index, clock, tiles, start in _by_width(blocks, gap):
+        block_h, block_w = _block_size(tiles, gap)
+        grown = max(widest, block_w)
+        # The width this cue would give the sheet decides the height it is
+        # allowed: a page is charged by area, so a wider page may hold
+        # fewer rows. Ask before adding, not after.
+        budget_h = _height_bound(_sheet_width(grown, gutter))
         if batch and height + block_h > budget_h:
             name, covered = flush_sheet(sheets_dir, batch,
-                                        sheet_w, height, gutter, gap, font)
+                                        _sheet_width(widest, gutter),
+                                        height, gutter, gap, font)
             index_map[name] = covered
             made += 1
             batch = []
             height = 0
+            grown = block_w
         batch.append((index, clock, tiles, block_h, start))
         height += block_h
+        widest = grown
     if batch:
-        name, covered = flush_sheet(sheets_dir, batch, sheet_w,
+        name, covered = flush_sheet(sheets_dir, batch,
+                                    _sheet_width(widest, gutter),
                                     height, gutter, gap, font)
         index_map[name] = covered
         made += 1
@@ -230,7 +398,14 @@ def flush_sheet(sheets_dir, batch, width, height, gutter, gap, font):
     # Named for where it begins, not for its place in the batch: cue
     # numbers move when a cue is split and the sheets are rebuilt, so an
     # ordinal names a different piece of programme than it did before.
-    path = os.path.join(sheets_dir, stripname.sheet_of(batch[0][4]))
+    # The earliest cue on the sheet, not `batch[0]`: the strips are packed
+    # widest-with-widest, so the one that happens to sort first is an
+    # arbitrary pick out of the whole episode.
+    earliest = None
+    for _index, _clock, _tiles, _bh, start in batch:
+        if earliest is None or start < earliest:
+            earliest = start
+    path = os.path.join(sheets_dir, stripname.sheet_of(earliest))
     sheet.save(path)
     covered = []
     for index, _clock, _tiles, _bh, _start in batch:

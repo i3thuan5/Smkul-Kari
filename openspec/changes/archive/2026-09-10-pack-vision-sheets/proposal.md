@@ -38,6 +38,8 @@
 
 - **tests/**：修改 `tests/ocr/test_sheets.py`、`tests/news/test_sheet_packing.py`（現有「4 條塞得下一張」「最壞幾何沒有變」兩條的前提被本 change 改掉，要改寫成新的不變量）、`tests/news/test_ingest.py`。
 
+- **對批次大小的連帶影響（本 change 不改那幾個旋鈕，但一定要一起動）**：`vision_tools/prompt.py` 的 `SIZE` 數的是**張數**，而本 change 把一張的容量從 4 條 cue 變成 14–26 條。所以什麼都不改的話，`SIZE=24` 會從「一批 96 條 cue」**恬恬變成一批 600 條**——實測 196 條那一點的每 cue 費用已經比 98 條貴 1.7 倍。這是本 change 唯一一個「不改別的檔就會出事」的地方，數字量在 `kithann/tuiue/0910/0910-0008-smkul-kari-e7.md`，由 `half-res-mask-and-slot-crop` 那條線一次改齊四個（`SIZE`／`MIN_TAIL`／`batches.py --size`／`brief.md`）。
+
 - **與 `half-res-mask-and-slot-crop` 的邊界**：兩條都改 `build_sheets`，但那一條管**垂直**（依墨水落在偏上或偏下裁掉另一位的留白），本 change 管**水平與打包**。兩者相乘：它把圖條高度從 122 px 降到約 63–71 px，本 change 的每張條數會再增加，所以這裡量到的 36% 是它尚未落地時測的保守值。兩條都對 `subtitle-text-source` 出 delta，條文不同（它是垂直裁切，這裡是尺寸與排序），誰先歸檔誰先合。**程式實作排在該 change 之後**，避免同一支函式互相踩（使用者裁定 2026-09-09）。
 
 - **量測與實驗紀錄**：`kithann/tuiue/0909/` 底下的 `0909-1412`、`0909-1538`、`0909-1604` 三份（含辨識 A/B/C 的正確率與費用、排序效益、第 4 項為何不做）。

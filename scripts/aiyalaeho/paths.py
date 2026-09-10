@@ -73,6 +73,15 @@ def stage_path(stage, srt_name, suffix=""):
     return os.path.join(stage, check_srt_name(srt_name) + suffix)
 
 
+def lexicon_path(tribe):
+    """一个族語別ê詞庫：`詞庫/<族語別>.txt`，一逝一詞。
+
+    佮 stage_path 仝款是「單一出口」，毋過鍵是族語別（阿美、布農）
+    毋是 srt_name——詞庫是規族公用ê，毋是逐集一份。
+    """
+    return os.path.join(LEXICON_DIR, check_name(tribe, "族語別") + ".txt")
+
+
 # ---------------------------------------------------------- 工作區（可重生）
 
 # Work dirs, one per episode: cues.json, strips/, sheets/, transcripts.
@@ -130,6 +139,21 @@ OCR_STORE = os.path.join(AIYA_STORE, "1-ocr")
 KARI_CUES = os.path.join(OCR_STORE, "1-cues")
 KARI_VISION = os.path.join(OCR_STORE, "2-vision")
 SRT_DIR = os.path.join(OCR_STORE, "3-srt")
+
+# 逐條語言判定。編號接佇 3-srt 後壁，因為伊**干焦食交付 SRT**——是仝
+# 一條線ê下游，毋是另外一種技術（án-ne才免另開一層）。
+LANGCHECK_STORE = os.path.join(OCR_STORE, "4-語言檢查")
+
+# 詞庫是 store 正本，毋是衍生ê視圖：伊由外口ê族語辭典蒸餾來ê，無伊
+# 判定就離線重走袂起來。辭典原檔（16 个 xlsx、五十外 MB、二進位）
+# 留佇 SFTP，莫入 store。
+LEXICON_DIR = os.path.join(LANGCHECK_STORE, "詞庫")
+LANGCHECK_MARKS = os.path.join(LANGCHECK_STORE, "逐條語言標記.csv")
+LANGCHECK_DIST = os.path.join(LANGCHECK_STORE, "逐集語言分布.csv")
+
+# 辭典佇 SFTP ê位置。原民族語言研究發展基金會ê「16 族前台上線單字」，
+# 佮影片、文稿仝一台機器。
+LEXICON_REMOTE = "/docker/族語辭典_單詞與例句"
 
 # Corpus-level tables: both list every episode, one row each, so they are
 # not layered and do not belong to any one stage.

@@ -6,6 +6,7 @@ import unittest
 from unittest import mock
 
 from scripts.news import batches
+from scripts.news.vision_tools import prompt
 from scripts.errors import PipelineError
 
 
@@ -84,3 +85,37 @@ class TestSrtNameOf(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestBatchBoundaries(unittest.TestCase):
+    """佗位切批，佮 `prompt` 敢切仝款。
+
+    這兩支愛講仝款ê話：`batches` 發 TSV ê名（b01、b02…），`prompt`
+    照彼个號碼寫讀者提示。058晨 壓 2000 了後是 51 張，佇彼个張數，
+    遮本底ê `range(0, total, size)` 會生第三批 3 張，`prompt.plan`
+    soah kā彼 3 張倂入 b02——**仝一批 cue hőng派兩擺、掛兩个名**，
+    `ingest` 就kā規集擋落來（「cue X 佇兩个檔攏有」）。批次大小
+    對 24 改做 4 了後，尾批短ê情形變做常態，這條愛先鎖起來。
+    """
+
+    def test_a_short_tail_is_folded_the_same_way_prompt_folds_it(self):
+        self.assertEqual(batches.spans(51),
+                         prompt.plan(51, prompt.SIZE, prompt.MIN_TAIL))
+
+    def test_no_sheet_count_disagrees_with_prompt(self):
+        for total in range(1, 200):
+            self.assertEqual(
+                batches.spans(total),
+                prompt.plan(total, prompt.SIZE, prompt.MIN_TAIL),
+                "%d 張切法無仝" % total)
+
+    def test_an_explicit_size_is_still_honoured(self):
+        self.assertEqual(batches.spans(10, 3),
+                         prompt.plan(10, 3, prompt.MIN_TAIL))
+
+    def test_the_default_size_is_prompts_not_a_second_copy(self):
+        """遮**無**家己ê預設值。
+
+        本底兩爿各有一个 24，改一爿袂記得改另外一爿就恬恬走精。
+        """
+        self.assertEqual(batches.spans(51), batches.spans(51, prompt.SIZE))

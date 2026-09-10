@@ -36,6 +36,38 @@ class TestNormalise(unittest.TestCase):
         rows, _ = self._roundtrip("1\than\t甲\n\n  \n2\than\t乙\n")
         self.assertEqual(len(rows), 2)
 
+    def test_rows_come_out_in_cue_order(self):
+        # The sheets are packed widest-with-widest, so one sheet carries
+        # 703, 612, 699... and a reader writes them down in the order it
+        # sees them. `Kari-SRT/` has to be readable by a person, and a
+        # TSV whose numbers jump about is not.
+        rows, written = self._roundtrip(
+            "703\than\t丙\n612\than\t甲\n699\than\t乙\n")
+        self.assertEqual(rows, ["612\than\t甲", "699\than\t乙",
+                                "703\than\t丙"])
+        self.assertEqual(written,
+                         "612\than\t甲\n699\than\t乙\n703\than\t丙\n")
+
+    def test_the_two_lines_of_one_cue_keep_their_order(self):
+        # 開會了 puts the formosan line above the han one and the reader
+        # writes them in that order; sorting must not swap them, and
+        # `12` must not sort before `9` as text would.
+        rows, _ = self._roundtrip("12\tformosan\tA\n12\than\t乙\n"
+                                  "9\tformosan\tB\n9\than\t甲\n")
+        self.assertEqual(rows, ["9\tformosan\tB", "9\than\t甲",
+                                "12\tformosan\tA", "12\than\t乙"])
+
+    def test_a_blank_row_is_sorted_like_any_other(self):
+        rows, _ = self._roundtrip("8\than\n3\than\t甲\n")
+        self.assertEqual(rows, ["3\than\t甲", "8\than\t"])
+
+    def test_an_unnumbered_row_is_kept_for_the_audit_to_reject(self):
+        # A row with no cue number is a rejected batch, not a crash:
+        # `_audit_row` is the one place that decides that.
+        rows, _ = self._roundtrip("5\than\t甲\nxx\than\t乙\n")
+        self.assertEqual(len(rows), 2)
+        self.assertIn("xx\than\t乙", rows)
+
 
 class TestBatchRejection(unittest.TestCase):
     """A TSV naming a cue that was on no sheet must sink the whole batch."""

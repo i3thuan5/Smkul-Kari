@@ -63,21 +63,20 @@ from scripts.ocr import sheets
 from scripts.ocr import stripname
 
 # Height 122, not 135, and that is not cosmetic: the contact-sheet packer
-# fits `int(1.10e6 / sheet_width)` pixels of rows. A row costs
-# `10 + height + 2`, so four cues need `4 * (12 + h) <= budget`.
+# fills a page up to `sheets._height_bound(sheet_width)` pixels of rows. A
+# row costs `10 + height + 2`, so four cues need `4 * (12 + h) <= budget`.
 #
-# **The budget comes from the widest strip in the whole work dir, not from
-# this region.** `sheets._sheet_width` takes `max(tile.width)` across every
-# block, and the recut strips share a work dir with the episode's other
-# ones. Sizing off this region's own 1500 px gives a budget of 677, which
-# `4 * 146 = 584` passes -- it would wave through exactly the mistake that
-# happened.
+# **Take the budget from the worst page, not from this region.** Since
+# 2026-09-09 each page is only as wide as its own strips, but the recut
+# strips share a work dir with the episode's full-width ones, so a page
+# holding one of those measures 2044 and gets the tightest budget of all
+# (1820 rows). Sizing off this region's own 1500 px is looser and would
+# wave through exactly the mistake that happened.
 #
-# Sheet width is **per episode**, not a constant: `_cue_blocks` trims each
-# strip to its ink bbox, so the width is that episode's longest subtitle.
-# Measured across all 74: 26 episodes at 2044 (budget 538, so h <= 122) and
-# 48 at 1320 (budget 833, h <= 196). All six episodes rescanned on
-# 2026-08-31 are 2044 ones, which is why 135 cost them a third more sheets.
+# The budget used to be `int(1.10e6 / width)` -- 538 rows at 2044, which
+# left 2px of margin at four cues a sheet and was the cliff this comment
+# was written for. It is 1820 now, so the cliff is gone; what replaced it
+# is that a page over 2000px on the long edge reaches the reader shrunken.
 #
 # 122 is the worst case, so it is the one to build to -- anything that
 # fits a 2044 sheet fits a 1320 one. The standard band's 122 is not a round

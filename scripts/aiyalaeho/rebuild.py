@@ -32,6 +32,7 @@ from scripts import datadirs
 from scripts.aiyalaeho import make_srt
 from scripts.aiyalaeho import paths
 from scripts.aiyalaeho import tracker
+from scripts.aiyalaeho.langcheck import report
 from scripts.errors import PipelineError
 
 SMKUL = "smkul.csv"
@@ -134,8 +135,28 @@ def rebuild_all():
             bodies[entry["srt_name"]] = rebuild_one(entry, tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+    marks, dist = _language_tables(bodies, entries)
     return {"srt": bodies, "rows": tracker.tracker_rows(entries),
-            "abnormal": tracker.abnormal_rows(entries)}
+            "abnormal": tracker.abnormal_rows(entries),
+            "lang_marks": marks, "lang_dist": dist}
+
+
+def _language_tables(bodies, entries):
+    """兩張語言檢查 CSV，**食重建出來ê SRT**，毋是 store 家己彼份。
+
+    食 store 彼份ê話，上游換版、下游無綴ê時陣驗袂出來——兩爿攏是
+    舊ê，比起來當然仝。
+    """
+    episodes = []
+    for entry in entries:
+        name = entry["srt_name"]
+        if name not in bodies:
+            continue
+        episodes.append(report.Episode(name, entry["族語別(中)"],
+                                       entry["語言代號"], bodies[name]))
+    lexicons = report.lexicons_for(episodes)
+    return (report.mark_rows(episodes, lexicons),
+            report.dist_rows(episodes, lexicons))
 
 
 def verify():
@@ -154,7 +175,35 @@ def verify():
                 mismatched.append(name + ".srt")
 
     mismatched.extend(_table_problems(built))
+    mismatched.extend(_language_problems(built))
     return mismatched
+
+
+def _language_problems(built):
+    """兩張語言檢查 CSV，重建了逐 byte 比。"""
+    wanted = [(os.path.basename(paths.LANGCHECK_MARKS),
+               paths.LANGCHECK_MARKS, report.MARK_HEADER,
+               built["lang_marks"]),
+              (os.path.basename(paths.LANGCHECK_DIST),
+               paths.LANGCHECK_DIST, report.DIST_HEADER,
+               built["lang_dist"])]
+    problems = []
+    tmp = tempfile.mkdtemp(prefix="aiya-lang-")
+    try:
+        for label, target, header, rows in wanted:
+            if not os.path.exists(target):
+                raise PipelineError("揣無 %s——有 %d 逝愛记佇遐"
+                                    % (label, len(rows)))
+            table = os.path.join(tmp, label)
+            report.write_table(table, header, rows)
+            with open(table, "rb") as handle:
+                rebuilt = handle.read()
+            with open(target, "rb") as handle:
+                if handle.read() != rebuilt:
+                    problems.append(label)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return problems
 
 
 def _table_problems(built):
@@ -206,8 +255,8 @@ def main(argv=None):
             print("DIFFERS:", name)
         raise PipelineError("%d 項佮交付ê無仝" % len(mismatched))
     entries = paths.load_inventory()
-    print("OK：%d 集ê SRT ＋ smkul.csv 對 Kari-SRT 重建，逐 byte 相仝"
-          % len(tracker.tracker_rows(entries)))
+    print("OK：%d 集ê SRT ＋ smkul.csv ＋ 兩張語言檢查 CSV 對 Kari-SRT "
+          "重建，逐 byte 相仝" % len(tracker.tracker_rows(entries)))
     return 0
 
 

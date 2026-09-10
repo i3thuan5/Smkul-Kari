@@ -14,6 +14,7 @@ import unittest
 from scripts.aiyalaeho import paths
 from scripts.aiyalaeho import rebuild
 from scripts.aiyalaeho import tracker
+from scripts.aiyalaeho.langcheck import report
 from scripts.errors import PipelineError
 
 
@@ -29,13 +30,29 @@ class Store(unittest.TestCase):
         self.inventory = os.path.join(self.tmp, "inventory.json")
         self.table = os.path.join(self.tmp, "smkul.csv")
         self.abnormal = os.path.join(self.tmp, "smkul-字幕版型異常.csv")
+        self.lexicons = os.path.join(self.tmp, "詞庫")
+        os.makedirs(self.lexicons)
+        self.marks = os.path.join(self.tmp, "逐條語言標記.csv")
+        self.dist = os.path.join(self.tmp, "逐集語言分布.csv")
         self._patch(paths, "KARI_CUES", self.cues)
         self._patch(paths, "KARI_VISION", self.vision)
         self._patch(paths, "SRT_DIR", self.srt)
         self._patch(paths, "INVENTORY", self.inventory)
         self._patch(paths, "TRACKER_STORE", self.table)
         self._patch(paths, "ABNORMAL_STORE", self.abnormal)
+        self._patch(paths, "LEXICON_DIR", self.lexicons)
+        self._patch(paths, "LANGCHECK_MARKS", self.marks)
+        self._patch(paths, "LANGCHECK_DIST", self.dist)
         self.entries = []
+        # 兩份詞庫刻意無相濫，測試才分會出「本集族語」佮「別族」。
+        self.lexicon("阿美", ["kako", "matini", "sowal", "mafana", "tangasa"])
+        self.lexicon("泰雅", ["nanak", "kmayal", "squliq", "tayal", "pyux"])
+
+    def lexicon(self, tribe, words):
+        with open(os.path.join(self.lexicons, tribe + ".txt"), "w",
+                  encoding="utf-8") as handle:
+            for word in sorted(words):
+                handle.write(word + "\n")
 
     def _patch(self, module, name, value):
         old = getattr(module, name)
@@ -127,6 +144,10 @@ class Store(unittest.TestCase):
         if built["abnormal"]:
             tracker.write_tracker(built["abnormal"], self.abnormal,
                                   tracker.ABNORMAL_FIELDS)
+        report.write_table(paths.LANGCHECK_MARKS, report.MARK_HEADER,
+                           built["lang_marks"])
+        report.write_table(paths.LANGCHECK_DIST, report.DIST_HEADER,
+                           built["lang_dist"])
 
 
 class TestRebuild(Store):
@@ -231,3 +252,48 @@ class TestAbnormalTable(Store):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestLanguageTables(Store):
+    """兩張語言檢查 CSV 嘛愛入重建驗證。"""
+
+    def test_they_rebuild_byte_for_byte(self):
+        self.episode(68)
+        self.assertEqual(rebuild.verify(), [])
+
+    def test_a_changed_mark_table_is_reported(self):
+        self.episode(68)
+        with open(self.marks, "a", encoding="utf-8") as handle:
+            handle.write("開會了_068_Amis_阿美,阿美,9,x,無,,,,x\n")
+        self.assertIn("逐條語言標記.csv", rebuild.verify())
+
+    def test_a_changed_distribution_table_is_reported(self):
+        self.episode(68)
+        with open(self.dist, "a", encoding="utf-8") as handle:
+            handle.write("開會了_999_Amis_阿美,阿美,1,1,0,0,0,0\n")
+        self.assertIn("逐集語言分布.csv", rebuild.verify())
+
+    def test_a_stale_table_is_reported_when_the_srt_changes(self):
+        # 上游換版、下游無綴——重建若食 store 家己彼份 SRT 就驗袂出來。
+        name = self.episode(68)
+        folder = os.path.join(self.vision, name)
+        with open(os.path.join(folder, "b01.tsv"), "w",
+                  encoding="utf-8") as handle:
+            # 阿美彼集出現一逝泰雅——逐條表本底無彼逝，重產了才有。
+            handle.write("1\tformosan\tnanak kmayal squliq tayal pyux\n"
+                         "1\than\t甲1\n"
+                         "2\tformosan\ta2\n"
+                         "2\than\t甲2\n")
+        # 交付 SRT 綴咧重產，兩張 CSV 無重產。
+        built = rebuild.rebuild_all()
+        with open(os.path.join(self.srt, name + ".srt"), "w",
+                  encoding="utf-8") as handle:
+            handle.write(built["srt"][name])
+        self.assertIn("逐條語言標記.csv", rebuild.verify())
+
+    def test_a_missing_lexicon_is_named(self):
+        self.episode(68)
+        os.remove(os.path.join(self.lexicons, "阿美.txt"))
+        with self.assertRaises(PipelineError) as caught:
+            rebuild.verify()
+        self.assertIn("阿美", str(caught.exception))

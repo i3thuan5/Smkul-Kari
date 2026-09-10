@@ -12,6 +12,7 @@ import unittest
 
 from scripts.aiyalaeho import paths
 from scripts.errors import PipelineError
+from scripts.ocr import sheets
 
 
 NAME = "開會了_068_Amis_阿美"
@@ -28,6 +29,32 @@ class TestStoreLayout(unittest.TestCase):
         self.assertEqual(paths.KARI_CUES, os.path.join(ocr, "1-cues"))
         self.assertEqual(paths.KARI_VISION, os.path.join(ocr, "2-vision"))
         self.assertEqual(paths.SRT_DIR, os.path.join(ocr, "3-srt"))
+
+    def test_the_language_check_is_a_stage_of_the_picture_side(self):
+        # 逐條語言判定只吃 3-srt/，所以編號接在它後面、住 1-ocr/ 底下，
+        # 毋是另開一層——伊是仝一條線ê下游，毋是另外一種技術。
+        ocr = os.path.join(paths.AIYA_STORE, "1-ocr")
+        check = os.path.join(ocr, "4-語言檢查")
+        self.assertEqual(paths.LANGCHECK_STORE, check)
+        self.assertEqual(paths.LEXICON_DIR, os.path.join(check, "詞庫"))
+        self.assertEqual(paths.LANGCHECK_MARKS,
+                         os.path.join(check, "逐條語言標記.csv"))
+        self.assertEqual(paths.LANGCHECK_DIST,
+                         os.path.join(check, "逐集語言分布.csv"))
+
+    def test_one_lexicon_per_tribe_under_the_lexicon_folder(self):
+        self.assertEqual(paths.lexicon_path("阿美"),
+                         os.path.join(paths.LEXICON_DIR, "阿美.txt"))
+
+    def test_a_lexicon_name_may_not_carry_path_components(self):
+        for bad in ("../阿美", "阿美/x", ""):
+            with self.assertRaises(PipelineError):
+                paths.lexicon_path(bad)
+
+    def test_the_dictionaries_are_fetched_not_stored(self):
+        # 辭典原檔 50 MB、二進位，留佇 SFTP；store 內底囥ê是蒸餾過ê詞庫。
+        self.assertTrue(paths.LEXICON_REMOTE.startswith("/"))
+        self.assertNotIn(paths.KARI, paths.LEXICON_REMOTE)
 
     def test_tables_live_at_the_corpus_level(self):
         self.assertEqual(paths.INVENTORY,
@@ -60,28 +87,36 @@ class TestStoreLayout(unittest.TestCase):
 class TestPresetPacking(unittest.TestCase):
     """The preset's row heights decide how many cues fit on a sheet.
 
-    `build_sheets` packs to 1.10 megapixels: with the sheet width measured
-    on 068 (1970px) that is 558 rows, and a cue's block is
-    `gap + sum(row height + 2)`. Four blocks fitting or not is the whole
-    difference between 160 sheets an episode and 213 -- a third more
-    reading, for pixels nobody sees. Nothing else guards this: the sheets
-    still come out correct, only more of them, so the cost rises silently.
+    `build_sheets` grows a page until one more strip would push it past
+    what the reader can take in at full size: at most 4784 visual tokens
+    of 28x28 patches, and at most 2000px on the long edge because the tool
+    that delivers the image resizes anything longer (measured 2026-09-09:
+    an 818x2484 sheet arrived annotated "displayed at 659x2000"). With the
+    sheet width measured on 068 (1970px) that is 1876 rows, and a cue's
+    block is `gap + sum(row height + 2)`.
+
+    Four blocks a sheet used to be the whole margin -- the 1.10 megapixel
+    budget this test was written against gave 558 rows against 552 of
+    block, and the difference between 160 sheets an episode and 213. The
+    budget is three times looser now, so the number to guard is no longer
+    "four": it is that a height change cannot quietly take a sheet past
+    the point where the reader receives a shrunken page. Nothing else
+    guards this: the sheets still come out correct, only smaller, so the
+    reading gets worse silently.
     """
 
     # build_sheets' own numbers (they are locals in that function).
-    MEGAPIXELS = 1.10
     GUTTER = 10          # vertical gap between cue blocks
     PER_TILE = 2         # each strip is drawn with a 2px separator
     WANT_PER_SHEET = 4
 
-    # Sheet width is `108 + widest ink-cropped tile + 16`, so it belongs to
-    # the episode, not to the preset: 068 measures 1970 (its widest line is
-    # 1846px). An episode whose line ran the full frame would measure 2044
-    # and get a tighter budget -- 538 rows against 068's 558 -- which at
-    # these row heights is three cues a sheet rather than four. That is a
-    # cost difference, not a correctness one, so the worst case is recorded
-    # below rather than asserted; each episode's sheets.json says what it
-    # actually got.
+    # Sheet width is `108 + widest ink-cropped tile + 16`, and since
+    # 2026-09-09 it belongs to the *sheet*, not to the episode: only the
+    # strips on one page decide how wide that page is. 068's widest line
+    # is 1846px, so its widest possible page is 1970; a line running the
+    # full frame would make one page 2044 and no other. The worst case is
+    # what this guards, because it is the tightest height budget any page
+    # can be given.
     SHEET_WIDTH = 1970
     WIDEST_POSSIBLE = 1920 + 108 + 16
 
@@ -103,7 +138,7 @@ class TestPresetPacking(unittest.TestCase):
         return out
 
     def test_four_cues_fit_on_a_sheet(self):
-        budget = int(self.MEGAPIXELS * 1000000 / self.SHEET_WIDTH)
+        budget = sheets._height_bound(self.SHEET_WIDTH)
         for name, block in self._blocks():
             self.assertLessEqual(
                 block * self.WANT_PER_SHEET, budget,
@@ -114,9 +149,27 @@ class TestPresetPacking(unittest.TestCase):
 
     def test_even_a_full_width_line_keeps_three_cues_a_sheet(self):
         """The worst case, recorded so the next height change sees it."""
-        worst = int(self.MEGAPIXELS * 1000000 / self.WIDEST_POSSIBLE)
+        worst = sheets._height_bound(self.WIDEST_POSSIBLE)
         for name, block in self._blocks():
             self.assertGreaterEqual(worst // block, 3, name)
+
+    def test_no_page_of_these_rows_arrives_shrunken(self):
+        """The failure that replaced the old one, and is quieter than it.
+
+        Past 4784 patches or 2000px of long edge the page is scaled down
+        before the reader ever sees it -- the glyphs with it -- and a
+        Formosan line loses the `^` and the apostrophes first. The two
+        readers given 2484px pages on 2026-09-09 both ended up cropping
+        and enlarging every one of them to tell `I` from `l`.
+        """
+        for name, block in self._blocks():
+            for width in (self.SHEET_WIDTH, self.WIDEST_POSSIBLE):
+                height = sheets._height_bound(width)
+                self.assertGreaterEqual(height // block, 1, name)
+                patches = (-(-width // sheets.PATCH)
+                           * -(-height // sheets.PATCH))
+                self.assertLessEqual(patches, sheets.VISUAL_TOKENS, name)
+                self.assertLessEqual(height, sheets.LONG_EDGE, name)
 
 
 class TestLowBandPreset(unittest.TestCase):

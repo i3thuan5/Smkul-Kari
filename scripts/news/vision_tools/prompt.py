@@ -16,8 +16,8 @@ import sys
 from scripts.errors import PipelineError
 from scripts.news import paths
 
-SIZE = 24
-MIN_TAIL = 8
+SIZE = 4
+MIN_TAIL = 2
 BRIEF = os.path.join(os.path.dirname(__file__), "brief.md")
 # `or`, not a `get` default: an exported-but-empty CLAUDE_SCRATCH counts
 # as set, and `os.path.join("", name)` then hands the reader a
@@ -44,10 +44,21 @@ def plan(total, size=SIZE, min_tail=MIN_TAIL):
     Cut at `size`, except that a tail shorter than `min_tail` is folded
     into the batch before it. Each agent carries a fixed cost -- reading
     the brief, checking the frame-extraction pipeline, building masks --
-    that does not shrink with the batch, so a 6-sheet tail cost 47,623
-    tokens (7,937 a sheet, 4.2x the 72-sheet rate). Folding it in makes
-    one batch bigger, which is the cheaper direction.
+    that does not shrink with the batch (~19k tokens), so folding a tiny
+    tail in makes one batch bigger, which is the cheaper direction.
+
+    `scripts.news.batches` calls this rather than cutting its own way:
+    it hands out the TSV names that the briefs are written against, and
+    when the two disagreed a short tail got its own b03 here and was
+    folded into b02 there, so the same cues were read twice under two
+    names and `ingest` refused the whole episode.
     """
+    if size < 1:
+        # `lo += size` never advances, so the loop below spins forever with
+        # no output -- the tool looks hung rather than wrong. Caught by
+        # passing `--size -1` through `batches`, where argparse takes a
+        # negative int happily and `size or SIZE` lets it through truthy.
+        raise PipelineError("一批愛至少 1 張，提著 %r" % size)
     spans = []
     lo = 0
     while lo < total:
