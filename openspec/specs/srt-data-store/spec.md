@@ -184,9 +184,16 @@ Kari-SRT 內。
 ### Requirement: 僅靠已 commit 的資料可離線重建全部 SRT
 
 主 repo（程式）加 Kari-SRT（`news/1-ocr/` 的 `1-cues/`＋`2-vision/`，
-與 `news/inventory.json`）SHALL 足以在不存取原始影片、不呼叫任何模型
+與 `news/smkul.csv`）SHALL 足以在不存取原始影片、不呼叫任何模型
 的情況下，重建出與 `Kari-SRT/news/1-ocr/3-srt/` 內容逐 byte 相同的
-**全部已交付 SRT** 與 `news/smkul.csv`。集數隨批次成長，不固定。
+**全部已交付 SRT**。集數隨批次成長，不固定。
+
+要重建哪些集數 SHALL 由 `news/1-ocr/3-srt/` 裡實際有哪些檔決定，
+SHALL NOT 由任何欄位或登記檔宣告。節目目錄只提供每一集的識別與
+素材位置，SHALL NOT 決定某集該不該有交付物。
+
+`news/smkul.csv` 本身 SHALL NOT 以逐 byte 重算比對——它是輸入而非
+產出，內容由人維護。對它的把關改為不變量檢查，見「節目目錄的不變量」。
 
 #### Scenario: 工作目錄全毀後重建
 
@@ -197,197 +204,50 @@ Kari-SRT 內。
 
 #### Scenario: 缺件時明確失敗
 
-- **WHEN** 重建流程執行時某集缺少 `news/1-ocr/1-cues/<srt_name>.json`
-  或對應 TSV
+- **WHEN** 重建流程執行時某集已有 `news/1-ocr/3-srt/<成果檔名>.srt`，
+  卻缺少 `news/1-ocr/1-cues/<成果檔名>.json` 或對應 TSV
 - **THEN** 該流程以非零狀態結束並指名缺少的檔案，SHALL NOT 產出
   不完整的 SRT 冒充完整交付
+
+#### Scenario: 只做到一半的集數不算缺件
+
+- **WHEN** 某集有 `1-cues/` 的時間軸，但 `3-srt/` 還沒有它的 SRT
+- **THEN** 重建驗證照常通過，SHALL NOT 把它報成缺件
 
 ### Requirement: aiyalaeho 僅靠已 commit 的資料可離線重建
 
 主 repo（程式）加 Kari-SRT（`aiyalaeho/1-ocr/` 的 `1-cues/`＋`2-vision/`＋
-`4-語言檢查/詞庫/`，與 `aiyalaeho/inventory.json`）SHALL 足以在不存取影片、
-不存取辭典原始檔、不呼叫任何模型的情況下，重建出與 `aiyalaeho/1-ocr/3-srt/`
-逐 byte 相同的全部已交付雙列 SRT、`aiyalaeho/smkul.csv`、
-`aiyalaeho/smkul-字幕版型異常.csv`，以及 `aiyalaeho/1-ocr/4-語言檢查/` 的
-`逐條語言標記.csv` 與 `逐集語言分布.csv`。缺件 SHALL 指名
-失敗；pending 集數 SHALL 跳過；字幕版型異常集 SHALL NOT 被要求任何 `1-ocr/`
-輸入，其另表列僅由 inventory 推導——語意同 news 的既有要求，範圍及於本語料。
+`4-語言檢查/詞庫/`，與 `aiyalaeho/smkul.csv`、`aiyalaeho/smkul-字幕版型異常.csv`）
+SHALL 足以在不存取影片、不存取辭典原始檔、不呼叫任何模型的情況下，重建出與
+`aiyalaeho/1-ocr/3-srt/` 逐 byte 相同的全部已交付雙列 SRT，以及
+`aiyalaeho/1-ocr/4-語言檢查/` 的 `逐條語言標記.csv` 與 `逐集語言分布.csv`。
+缺件 SHALL 指名失敗；字幕版型異常集 SHALL NOT 被要求任何 `1-ocr/` 輸入。
 
-兩張 CSV 的重建 SHALL 以重建出來的交付 SRT 為輸入，而非 store 內既有的
+兩張語言檢查 CSV 的重建 SHALL 以重建出來的交付 SRT 為輸入，而非 store 內既有的
 交付 SRT——上游換版而下游未重產時，這樣才驗得出來。
+
+兩張 smkul CSV SHALL NOT 以逐 byte 重算比對，改以不變量檢查把關。
 
 #### Scenario: 工作目錄全毀後重建
 
 - **WHEN** 工作區被整個刪除，僅存主 repo 與 Kari-SRT，執行本語料的重建驗證
-- **THEN** 每個交付 SRT、`smkul.csv`、`smkul-字幕版型異常.csv` 與兩張語言
-  檢查 CSV 逐 byte 相同，過程不讀影片、不讀辭典原始檔、不呼叫模型
+- **THEN** 每個交付 SRT 與兩張語言檢查 CSV 逐 byte 相同，過程不讀影片、
+  不讀辭典原始檔、不呼叫模型
 
 #### Scenario: 缺件時明確失敗
 
-- **WHEN** 某已交付集數缺 `1-cues/<srt_name>.json` 或 TSV
+- **WHEN** 某集已有交付 SRT，卻缺 `1-cues/<成果檔名>.json` 或 TSV
 - **THEN** 重建以非零狀態結束並指名缺少的檔案
 
 #### Scenario: 字幕版型異常集不算缺件
 
 - **WHEN** 某字幕版型異常集在 `1-ocr/` 底下沒有任何檔案，執行重建驗證
-- **THEN** 驗證不因它報缺件；其另表列由 inventory 重建且逐 byte 相同
-
-#### Scenario: 另表被改動時報差異
-
-- **WHEN** store 內的 `smkul-字幕版型異常.csv` 與由 inventory 重算的內容不同
-- **THEN** 重建驗證以非零狀態結束並指名該表
+- **THEN** 驗證不因它報缺件
 
 #### Scenario: 詞庫缺件時明確失敗
 
 - **WHEN** `4-語言檢查/詞庫/` 缺任一族語別的詞庫檔，執行重建驗證
 - **THEN** 驗證以非零狀態結束並指名缺少的族語別，SHALL NOT 靜默跳過該族的集數
-### Requirement: 批次進行中的集數以 pending 標記且不參與重建驗證
-
-尚未完成的集數 SHALL 在 inventory 內標記為 pending。重建驗證與進度表列的
-產生 SHALL 跳過 pending 集數：不要求其交付品與輸入存在，也不為其產生進度表列。
-
-pending 與既有三個標記語意不重疊，SHALL 分別使用：來源不完整而永不交付者、
-已交付但來源短缺者、字幕版型異常而不進雙語交付者（aiyalaeho 的理由欄）、
-以及本批尚未完成者。
-
-理由：inventory 是 store 的一部分，而登記必須發生在校讀之前（後續步驟要靠它
-查對每集的命名）。若不區分「已交付」與「進行中」，store 一登記新集數就會宣告
-自己缺件，而偵測缺件正是重建驗證的核心能力。
-
-#### Scenario: 批次進行中 store 仍然自洽
-
-- **WHEN** 新一批集數已登記進 inventory 並標記 pending，其交付品尚未產生，
-  此時執行重建驗證
-- **THEN** 驗證通過：pending 集數被跳過，重建出的進度表與 store 內已 commit
-  的版本逐 byte 相同
-
-#### Scenario: 未標記 pending 的集數缺件時仍然失敗
-
-- **WHEN** 某集未標記 pending，但其 `cues/` 或逐字稿不存在
-- **THEN** 重建驗證以非零狀態結束並指名該集——pending 是登記用的宣告，
-  不得成為繞過缺件檢查的手段
-
-#### Scenario: 字幕版型異常集的 pending 於定版時清除
-
-- **WHEN** 某字幕版型異常集登記時為 pending，整批定版成功
-- **THEN** 其 pending 被清除，且它出現在 store 版的另表中
-
-### Requirement: store 只在整批完成時定版
-
-清除 pending 標記並定版進度表的流程 SHALL **逐集**檢查該集是否已校讀完成；
-字幕版型異常集 SHALL 視為已完成，SHALL NOT 對其要求時間軸、逐字稿或 SRT。
-已完成的集 SHALL 寫入，未完成的集 SHALL 跳過並指名它卡在哪一步，且
-**未完成的集 SHALL NOT 阻擋其他集的寫入**。沒有任何一集完成時 SHALL NOT
-視為失敗——那只代表這一批還沒有集數做完，逐集的理由已經印出。
-
-每一集都自帶它的輸入與交付物，所以逐集寫入 SHALL NOT 使 store 產生
-不自洽的狀態：進度表只列非 pending 的集，重建驗證也只走非 pending 的集，
-兩者永遠指同一組集數。
-
-#### Scenario: 未完成的集不擋已完成的集
-
-- **WHEN** 同一批裡有些集已校讀完成、有些還沒切 cue，執行定版流程
-- **THEN** 已完成的集寫入 store 並清除其 pending 標記，未完成的集原樣留著
-  並印出它卡在哪一步
-
-#### Scenario: 寫入後 store 自洽
-
-- **WHEN** 逐集寫入之後隨即執行重建驗證
-- **THEN** 驗證通過，且它驗的集數等於 inventory 內非 pending 的筆數
-
-#### Scenario: 一集都沒完成時不算失敗
-
-- **WHEN** 這一批沒有任何一集校讀完成，執行定版流程
-- **THEN** 流程以零狀態結束、store 一個 byte 都沒動，並逐集印出卡在哪一步
-
-#### Scenario: 字幕版型異常集不必等其他集
-
-- **WHEN** inventory 內有字幕版型異常集，其 `1-ocr/` 底下沒有任何檔案，
-  同批其他集尚未完成
-- **THEN** 該集照樣寫入並清除 pending，不因其他集未完成而被擋下
-
-### Requirement: 進度表由定版流程寫入，不由逐集組裝流程寫入
-
-`smkul.csv` SHALL 位於 `news/smkul.csv`（語料層，兩技術共用），列出
-inventory 內全部非 pending 的集數，且 SHALL 併記語音側（`2-asr/`）
-用哪個模型辨識。該欄 SHALL 僅由 store 內 `news/2-asr/2-srt-raw/`
-是否已有該集的檔推導：有就是辨識器名稱、無就留白，SHALL NOT 手填
-——任何時點重算皆得相同內容，逐 byte 重建保證不因增欄而破壞。
-`2-srt-raw/` 之前的中間檔（`1-words/`）SHALL NOT 使該欄有值；之後的
-交付（`3-srt-ai/`、`4-srt-quality/`）也 SHALL NOT 改變該欄。逐集產出
-流程（影像側與語音側皆同）SHALL NOT 直接寫入 store 內的 `smkul.csv`；
-它 SHALL 把進度表寫進工作區作為可隨時刷新的快取，且該快取版本
-SHALL 併同列出 pending 集數與其進度，供人查看批次做到哪。store 內
-那一份 SHALL 由整批把關通過的定版流程寫入。
-
-理由：mid-batch 的「卡在哪一步」只存在於工作目錄，而重建流程沒有
-工作目錄，重建不出那些狀態字串。把它留在快取版本，store 那份就只含
-可重建的內容——語音側欄改用「檔案存在與否」推導，同樣只依賴 store。
-欄位記模型而非版本階段：交付只有一版，讀表的人要知道的是這條族語
-文字是哪個辨識器產的，中間階段對他無從據以行動。
-
-`smkul.csv` SHALL 併記**成果檔名**（該集的 `srt_name`），欄名與
-《開會了》語料的進度表一致。它是每一份交付物的定位鍵，讀表的人
-拿它就能在任一階段目錄下找到該集的檔，不必另查對應表，也是同一天
-多集之間唯一的分辨依據——`smkul.csv` SHALL NOT 另設播出時段欄，
-時段已在成果檔名之內。
-
-`smkul.csv` SHALL 併記**時間軸狀態**（欄名 `cues`），說明該集交付的
-時間軸是粗切的還是已精修的。該欄 SHALL 僅由 store 內
-`news/1-ocr/1-cues/<年-月>/<srt_name>.json` 推導：檔內記為已精修就
-說已精修、未精修就說粗切、檔不存在就留白，SHALL NOT 手填。
-
-`smkul.csv` SHALL NOT 再有**文稿位置**欄。文稿路線已裁定廢止（文稿
-不作為文字來源），該欄對讀表的人不再指向任何可據以行動的東西；
-inventory 內由節目目錄帶進來的同名欄位不受此條約束。
-
-#### Scenario: 批次進行中仍可查進度
-
-- **WHEN** 一批集數尚未全部完成，執行逐集組裝流程
-- **THEN** 工作區內的進度表更新並列出含 pending 在內的全部集數與各自狀態，
-  store 內的 `smkul.csv` 不變，重建驗證仍然通過
-
-#### Scenario: 定版後的進度表可逐 byte 重建
-
-- **WHEN** 整批完成並定版後執行重建驗證
-- **THEN** 重建出的 `smkul.csv` 與 store 內已 commit 的版本逐 byte 相同
-
-#### Scenario: 語音辨識模型欄由 store 推導
-
-- **WHEN** 某集 `2-asr/2-srt-raw/` 已有檔，重算進度表
-- **THEN** 該集語音側欄顯示辨識器名稱，且重建流程僅讀 store 即
-  推導出逐 byte 相同的欄值
-
-#### Scenario: 只做到中間階段的集數留白
-
-- **WHEN** 某集只有 `2-asr/1-words/`，`2-srt-raw/` 尚無，重算進度表
-- **THEN** 該集語音側欄為空字串
-
-#### Scenario: 成果檔名即定位鍵
-
-- **WHEN** 讀表的人拿某一列的成果檔名去找該集的檔
-- **THEN** 各階段目錄下同名的檔都以該字串定位得到，無須另查對應表
-
-#### Scenario: 同一天多集靠成果檔名分辨
-
-- **WHEN** 同一個播出日期有兩集以上（午間／晚間／晨間），檢視進度表
-- **THEN** 那幾列以成果檔名分辨得出來，表內沒有播出時段欄
-
-#### Scenario: 時間軸狀態由 store 推導
-
-- **WHEN** 某集的 `1-cues/` 時間軸記為已精修，重算進度表
-- **THEN** `cues` 欄顯示已精修；該欄僅讀 store 即重算得出逐 byte
-  相同的值
-
-#### Scenario: 只有粗切時間軸的集數照實顯示
-
-- **WHEN** 某集交付的時間軸未經精修
-- **THEN** `cues` 欄顯示粗切，SHALL NOT 顯示成已精修或留白
-
-#### Scenario: 文稿位置欄已移除
-
-- **WHEN** 檢視 `news/smkul.csv` 的欄位
-- **THEN** 沒有文稿位置欄；重建驗證仍然通過
 
 ### Requirement: 校讀完成的判準比對編號集合
 
@@ -402,131 +262,60 @@ inventory 內由節目目錄帶進來的同名欄位不受此條約束。
 - **WHEN** 某集的校讀紀錄筆數不少於 cue 數，但其中含有不屬於該集時間軸的編號
 - **THEN** 該集判為校讀未完成，不得清除其 pending 標記
 
-### Requirement: 整份重寫 inventory 的流程須有明確防護
-
-任何會整份重寫 inventory 的流程 SHALL NOT 在預設情況下覆蓋既有條目。它
-SHALL 以合併方式運作，或要求呼叫端明示同意才進行整份重寫。
-
-理由：inventory 遷入 store 之後即為正本。掃描本機資料夾產生 inventory 的
-流程若整份重寫，會刪掉所有由其他來源登記的集數——而那個資料夾掛載點已不存在
-於當前環境。
-
-#### Scenario: 掃描流程不會靜默刪除既有集數
-
-- **WHEN** 執行掃描本機資料夾的 inventory 產生流程，而 inventory 內已有
-  其他來源登記的集數
-- **THEN** 那些集數不被移除；若流程無法以合併方式進行，則中止並說明需要
-  何種明示同意
-
-### Requirement: 進度表併記影片長度
-
-`smkul.csv` SHALL 為每一集列出影片長度。該欄 SHALL 由 store 內
-`news/1-ocr/1-cues/` 該集時間軸所記的長度推導，SHALL NOT 手填——任何
-時點重算皆得相同內容，逐 byte 重建不因增欄而破壞。
-
-長度只是記錄，SHALL NOT 用來判斷該集是否完整或是否交付。
-
-#### Scenario: 長度由時間軸推導
-
-- **WHEN** 重算進度表
-- **THEN** 每一集的長度欄取自該集在 `1-cues/` 的時間軸，重建流程僅讀
-  store 即推導出逐 byte 相同的欄值
-
-#### Scenario: 尚無時間軸的集數留白
-
-- **WHEN** 某集尚未切 cue，`1-cues/` 還沒有它的檔
-- **THEN** 該集長度欄為空字串，與其他欄的留白規則一致
-
 ### Requirement: aiyalaeho 進度表
 
-`aiyalaeho/smkul.csv` SHALL 有下列 9 欄，依此順序：節目名稱、集數、
-族語別(英)、族語別(中)、語言別、語言代號、影片檔案位置、影片長度、
-成果檔名。其中：
+`aiyalaeho/smkul.csv` SHALL 有下列 9 欄，依此順序：成果檔名、節目名稱、
+集數、族語別(英)、族語別(中)、語言別、語言別代號、原始影片檔案位置、
+備註。其中：
 
-- 成果檔名 SHALL 為該集的 `srt_name`；
-- 影片長度 SHALL 由 `1-cues/` 該集時間軸推導，SHALL NOT 手填；
+- 前七欄 SHALL 與其他語料的表同名同序（見 `episode-catalogue`）；
 - 本語料查無播出資料、又無語音側，SHALL NOT 設年度、播出日期、
-  播出時段、字幕srt狀態、語音辨識模型欄——無資料的欄不養；日後取得
-  權威播出日期時再增欄記入，SHALL NOT 因此改動命名鍵；
-- 定版由整批把關通過的流程寫入、工作區另有可隨時刷新的快取版本、
-  pending 集數不列入定版表——SHALL 沿用既有進度表要求的語意；
+  播出時段欄——無資料的欄不養；日後取得權威播出日期時再增欄記入，
+  SHALL NOT 因此改動命名鍵；
+- SHALL NOT 設影片長度欄，也 SHALL NOT 設任何記錄處理階段的欄；
 - 字幕版型異常集 SHALL NOT 列入本表（見「aiyalaeho 字幕版型異常集另表」）。
 
 #### Scenario: 九欄與成果檔名
 
-- **WHEN** 檢視定版的 `aiyalaeho/smkul.csv`
-- **THEN** 欄位恰為上列 9 欄；每列成果檔名等於該集 `srt_name`
-
-#### Scenario: 影片長度由時間軸推導
-
-- **WHEN** 任何時點重算進度表
-- **THEN** 每列影片長度取自該集 `1-cues/` 時間軸，重算結果逐 byte 相同
+- **WHEN** 檢視 `aiyalaeho/smkul.csv`
+- **THEN** 欄位恰為上列 9 欄；每列成果檔名由集數與族語別推導得出
 
 #### Scenario: 字幕版型異常集不在本表
 
-- **WHEN** 檢視定版的 `aiyalaeho/smkul.csv`
-- **THEN** 沒有任何一列對應 inventory 內理由非空的集數；本表列數加另表
-  列數等於 inventory 內非 pending 的條目數
+- **WHEN** 檢視 `aiyalaeho/smkul.csv`
+- **THEN** 沒有任何一列的成果檔名出現在另表中
 
 ### Requirement: aiyalaeho 字幕版型異常集另表
 
-`aiyalaeho/smkul-字幕版型異常.csv` SHALL 列出全部非 pending 的字幕版型異常集，
-欄位為 `smkul.csv` 的 9 欄原樣、同順序，再加第 10 欄「理由」，值 SHALL 為
-inventory 所記的理由（`無字幕`、`僅華語字幕`、`版型不符：…`、`人工判定：…`
-之一），SHALL NOT 為空。其中：
+`aiyalaeho/smkul-字幕版型異常.csv` SHALL 列出全部字幕版型異常集，
+欄位為 `smkul.csv` 的 9 欄原樣、同順序，**不多一欄**。其中：
 
-- 成果檔名 SHALL 為該集的 `srt_name`，作為鍵，不表示存在對應檔案；
-- 影片長度 SHALL 取自 inventory 所記、由工具寫入的時長，SHALL NOT 手填；
-- 編碼、換行與寫法 SHALL 與 `smkul.csv` 相同（Excel 可讀）；
-- 定版由整批把關通過的流程寫入、工作區另有可隨時刷新的快取版本（含
-  pending 者）、pending 集數不列入定版表——語意同 `smkul.csv`；
-- 本表 SHALL 可僅由 inventory 逐 byte 重建。
+- 成果檔名 SHALL 作為鍵，不表示存在對應檔案；
+- `備註` SHALL NOT 為空，且 SHALL 說明這一集為什麼不是雙語交付
+  （`無字幕`、`僅華語字幕`、`版型不符：…`、`人工判定：…` 之一）——
+  兩張表欄位相同，`備註` 非空是這張表唯一的自我宣告；
+- 編碼、換行與寫法 SHALL 與 `smkul.csv` 相同（Excel 可讀）。
 
-#### Scenario: 十欄與理由
+#### Scenario: 九欄且備註非空
 
-- **WHEN** 檢視定版的 `aiyalaeho/smkul-字幕版型異常.csv`
-- **THEN** 前 9 欄與 `smkul.csv` 同名同序，第 10 欄為理由，每列理由非空且
-  等於 inventory 該筆的理由
-
-#### Scenario: 影片長度來自 inventory
-
-- **WHEN** 任何時點重算另表
-- **THEN** 每列影片長度取自 inventory 該筆所記的時長，重算結果逐 byte 相同，
-  過程不讀影片
+- **WHEN** 檢視 `aiyalaeho/smkul-字幕版型異常.csv`
+- **THEN** 欄位與 `smkul.csv` 同名同序、共 9 欄；每列 `備註` 非空
 
 #### Scenario: 兩張表互斥且合計完整
 
-- **WHEN** 同時檢視定版的 `smkul.csv` 與 `smkul-字幕版型異常.csv`
-- **THEN** 沒有任何 `srt_name` 同時出現在兩表；兩表列數之和等於 inventory
-  內非 pending 的條目數
+- **WHEN** 同時檢視 `smkul.csv` 與 `smkul-字幕版型異常.csv`
+- **THEN** 沒有任何 `成果檔名` 同時出現在兩表；兩表合起來就是本語料
+  全部有影片的集數
 
-### Requirement: 節目目錄正本存於 store
+#### Scenario: 備註空白時指名失敗
 
-`ilrdf-corpus.csv`（節目目錄：每一集的族語別、播出資料與影片檔案位置）
-SHALL 存於 Kari-SRT，且 SHALL NOT 只存在於工作區。它跨語料（同時列出
-族語新聞與族語節目），因此 SHALL 置於 store 頂層而非任一語料目錄下。
-
-理由：它是外部給的來源資料，重生不出來——正本的正本是 SFTP 上的一份
-xlsx——而每一個新月份要做哪些集、每一集叫什麼名字、配哪一支檔，全部
-由它推導。放在 gitignore 的工作區，換一台機器就沒了。
-
-它不是交付物，離線重建流程 SHALL NOT 依賴它（重建只讀
-`inventory.json` 與各階段目錄）。
-
-#### Scenario: 目錄隨資料走
-
-- **WHEN** 在一台只 clone 主 repo 與 Kari-SRT 的機器上規劃新月份
-- **THEN** 節目目錄讀得到，該月的集數與各自的來源路徑推導得出來
-
-#### Scenario: 離線重建不依賴目錄
-
-- **WHEN** 節目目錄不存在而執行離線重建驗證
-- **THEN** 驗證照常通過——重建只用得到 `inventory.json` 與各階段目錄
+- **WHEN** 另表某列的 `備註` 為空
+- **THEN** 驗證以非零狀態結束並指名該列
 
 ### Requirement: 只有精修過的時間軸才進 store
 
-定版流程 SHALL 只把**已精修**的時間軸寫入 `news/1-ocr/1-cues/`。某集
-的工作目錄只有粗切時間軸（0.2 秒格點、尚未經 25fps 邊界精修）時，
+把時間軸放進 `news/1-ocr/1-cues/` 的流程 SHALL 只接受**已精修**的時間軸。
+某集的工作目錄只有粗切時間軸（0.2 秒格點、尚未經 25fps 邊界精修）時，
 該集 SHALL NOT 入 store；流程 SHALL 指名該集並以非零狀態結束，
 SHALL NOT 靜默略過該集的時間軸而讓其餘檔案照樣入庫。
 
@@ -534,15 +323,21 @@ SHALL NOT 靜默略過該集的時間軸而讓其餘檔案照樣入庫。
 「時間軸還沒精修」都是不得交付的狀態，兩者 SHALL 各自講清楚是哪
 一種。
 
+store 內已有該集的時間軸時：內容與要寫入的一致 SHALL NOT 覆寫，
+連檔案本身都不重寫；內容不同才覆寫。一致與否 SHALL 以正規化（排版、
+鍵排序）之後的內容比較，SHALL NOT 比工作目錄檔案的原始位元組——
+工作目錄那份的鍵是插入順序，直接比會每次都判成不同。
+
 理由：交付 SRT 的每一個時間戳都由這份時間軸推導，而粗切與精修的
 精度差一個數量級（0.2 秒 vs 0.05 秒）。兩種精度混在同一個目錄裡，
 從檔案本身看不出某一集是哪一種，下游也沒有辦法分別對待。把關口設
 在入庫這一步，`1-cues/` 就有一個可以直接宣告的性質：**裡面每一份都
-是精修過的**。
+是精修過的**。不覆寫相同內容則是因為曾經一次入庫重寫了 74 個內容
+根本沒變的已交付檔案。
 
 #### Scenario: 只有粗切時間軸的集數擋在門外
 
-- **WHEN** 某集的工作目錄只有粗切時間軸，執行定版流程
+- **WHEN** 某集的工作目錄只有粗切時間軸，執行入庫流程
 - **THEN** 流程指名該集、說明它尚未精修，並以非零狀態結束；
   該集的時間軸沒有進入 store
 
@@ -554,9 +349,19 @@ SHALL NOT 靜默略過該集的時間軸而讓其餘檔案照樣入庫。
 
 #### Scenario: 精修過的照常入庫
 
-- **WHEN** 某集的工作目錄有精修過的時間軸
-- **THEN** 該份時間軸寫入 `news/1-ocr/1-cues/<年-月>/<srt_name>.json`，
-  定版照常完成
+- **WHEN** 某集的工作目錄有精修過的時間軸，store 還沒有該集
+- **THEN** 該份時間軸寫入 `news/1-ocr/1-cues/<年-月>/<成果檔名>.json`
+
+#### Scenario: 內容相同不重寫
+
+- **WHEN** 某集的時間軸已在 store，工作目錄那份正規化後與它相同，
+  再次執行入庫流程
+- **THEN** 該檔案沒有被重寫
+
+#### Scenario: 內容不同才覆寫
+
+- **WHEN** 某集重切之後時間軸真的改了，再次執行入庫流程
+- **THEN** store 內該檔以新內容覆寫
 
 #### Scenario: store 內每一份時間軸都是精修過的
 
@@ -565,7 +370,7 @@ SHALL NOT 靜默略過該集的時間軸而讓其餘檔案照樣入庫。
 
 ### Requirement: 兩側交付都在時，時間軸必須逐條相同
 
-離線重建驗證 SHALL 一併把關語音側：對每個非 pending 集數，語音側
+離線重建驗證 SHALL 一併把關語音側：對每個有影像側交付的集數，語音側
 **存在的每一個**交付 SRT（`2-srt-raw/`、`3-srt-ai/`、`4-srt-quality/`）
 SHALL 只由 store 內容離線重建——`2-srt-raw` 由 `1-words/`＋影像側
 時間軸重投影渲染、`3-srt-ai` 由 `2-srt-raw`＋`mt-cache/`、
@@ -576,19 +381,19 @@ SHALL 修正到相同為止——重投影＋重新 render，不需重新辨識�
 模型。
 
 語音側尚未產出**不是錯誤**：某階段沒有該集的檔時，驗證 SHALL 照常
-通過，SHALL NOT 輸出警告。語音側是獨立的一條線，它做到哪由
-`smkul.csv` 的「語音辨識模型」欄照實反映，不是影像側交付的前提。
-但店面**有**某階段的檔而其上游（快取或前一階段）缺件時，那是錯誤。
+通過，SHALL NOT 輸出警告。語音側是獨立的一條線，它做到哪由各階段
+目錄裡有沒有該集的檔照實反映，SHALL NOT 另設欄位記錄。但店面**有**
+某階段的檔而其上游（快取或前一階段）缺件時，那是錯誤。
 
 #### Scenario: 兩側都在但不同軸即失敗
 
-- **WHEN** 某非 pending 集數兩側 SRT 都存在，但重建出的 `2-srt-raw`
+- **WHEN** 某集數兩側 SRT 都存在，但重建出的 `2-srt-raw`
   與店面檔不同
 - **THEN** 驗證以非零狀態結束並指名該集與該檔
 
 #### Scenario: 只有影像側交付照樣通過
 
-- **WHEN** 某非 pending 集數有影像側交付 SRT，`2-srt-raw/` 無該集的檔
+- **WHEN** 某集數有影像側交付 SRT，`2-srt-raw/` 無該集的檔
 - **THEN** 驗證通過，且不輸出任何與該集語音側有關的警告
 
 #### Scenario: 做到一半照樣通過
@@ -618,3 +423,103 @@ SHALL 修正到相同為止——重投影＋重新 render，不需重新辨識�
 
 - **WHEN** 打開店面任一 JSON 或 JSONL 檔
 - **THEN** 中文與族語字元原樣可讀，沒有 `\uXXXX`
+
+### Requirement: 各階段做完就各自入庫
+
+`1-cues/`、`2-vision/`、`3-srt/` SHALL 各自在該階段對某一集做完時就進入
+Kari-SRT，SHALL NOT 要求整集全部階段完成才准入庫，也 SHALL NOT 要求
+同批其他集數的進度。
+
+理由：三個階段每一集都要跑幾十小時，等整集做完才入庫，代表幾十小時的
+成果在工作區裡沒有備份地放著——而工作區是 gitignore 的。曾經有一集的
+時間軸只剩工作目錄一份，而它的母帶已經刪掉了。
+
+#### Scenario: 視覺辨識還沒讀完，時間軸照樣入庫
+
+- **WHEN** 某集的時間軸已精修，視覺辨識一條 cue 都還沒讀
+- **THEN** 該集的時間軸寫入 `1-cues/`，流程不因視覺辨識未完成而擋下
+
+#### Scenario: 一集的階段可以只做到一半
+
+- **WHEN** 檢視 Kari-SRT，某集在 `1-cues/` 有檔、在 `3-srt/` 沒有
+- **THEN** 那是正常狀態，任何驗證都 SHALL NOT 因此失敗
+
+### Requirement: 下游階段的集數必為上游的子集
+
+離線重建驗證 SHALL 檢查各階段之間的包含關係：`3-srt/` 的成果檔名集合
+SHALL 是 `2-vision/` 的子集，`2-vision/` SHALL 是 `1-cues/` 的子集。
+
+下游有而上游沒有的集數 SHALL 使驗證以非零狀態結束，並指名是哪一集
+在哪一層缺——那份交付物重建不出來。上游有而下游沒有 SHALL 視為正常，
+那只表示還沒做到那一步。
+
+#### Scenario: 交付 SRT 沒有對應的時間軸
+
+- **WHEN** `3-srt/` 有某集的 SRT，`1-cues/` 沒有該集的時間軸
+- **THEN** 驗證以非零狀態結束，指名該集與缺的那一層
+
+#### Scenario: 上游多出來的集數不算錯
+
+- **WHEN** `1-cues/` 有 75 集，`3-srt/` 只有 40 集
+- **THEN** 驗證通過
+
+### Requirement: 節目目錄的不變量
+
+`news/smkul.csv`、`aiyalaeho/smkul.csv`、`aiyalaeho/smkul-字幕版型異常.csv`
+是輸入而非產出，SHALL NOT 以逐 byte 重算比對。離線重建驗證 SHALL 改以
+下列不變量把關，任一條不成立時指名該列並以非零狀態結束：
+
+- `成果檔名` 合乎命名規格，同表內唯一，且與同列識別欄互推得出來；
+- `語言別代號` 在隨 repo 走的對照表之內；
+- `族語別(中)` 與 `族語別(英)` 一對一，對得上對照表；
+- 每一列的素材位置欄非空；
+- 列序依 `成果檔名` 排；
+- 各階段目錄裡每一個檔，其成果檔名在表中找得到（孤兒檔即錯誤）。
+
+表中有而檔案系統沒有的集數 SHALL NOT 視為錯誤——那是還沒做。
+
+以文字為素材、永遠不會有交付 SRT 的表，SHALL 豁免「各階段目錄」
+相關的那幾條。
+
+#### Scenario: 有人手改壞一格
+
+- **WHEN** 某列的 `語言別代號` 被改成對照表沒有的值
+- **THEN** 驗證指名該列與該欄，說出那個值不在對照表裡
+
+#### Scenario: 孤兒檔被抓到
+
+- **WHEN** `3-srt/` 有一個 SRT，其成果檔名在節目目錄中找不到
+- **THEN** 驗證以非零狀態結束並指名該檔
+
+#### Scenario: 還沒做的集數不算錯
+
+- **WHEN** 節目目錄有 969 列，各階段目錄合計只有 75 集
+- **THEN** 驗證通過
+
+### Requirement: 時間軸不記機器專屬路徑
+
+`1-cues/` 內的時間軸 SHALL NOT 記錄來源影片在本機的路徑。
+
+理由：那是當時那台機器的暫存位置，換一台機器就沒有意義，卻會讓
+Kari-SRT 的內容綁定在一台機器上——同一份資料在另一台機器重算會
+得到不同的位元組。每一集的影片位置由節目目錄的 `原始影片檔案位置`
+記錄，那是相對於語料根的路徑。
+
+#### Scenario: 時間軸裡沒有本機路徑
+
+- **WHEN** 檢視 `1-cues/` 內任一份時間軸
+- **THEN** 裡面沒有任何絕對路徑，也沒有指向工作區的欄位
+
+### Requirement: 不產出逐集 QC 摘要檔
+
+組裝流程 SHALL NOT 在 `3-srt/` 旁邊產出逐集的 QC 摘要檔（cue 數、
+有字 cue 數、族語列數、華語列數、SRT 行數）。
+
+理由：沒有任何流程讀它，離線重建驗證也不比對它，而每一個數字都能
+從時間軸與交付 SRT 當場算出來。要給人看的逐集數字 SHALL 收進一張
+逐集 CSV，一列一集，而不是散成一集一個小檔。
+
+#### Scenario: 組裝之後旁邊沒有摘要檔
+
+- **WHEN** 對某集執行組裝流程
+- **THEN** `3-srt/` 底下只有該集的 SRT，沒有同名的 QC 摘要檔
