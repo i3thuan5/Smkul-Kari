@@ -72,7 +72,7 @@ def plan(total, size=SIZE, min_tail=MIN_TAIL):
 
 def workdir(slug):
     """Where `ocr-cli cues` left the sheets for `slug`."""
-    return os.path.join("kithann/out/mxf", slug + ".B.work")
+    return os.path.join("kithann/out/mxf", slug + ".work")
 
 
 def sheets_holding(order, sheets, lo, hi):

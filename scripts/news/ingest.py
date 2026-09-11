@@ -16,15 +16,16 @@ import glob
 import json
 import os
 
+from scripts.news import episodes
 from scripts.news import paths
 from scripts.ocr import transcripts
 from scripts.errors import PipelineError
 
 WORK = paths.WORK
 
-# gap_sheets kā 校讀用ê contact sheet 园佇 <slug>.B.work，
+# gap_sheets kā 校讀用ê contact sheet 园佇 <slug>.work，
 # 逐擺攏仝款；本來是 --suffix，毋過對來到今無人傳過別ê值。
-WORK_SUFFIX = ".B.work"
+WORK_SUFFIX = ".work"
 
 
 def _cue_order(row):
@@ -69,7 +70,7 @@ def normalise(path):
 
 def _tsvdir_of(slug):
     """Default TSV dir: news/1-ocr/2-vision/<srt_name>, from the slug."""
-    for entry in paths.load_inventory():
+    for entry in episodes.load():
         if entry["slug"] == slug:
             return paths.stage_path(paths.KARI_VISION,
                                     entry["srt_name"])

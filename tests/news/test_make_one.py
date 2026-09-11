@@ -6,7 +6,7 @@ pass supersedes everything, so it must be asked FIRST. It was not: a
 tesseract draft in <slug>.work. The February batch had one in every work dir,
 so the guard never misfired -- and then thirteen episodes read by vision
 alone, which never run tesseract, were all reported as 尚未辨識 with their
-finished transcripts sitting in <slug>.B.work.
+finished transcripts sitting in <slug>.work.
 """
 import json
 import os
@@ -31,17 +31,15 @@ class TestMakeOne(unittest.TestCase):
         """A WORK dir holding one episode in the requested state."""
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        plain = os.path.join(tmp.name, ENTRY["slug"] + ".work")
-        os.makedirs(plain)
+        work = os.path.join(tmp.name, ENTRY["slug"] + ".work")
+        os.makedirs(work)
         if cues:
-            self._cues(plain)
+            self._cues(work)
         if tesseract:
-            self._write(plain, "transcripts.json", {"1": {"han": "ocr"}})
+            self._write(work, "transcripts.json", {"1": {"han": "ocr"}})
         if vision:
-            done = os.path.join(tmp.name, ENTRY["slug"] + ".B.work")
-            os.makedirs(done)
-            self._cues(done)
-            self._write(done, "verified.json", {"1": {"han": True}})
+            self._cues(work)
+            self._write(work, "verified.json", {"1": {"han": True}})
         return tmp.name
 
     def _cues(self, work):
@@ -62,17 +60,17 @@ class TestMakeOne(unittest.TestCase):
              mock.patch.object(make_all, "SRT_DIR", out):
             return make_all.make_one(dict(ENTRY))
 
-    def test_cut_straight_into_the_B_work_dir_is_not_called_uncut(self):
-        """判「切了未」愛看伊實在**組裝ê彼跡**，毋是邊仔彼跡。
+    def test_a_dir_cut_and_read_in_place_is_not_called_uncut(self):
+        """判「切了未」愛看伊實在**組裝ê彼跡**。
 
-        本底是看 `<slug>.work/cues.json`，毋過 SRT 是對
-        `<slug>.B.work` 組ê。054–059 這批是直接切入去 `.B.work`
-        （`fetch_sftp.sh` 是按呢做ê），無 `.work`，所以 `make_all`
-        講「尚未切cue」——實際上圖條、strips、TSV 攏好勢矣。
+        一集一个 work dir 進前，這爿有兩跡：`<slug>.work` 佮
+        `gap_sheets` 生ê `<slug>.B.work`，而且 `fetch_sftp.sh` 有ê時
+        直接切入去後者。判斷若指毋著彼跡，054–059 彼批就予人講
+        「尚未切cue」——實際上圖條、strips、TSV 攏好勢矣。
         """
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        done = os.path.join(tmp.name, ENTRY["slug"] + ".B.work")
+        done = os.path.join(tmp.name, ENTRY["slug"] + ".work")
         os.makedirs(done)
         self._cues(done)
         self._write(done, "verified.json", {"1": {"han": True}})

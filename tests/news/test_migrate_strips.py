@@ -95,10 +95,10 @@ class TestRewrite(unittest.TestCase):
 
 
 class TestAlreadyRenamed(unittest.TestCase):
-    """`.B.work/strips` 是 symlink 指去 `.work/strips`——兩爿公家一批檔。
+    """`.work/strips` 是 symlink 指去 `.work/strips`——兩爿公家一批檔。
 
-    Migrate `.B.work` ê時，改名是**穿過 symlink** 改著實體檔ê，毋過
-    干焦 `.B.work/cues.json` 有更新。輪著 `.work` ê時，舊名ê檔案
+    Migrate `.work` ê時，改名是**穿過 symlink** 改著實體檔ê，毋過
+    干焦 `.work/cues.json` 有更新。輪著 `.work` ê時，舊名ê檔案
     「無佇咧」——**因為已經改好矣**，賰 cues.json 愛綴。
 
     分會出「已經改好」佮「實在無去」ê法度：**新名彼支敢佇咧**。
@@ -126,21 +126,21 @@ class TestWorkDirs(unittest.TestCase):
     """兩款 work dir 攏愛掃著。
 
     `ocr-cli cues` 寫ê是 `<slug>.work`，`gap_sheets` 對伊生
-    `<slug>.B.work`；`fetch_sftp.sh` 有ê時陣直接切入去 `.B.work`。
-    頭一擺遷移我干焦掃 `.B.work`，1 月拄抓落來、猶未做圖條ê 006午
+    `<slug>.work`；`fetch_sftp.sh` 有ê時陣直接切入去 `.work`。
+    頭一擺遷移我干焦掃 `.work`，1 月拄抓落來、猶未做圖條ê 006午
     彼 1,149 張就無徙著。
     """
 
     def test_both_suffixes_are_matched(self):
         self.assertTrue(migrate_strips.is_work_dir("a.work"))
-        self.assertTrue(migrate_strips.is_work_dir("a.B.work"))
+        self.assertTrue(migrate_strips.is_work_dir("a.work"))
 
     def test_something_else_is_not(self):
         self.assertFalse(migrate_strips.is_work_dir("a.recut"))
         self.assertFalse(migrate_strips.is_work_dir("a.work.bak"))
 
     def test_the_stem_drops_either_suffix(self):
-        self.assertEqual(migrate_strips.stem_of("a.B.work"), "a")
+        self.assertEqual(migrate_strips.stem_of("a.work"), "a")
         self.assertEqual(migrate_strips.stem_of("a.work"), "a")
 
 

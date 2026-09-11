@@ -19,20 +19,11 @@ class TestConstants(unittest.TestCase):
 
     def test_every_path_lives_under_root(self):
         for value in (paths.WORK, paths.LOGS, paths.KARI, paths.SRT_DIR,
-                      paths.ENGINE_PRESETS, paths.INVENTORY,
-                      paths.CATALOGUE):
+                      paths.ENGINE_PRESETS, paths.TRACKER_STORE):
             self.assertTrue(value.startswith(paths.ROOT + os.sep), value)
 
     def test_srt_dir_is_inside_kari(self):
         self.assertTrue(paths.SRT_DIR.startswith(paths.KARI + os.sep))
-
-    def test_the_catalogue_is_in_the_store_not_the_workspace(self):
-        # 目錄是外部予的來源資料、重生袂出來（正本是伺服器頂彼支
-        # xlsx），而且是規劃新月份的源頭。囥佇 gitignore 的 kithann/，
-        # 換一台機器就無去；伊愛綴資料走。
-        self.assertEqual(paths.CATALOGUE,
-                         os.path.join(paths.KARI, "ilrdf-corpus.csv"))
-        self.assertFalse(paths.CATALOGUE.startswith(paths.KITHANN + os.sep))
 
     def test_the_speech_side_stages_are_numbered_in_production_order(self):
         """階段目錄ê號碼就是做ê先後，打開目錄就看會出流程——所以
@@ -55,11 +46,6 @@ class TestConstants(unittest.TestCase):
         self.assertEqual(os.path.basename(paths.QUALITY_CACHE),
                          "quality-cache")
 
-    def test_the_catalogue_covers_more_than_one_corpus_so_it_sits_on_top(self):
-        # 內底有族語新聞（983 逝）嘛有開會了（46 逝），毋是 news/ 一个
-        # 語料的物件，所以囥 Kari-SRT 的頂層。
-        self.assertEqual(os.path.dirname(paths.CATALOGUE), paths.KARI)
-
     def test_store_layout_is_corpus_technique_stage(self):
         # Kari-SRT is layered corpus -> technique -> numbered stage; the
         # numbers are the production order (srt-data-store spec).
@@ -68,19 +54,9 @@ class TestConstants(unittest.TestCase):
         self.assertEqual(paths.KARI_CUES, os.path.join(ocr, "1-cues"))
         self.assertEqual(paths.KARI_VISION, os.path.join(ocr, "2-vision"))
         self.assertEqual(paths.SRT_DIR, os.path.join(ocr, "3-srt"))
-        self.assertEqual(paths.INVENTORY,
-                         os.path.join(news, "inventory.json"))
         self.assertEqual(paths.TRACKER_STORE,
                          os.path.join(news, "smkul.csv"))
         self.assertEqual(paths.ASR_DIR, os.path.join(news, "2-asr"))
-
-    def test_the_catalogue_is_data_so_it_lives_in_the_store(self):
-        # 目錄是跨語料的資料（毋是這批新聞專屬），所以khǹg佇 Kari-SRT
-        # 頂層。伊本底佇 `kithann/`，毋過彼跡是 gitignore ê——換一台機器
-        # 就無去矣，而且 `plan_month` 無伊就選袂出來源。
-        self.assertEqual(paths.CATALOGUE,
-                         os.path.join(paths.KARI, "ilrdf-corpus.csv"))
-        self.assertFalse(paths.CATALOGUE.startswith(paths.KITHANN + os.sep))
 
     def test_stage_constants_are_base_folders_not_file_locations(self):
         # 逐集檔案住佇階段目錄下的月份一層，所以階段常數是「基底」，
@@ -94,6 +70,17 @@ class TestConstants(unittest.TestCase):
         # 文稿供字彼條路線裁掉矣，常數留咧就是閣有人會去指——階段
         # 目錄本身嘛已經對 store 提掉。
         for name in ("KARI_FROM_RTF", "KARI_VISION_RTF", "KARI_REPORT"):
+            self.assertFalse(hasattr(paths, name), name)
+
+    def test_the_inventory_and_catalogue_constants_are_gone(self):
+        """`inventory.json` 佮 `ilrdf-corpus.csv` 兩份檔攏刣掉矣。
+
+        常數留咧就是閣有人會去指伊，而彼兩份檔已經無佇咧——指著ê時
+        才報「揣無檔」，看無是按怎。這馬「有佗幾集」是問節目目錄
+        （`news/smkul.csv`），「做到佗一步」是問階段目錄。
+        """
+        for name in ("INVENTORY", "CATALOGUE", "INVENTORY_FIELDS",
+                     "load_inventory"):
             self.assertFalse(hasattr(paths, name), name)
 
     def test_the_translation_cache_is_live_again(self):
@@ -253,91 +240,6 @@ class TestPathGuard(unittest.TestCase):
             self.assertEqual(paths.check_under(tmp, roots=[tmp]), tmp)
 
 
-class TestLoadInventory(unittest.TestCase):
-    """inventory 是名字進入程式的唯一入口，就在這裡檢查。
-
-    11 支程式都拿 slug／srt_name 去組工作目錄與 store 檔名；檢查集中
-    在讀出來的那一刻，下游才不必各自重複，而且「inventory 的名字是
-    安全的」這個假設才變成明講的、擋得住的不變量。
-    """
-
-    def _write(self, entries):
-        handle = tempfile.NamedTemporaryFile(
-            "w", suffix=".json", delete=False, encoding="utf-8")
-        json.dump(entries, handle, ensure_ascii=False)
-        handle.close()
-        self.addCleanup(os.unlink, handle.name)
-        return handle.name
-
-    def _entry(self, **over):
-        entry = {"slug": "2021_032_2021-02-01_午間_Atayal_泰雅",
-                 "srt_name": "20210201_032_午間_Atayal_泰雅",
-                 "video": "ilrdf-corpus/2月/x.mxf", "truncated": "",
-                 "文稿位置": "", "節目名稱": "午間族語新聞", "年度": "2021",
-                 "集數": "32", "播出日期": "2021-02-01",
-                 "播出時段": "午間", "族語別(英)": "Atayal",
-                 "族語別(中)": "泰雅"}
-        entry.update(over)
-        return entry
-
-    def test_legal_entries_come_back_unchanged(self):
-        entry = self._entry()
-        got = paths.load_inventory(self._write([entry]))
-        self.assertEqual(got, [entry])
-
-    def test_a_slug_with_path_components_is_refused(self):
-        path = self._write([self._entry(slug="../../etc/passwd")])
-        with self.assertRaises(PipelineError):
-            paths.load_inventory(path)
-
-    def test_an_srt_name_with_path_components_is_refused(self):
-        path = self._write([self._entry(srt_name="../../etc/passwd")])
-        with self.assertRaises(PipelineError):
-            paths.load_inventory(path)
-
-    def test_a_missing_required_field_is_named(self):
-        entry = self._entry()
-        del entry["播出時段"]
-        path = self._write([entry])
-        with self.assertRaisesRegex(PipelineError, "播出時段"):
-            paths.load_inventory(path)
-
-    def test_optional_fields_survive(self):
-        # pending 只在批次進行中存在、publish 完成時刪掉；partial 會併進
-        # smkul.csv 的狀態欄。讀進來若把它們丟掉，寫回去就永久消失。
-        entry = self._entry(pending="尚未切cue", partial="來源只有前半",
-                            file="20NL003_32午間族語新聞.mxf")
-        got = paths.load_inventory(self._write([entry]))
-        self.assertEqual(got[0]["pending"], "尚未切cue")
-        self.assertEqual(got[0]["partial"], "來源只有前半")
-        self.assertEqual(got[0]["file"], "20NL003_32午間族語新聞.mxf")
-
-    def test_an_undeclared_field_stops_rather_than_vanishing(self):
-        # 條目是逐欄位重建的，沒宣告的欄位會在 publish 寫回 store 時
-        # 消失。與其靜默掉資料，不如中止、要求先去宣告。
-        entry = self._entry()
-        entry["新欄位"] = "x"
-        path = self._write([entry])
-        with self.assertRaisesRegex(PipelineError, "新欄位"):
-            paths.load_inventory(path)
-
-    def test_field_order_follows_the_store_not_the_input(self):
-        # publish／add_episodes 會把這些條目寫回 inventory.json；重建的
-        # 順序若跟正本不同，一次寫回就是整份檔案的 diff。
-        entry = self._entry(file="20NL003_32午間族語新聞.mxf",
-                            partial="來源只有前半")
-        got = paths.load_inventory(self._write([entry]))[0]
-        self.assertEqual(list(got)[:4],
-                         ["file", "video", "slug", "srt_name"])
-        self.assertEqual(list(got)[-2:], ["truncated", "partial"])
-
-    def test_every_entry_is_checked_not_just_the_first(self):
-        path = self._write([self._entry(),
-                            self._entry(slug="a/b")])
-        with self.assertRaises(PipelineError):
-            paths.load_inventory(path)
-
-
 class TestStageLayout(unittest.TestCase):
     """work dir 的 cues.json 分階段：粗切一份、精修一份，不互相蓋。
 
@@ -415,12 +317,27 @@ class TestStageLayout(unittest.TestCase):
         self._write("2-refined/cues.json")
         self.assertTrue(paths.is_refined(self.work))
 
+    def test_a_flag_inside_the_coarse_file_does_not_count(self):
+        """粗切彼份內底ê `refined` 旗標毋算數。
+
+        彼條路是予舊版面（平ê `<work>/cues.json`）用ê——彼陣干焦旗標
+        講會出「精修過矣」。遷移掃了後 `cues_to_read` 只賰兩个分階
+        目錄，fallback 永遠讀著 `1-cues/cues.json`，彼是粗切彼份；伊
+        內底若帶著旗標（手改ê、抑是舊工具留ê），舊寫法會kā伊當做
+        精修過，精度差一个數量級ê時間軸就按呢入庫矣。
+        """
+        self._write("1-cues/cues.json")
+        with open(paths.coarse_cues(self.work), "w",
+                  encoding="utf-8") as handle:
+            json.dump({"refined": True, "cues": []}, handle)
+        self.assertFalse(paths.is_refined(self.work))
+
 
 class TestHasCues(unittest.TestCase):
     """「這集切過矣未？」——兩个 work dir 隨一个有 cues.json 就算切過。
 
-    通常兩个攏有（`cues` 寫 `.work`，`gap_sheets` 對伊生 `.B.work`），
-    毋過 `fetch_sftp.sh` 是直接切入去 `.B.work`，054–059 彼批連 `.work`
+    通常兩个攏有（`cues` 寫 `.work`，`gap_sheets` 對伊生 `.work`），
+    毋過 `fetch_sftp.sh` 是直接切入去 `.work`，054–059 彼批連 `.work`
     都無。干焦問 `.work` ê話，14 集已經做好ê會予人講「尚未切cue」。
 
     問題毋是干焦報告歹看：`fetch_sftp.sh` 用仝一句判斷來決定「愛閣切
@@ -447,7 +364,7 @@ class TestHasCues(unittest.TestCase):
         self.assertTrue(paths.has_cues("ep", work=self.work))
 
     def test_the_vision_work_dir_counts_on_its_own(self):
-        self._cut(".B.work")
+        self._cut(".work")
         self.assertTrue(paths.has_cues("ep", work=self.work))
 
     def test_an_empty_work_dir_is_not_cut(self):

@@ -32,10 +32,10 @@ BRIEF = os.path.join(os.path.dirname(__file__), "brief.md")
 
 
 def work_dir(name):
-    """The `.B.work` directory holding this episode's transcripts."""
+    """The `.work` directory holding this episode's transcripts."""
     bits = name.split("_")
-    for d in sorted(glob.glob("kithann/out/mxf/*.B.work")):
-        got = os.path.basename(d)[:-len(".B.work")].split("_")
+    for d in sorted(glob.glob("kithann/out/mxf/*.work")):
+        got = os.path.basename(d)[:-len(".work")].split("_")
         if got[1] == bits[1] and got[3] == bits[2]:
             return d
     raise PipelineError("揣無 work dir：%s" % name)

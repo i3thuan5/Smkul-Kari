@@ -28,14 +28,14 @@ import shutil
 import sys
 import tempfile
 
+from scripts import catalogue_checks as checks
 from scripts import datadirs
 from scripts.aiyalaeho import make_srt
+from scripts.aiyalaeho import episodes
 from scripts.aiyalaeho import paths
-from scripts.aiyalaeho import tracker
 from scripts.aiyalaeho.langcheck import report
 from scripts.errors import PipelineError
 
-SMKUL = "smkul.csv"
 
 # `b*.tsv` ê 才是視覺辨識ê批——佮 ingest 彼爿仝一條規矩。別ê檔（抽查、
 # 筆記）若予 glob 食著，sort 起來排佇後壁ê彼个會kā別人ê字蓋去。
@@ -81,7 +81,7 @@ def check_inputs(entries):
         # rebuild yet, and says so in the inventory. Every other episode
         # is a claim that it was delivered, and that claim is what the
         # rest of this checks.
-        if tracker.is_pending(entry) or tracker.is_abnormal(entry):
+        if entry["pending"] or entry["abnormal"]:
             # Two ways an episode legitimately has nothing to rebuild: it
             # is still being worked on, or it never was a bilingual
             # deliverable. Both say so in the inventory, so an episode
@@ -117,9 +117,10 @@ def rebuild_one(entry, tmp):
         return handle.read()
 
 
-def rebuild_all():
+def rebuild_all(entries=None):
     """{"srt": {name: body}, "rows": [row…]} -- the whole store, rebuilt."""
-    entries = paths.load_inventory()
+    if entries is None:
+        entries = episodes.load()
     problems = check_inputs(entries)
     if problems:
         for line in problems:
@@ -130,14 +131,13 @@ def rebuild_all():
     try:
         bodies = {}
         for entry in entries:
-            if tracker.is_pending(entry) or tracker.is_abnormal(entry):
+            if entry["pending"] or entry["abnormal"]:
                 continue
             bodies[entry["srt_name"]] = rebuild_one(entry, tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     marks, dist = _language_tables(bodies, entries)
-    return {"srt": bodies, "rows": tracker.tracker_rows(entries),
-            "abnormal": tracker.abnormal_rows(entries),
+    return {"srt": bodies, "entries": entries,
             "lang_marks": marks, "lang_dist": dist}
 
 
@@ -147,22 +147,46 @@ def _language_tables(bodies, entries):
     食 store 彼份ê話，上游換版、下游無綴ê時陣驗袂出來——兩爿攏是
     舊ê，比起來當然仝。
     """
-    episodes = []
+    found = []
     for entry in entries:
         name = entry["srt_name"]
         if name not in bodies:
             continue
-        episodes.append(report.Episode(name, entry["族語別(中)"],
-                                       entry["語言代號"], bodies[name]))
-    lexicons = report.lexicons_for(episodes)
-    return (report.mark_rows(episodes, lexicons),
-            report.dist_rows(episodes, lexicons))
+        found.append(report.Episode(name, entry["集數"],
+                                    entry["族語別(中)"], entry["族語別(英)"],
+                                    entry["語言別"], entry["語言別代號"],
+                                    bodies[name]))
+    lexicons = report.lexicons_for(found)
+    return (report.mark_rows(found, lexicons),
+            report.dist_rows(found, lexicons))
+
+
+def stage_names():
+    """[(階段, {成果檔名…})…]，頂懸ê排頭前。
+
+    本語料ê store 無月份彼層，所以掃法佮新聞無仝，比對ê規矩相仝
+    （見 srt-data-store「下游階段的集數必為上游的子集」）。
+    """
+    found = []
+    for stage, base, ext in (("1-cues", paths.KARI_CUES, ".json"),
+                             ("2-vision", paths.KARI_VISION, ""),
+                             ("3-srt", paths.SRT_DIR, ".srt")):
+        names = set()
+        for entry in sorted(glob.glob(os.path.join(base, "*" + ext))):
+            name = os.path.basename(entry)
+            if ext:
+                if not name.endswith(ext):
+                    continue
+                name = name[:-len(ext)]
+            names.add(name)
+        found.append((stage, names))
+    return found
 
 
 def verify():
-    """[name…] of deliverables whose bytes differ from the rebuild."""
+    """[name…]——對袂起來ê交付物，佮無過ê不變量。"""
     built = rebuild_all()
-    mismatched = []
+    mismatched = list(datadirs.stage_problems(stage_names()))
     for name in sorted(built["srt"]):
         # 交付品是「比對ê對象」，毋是重建ê輸入——所以無佇 check_inputs
         # 內底問，佇遮無彼支就是「對袂起來」，仝款愛報。
@@ -207,34 +231,21 @@ def _language_problems(built):
 
 
 def _table_problems(built):
-    """Both progress tables, rebuilt from the store and compared.
+    """兩張節目目錄表ê不變量。
 
-    The second one only has to exist when something belongs in it: a
-    corpus with no abnormal episodes has no such table, and demanding one
-    would fail a store that is perfectly consistent.
+    這馬 in 是**輸入**毋是產出——內容人維護ê，逐 byte 重算比對無意義
+    矣。換做不變量：表頭、成果檔名規格佮唯一性、佮識別欄互推、
+    `語言別代號` 值域、族語別中英一對一、素材位置非空、列序，加
+    「異常表逐逝ê `備註` 愛非空」——兩張表欄位完全相仝，彼是唯一ê
+    自我宣告。
     """
-    wanted = [(SMKUL, paths.TRACKER_STORE, built["rows"], tracker.FIELDS)]
-    if built["abnormal"]:
-        wanted.append((os.path.basename(paths.ABNORMAL_STORE),
-                       paths.ABNORMAL_STORE, built["abnormal"],
-                       tracker.ABNORMAL_FIELDS))
-
-    problems = []
-    tmp = tempfile.mkdtemp(prefix="aiya-table-")
-    try:
-        for label, target, rows, fields in wanted:
-            if not os.path.exists(target):
-                raise PipelineError("揣無 %s——有 %d 逝愛记佇遐"
-                                    % (label, len(rows)))
-            table = os.path.join(tmp, label)
-            tracker.write_tracker(rows, table, fields)
-            with open(table, "rb") as handle:
-                rebuilt = handle.read()
-            with open(target, "rb") as handle:
-                if handle.read() != rebuilt:
-                    problems.append(label)
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+    problems = list(episodes.header_problems())
+    for path in (paths.TRACKER_STORE, paths.ABNORMAL_STORE):
+        problems.extend(checks.row_problems(episodes.rows(path)))
+    problems.extend(checks.orphan_problems(
+        episodes.rows(paths.TRACKER_STORE)
+        + episodes.rows(paths.ABNORMAL_STORE),
+        stage_names()))
     return problems
 
 
@@ -254,9 +265,9 @@ def main(argv=None):
         for name in mismatched:
             print("DIFFERS:", name)
         raise PipelineError("%d 項佮交付ê無仝" % len(mismatched))
-    entries = paths.load_inventory()
-    print("OK：%d 集ê SRT ＋ smkul.csv ＋ 兩張語言檢查 CSV 對 Kari-SRT "
-          "重建，逐 byte 相仝" % len(tracker.tracker_rows(entries)))
+    print("OK：%d 集ê SRT ＋ 兩張語言檢查 CSV 對 Kari-SRT 重建，逐 byte "
+          "相仝；兩張節目目錄表ê不變量嘛過矣"
+          % len(rebuild_all()["srt"]))
     return 0
 
 

@@ -35,22 +35,20 @@ not on the delivery path.
 
 ```bash
 python3 -m scripts.news.plan_month <月份> -n     # what it would do
-python3 -m scripts.news.plan_month <月份>        # register, pending
+python3 -m scripts.news.plan_month <月份>        # 唯讀，列出這個月有哪幾集
 bash    scripts/news/fetch_sftp.sh <月份>        # add --limit 2 for a dry run
 ```
 
-`plan_month` picks each episode's source from the catalogue by rule (master
-first, then the slot word in the file name, then same-name-two-folders) and
-writes the month's episodes into the inventory as `pending`, each carrying
-the path chosen for it. Registration has to come before the download: the
-video is deleted the moment its cues are cut, so nothing downstream could
-work out an episode's naming afterwards.
+`plan_month` picks each episode's source from `news/smkul.csv` by rule
+(master first, then the slot word in the file name, then
+same-name-two-folders) and prints the month's episodes with the path chosen
+for each. **It is read-only** — the節目目錄 covers every episode from day
+one, so there is no registration step and nothing is written.
 
 Episodes the rules cannot decide are **skipped and reported**, never guessed
 — across the whole corpus that is 8 of 983, and none in 2021-01 or 2021-02.
-Show the user the skip list; once they have decided, `add_episodes.py` takes
-the chosen path. Episodes the catalogue marks as having no video are counted,
-not listed — there is nothing to decide.
+Show the user the skip list. Episodes with no video are not in the table at
+all (983 → 969), so there is nothing to decide about them.
 
 This downloads one video at a time, checks its byte count against the
 server's, verifies the subtitle band, cuts cues, refines the cue
@@ -131,23 +129,25 @@ sheets that reader was given.
 ## 4. Assemble
 
 ```bash
-python3 -m scripts.news.make_all       # SRTs; progress table -> kithann/out/
-python3 -m scripts.news.publish        # gate the batch, then cues + smkul.csv
+python3 -m scripts.news.make_all       # SRTs straight into 1-ocr/3-srt/
+python3 -m scripts.news.publish        # the refined timeline into 1-ocr/1-cues/
 python3 -m scripts.news.rebuild --verify   # prove the store rebuilds them
 ```
 
-`publish` is all-or-nothing: it refuses while any episode registered by
-`add_episodes` is still unread, and clears their `pending` flags only once
-the whole batch is done. Until then the store keeps the previous batch's
-`smkul.csv` and `rebuild --verify` stays green — which is what makes it safe
-to keep running the verification while a batch is in progress.
+**每個階段做完就各自入庫。** `2-vision/` 由 Claude Vision 那端直接寫進
+Kari-SRT、`3-srt/` 由 `make_all` 直接寫，只有 `1-cues/` 走 `publish`——
+而且它**不再等視覺辨識讀完**。時間軸切好精修好就入庫，不必等那幾十
+小時的閱讀：那幾十小時的成果放在 gitignore 的工作區，連一份備份都沒有。
 
-`publish` also refuses an episode whose timeline is **not refined**, naming
-it and stopping: `1-ocr/1-cues/` states outright that everything in it has
-been through the 25fps pass, and that only holds if the door is watched.
-"No timeline at all" and "cut but not refined" are reported as different
-things, because the fixes are different (cut it again, or run
-`refine_cues`).
+`publish` 只擋兩件事：沒有時間軸、時間軸還沒精修。`1-ocr/1-cues/` 能直接
+宣告「裡面每一份都是精修過的」，那只有把門看住才成立。「找不到時間軸」
+和「還沒精修」是兩個不同的訊息，因為補救不同（重切，或跑 `refine_cues`）。
+
+內容一致就不覆寫：比的是正規化之後的字串，不是工作目錄檔案的原始位元組
+——工作目錄那份 JSON 的鍵是插入順序，比原始檔會每次都判成不同（曾經一次
+publish 重寫了 74 個內容根本沒變的已交付檔）。
+
+`publish` **不再寫 `smkul.csv`**：那是節目目錄，人維護的輸入。
 
 **The speech side must rebuild byte for byte.** `rebuild --verify` does not
 read the speech side's delivered files to trust them; it produces each one
@@ -162,8 +162,8 @@ python3 -m scripts.news.asrmt_run <srt_name> --step raw
 ```
 
 An episode that has **not got that far** is fine and draws no warning: the
-speech side runs at its own pace and `smkul.csv` already says how far it has
-got. A file the store cannot rebuild is a different matter — it means a
+speech side runs at its own pace, and how far it has got is answered by the
+stage folders (`/news-stage-count`). A file the store cannot rebuild is a different matter — it means a
 translation or a grade was written straight into the deliverable, or a cache
 entry has since been removed.
 

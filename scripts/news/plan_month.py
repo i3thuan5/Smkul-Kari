@@ -21,15 +21,14 @@ done.
 Episodes the rules cannot decide are skipped and listed, not guessed at --
 see `sources.py`. Skipped episodes are not written to the inventory, so the
 batch can still be published without one of them holding it open forever;
-once a person has decided, `add_episodes.py` takes the chosen path.
+揀袂出來ê集數逐擺攏報，等人判好才做。
 """
 import argparse
 import collections
-import json
 import os
 import sys
 
-from scripts.news import add_episodes
+from scripts.news import episodes
 from scripts.news import paths
 from scripts.news import resolve_slug
 from scripts.news import sources
@@ -54,81 +53,36 @@ def label_of(row):
                          row.get("族語別(中)", "?"))
 
 
-def merge(planned, existing):
-    """Fold a plan into the inventory without dropping anyone else's work.
+def plan(month, entries, limit=0):
+    """這个月這批是啥：會使做ê集數，佮揀袂出來ê。
 
-    The inventory is the store's, and most of what is in it did not come from
-    this month's plan -- `add_episodes` puts episodes there one at a time,
-    from the file name alone, because their videos are deleted the moment the
-    cues are cut.
+    **唯讀。** 節目目錄頭一工就涵蓋全部集數，所以無「登記」這个動作
+    矣——這支干焦是講出這个月有佗幾集、逐集配佗一支來源。跑進前跑
+    了後 Kari-SRT 一个 byte 攏無變。
 
-    So a plan may add episodes and may not remove any. An episode already
-    present is left exactly as it is: it may carry `partial`, a corrected
-    `文稿位置`, or a source recovered after being written off, none of which
-    a fresh plan knows about.
+    `limit` 是「這改先做幾集」，予人會使一集一集做。揀袂出來ê集數
+    逐擺攏報，才袂等到 limit 拄好行到彼跡才現形。
     """
-    known = set()
-    for entry in existing:
-        known.add(entry["slug"])
-    merged = list(existing)
-    added = []
-    for entry in planned:
-        if entry["slug"] in known:
-            continue
-        known.add(entry["slug"])
-        merged.append(entry)
-        added.append(entry)
-    return merged, added
-
-
-def plan(month, catalogue, inventory=None, limit=0):
-    """What this month's batch is: entries to register, and what was skipped.
-
-    Nothing is written; `write()` does that, so `--dry-run` and the real run
-    take exactly the same path up to the last step.
-
-    `limit` caps how many episodes are *registered*, not how many are
-    considered: an episode the rules could not decide is reported every
-    time, so it surfaces on the first run rather than whenever the limit
-    happens to reach it. Registering one at a time is what makes "one
-    episode per batch" work -- `publish` refuses to write while any pending
-    episode is unfinished, so the way to publish per episode is to have
-    only ever registered one.
-    """
-    rows = month_rows(catalogue.rows, month)
+    rows = []
+    for entry in entries:
+        if entry["播出日期"].startswith(month):
+            rows.append(entry)
     if not rows:
-        raise PipelineError("目錄內底無 %s 這个月的集數" % month)
+        raise PipelineError("節目目錄內底無 %s 這个月的集數" % month)
 
     picked = sources.resolve(rows)
     planned = []
     skipped = []
-    no_source = 0
     for row, (video, problem) in zip(rows, picked):
         if problem is sources.NO_SOURCE:
-            no_source += 1
             continue
         if not video:
             skipped.append((label_of(row), problem))
             continue
-        entry, trouble = add_episodes.entry_for_row(row, video)
-        if trouble:
-            skipped.append((label_of(row), trouble))
-            continue
-        planned.append(entry)
-
-    existing = paths.load_inventory(inventory)
-    entries, added = merge(planned, existing)
-    if limit and len(added) > limit:
-        # Drop the surplus from both the merged list and the report: they
-        # were never registered, so a later run picks them up unchanged.
-        dropped = added[limit:]
-        added = added[:limit]
-        kept = []
-        for entry in entries:
-            if entry not in dropped:
-                kept.append(entry)
-        entries = kept
-    return Report(month, entries, added, skipped, no_source)
+        planned.append(dict(row, video=video))
+    if limit:
+        planned = planned[:limit]
+    return Report(month, rows, planned, skipped, 0)
 
 
 def already_cut(entry, work=None, store=None):
@@ -156,9 +110,9 @@ def already_cut(entry, work=None, store=None):
 
     The arguments are injectable so the rule can be exercised without a disk.
     """
-    for folder in paths.work_dirs(entry["slug"], work):
-        if paths.cues_to_read(folder):
-            return paths.is_refined(folder)
+    folder = paths.work_dir(entry["slug"], work)
+    if paths.cues_to_read(folder):
+        return paths.is_refined(folder)
     base = paths.KARI_CUES if store is None else store
     shipped = paths.stage_path(base, entry["srt_name"], ".json")
     return (os.path.exists(shipped)
@@ -207,34 +161,18 @@ def todo(month, entries, already_cut=already_cut):
     return out
 
 
-def write(report, inventory=None):
-    """Register the plan's episodes in the inventory."""
-    path = inventory or paths.INVENTORY
-    with open(path, "w", encoding="utf-8") as handle:
-        json.dump(report.entries, handle, ensure_ascii=False, indent=2,
-                  sort_keys=True)
-    return path
-
-
-def print_report(report, wrote):
+def print_report(report):
     for entry in report.added:
         print("plan  %-46s %s" % (entry["srt_name"], entry["video"]))
     for label, reason in report.skipped:
         print("SKIP  %-46s %s" % (label, reason))
-    print("\n%s：登記 %d 集%s，跳過 %d 集"
-          % (report.month, len(report.added),
-             "" if wrote else "（試跑，無寫入）", len(report.skipped)))
-    if report.no_source:
-        print("另有 %d 集目錄標示無影片，無法度處理。" % report.no_source)
-    if report.skipped:
-        print("跳過的集數判好了後，用 add_episodes.py 指定路徑補做。")
+    print("\n%s：會使做 %d 集，揀袂出來 %d 集（無寫任何檔）"
+          % (report.month, len(report.added), len(report.skipped)))
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("month", help="播出月份，親像 2021-01")
-    ap.add_argument("-n", "--dry-run", action="store_true",
-                    help="報告欲做啥，毋寫入 inventory")
     ap.add_argument("--todo", action="store_true",
                     help="干焦印出愛抓的清單（slug<TAB>路徑），予 shell 食")
     ap.add_argument("--limit", type=int, default=0,
@@ -242,15 +180,13 @@ def main(argv=None):
     args = ap.parse_args(argv)
 
     if args.todo:
-        for slug, video in todo(args.month, paths.load_inventory()):
+        for slug, video in todo(args.month, episodes.load()):
             print("%s\t%s" % (slug, video))
         return 0
 
-    report = plan(args.month, resolve_slug.load(), limit=args.limit)
-    if not args.dry_run:
-        write(report)
-    print_report(report, not args.dry_run)
-    if not args.dry_run and report.added:
+    report = plan(args.month, episodes.load(), limit=args.limit)
+    print_report(report)
+    if report.added:
         print("next: bash scripts/news/fetch_sftp.sh %s" % args.month)
     return 0
 

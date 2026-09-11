@@ -32,6 +32,8 @@ silently wrong, so it has to be exercisable with synthetic rows alone.
 import os
 import re
 
+from scripts import catalogue_checks as checks
+
 # The Chinese word, not the NL code: 21NL004_37午間 carries the 晚間 series
 # code on a 午間 file, and the word is the one that is right.
 SLOT_RE = re.compile(r"(午間|晚間|晨間)")
@@ -39,7 +41,7 @@ SLOT_RE = re.compile(r"(午間|晚間|晨間)")
 MASTER_EXT = ".mxf"
 
 # Not a verdict to be judged, just an episode the catalogue has no file for
-# (57 rows corpus-wide say 有無影片=否). Compared by identity, so a caller
+# (沒影片的集數根本不進表). Compared by identity, so a caller
 # can tell "nothing to decide" from "could not decide".
 NO_SOURCE = "無來源"
 
@@ -47,7 +49,7 @@ NO_SOURCE = "無來源"
 def candidates(row):
     """Every path the catalogue lists for this episode."""
     out = []
-    for part in (row.get("影片檔案位置") or "").split(";"):
+    for part in (row.get("原始影片檔案位置") or "").split(";"):
         part = part.strip()
         if part:
             out.append(part)
@@ -113,7 +115,7 @@ def pick(row):
         return None, NO_SOURCE
     paths = _masters_first(paths)
     if len(paths) > 1:
-        paths = _agreeing_slot(paths, row.get("播出時段"))
+        paths = _agreeing_slot(paths, checks.slot_of(row["節目名稱"]))
     if len(paths) > 1:
         paths = _one_name_in_two_folders(paths)
     if len(paths) == 1:

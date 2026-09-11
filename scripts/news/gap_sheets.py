@@ -10,21 +10,20 @@ rounds of contact sheets to read the same strips twice cost more than reading
 them once. The 文稿 path is gone; see git history and
 `Kari-SRT/report/rtf-vs-vision.*` for the comparison it produced.
 
-The work dir this builds is `<slug>.B.work`, beside the `<slug>.work` that
-`cues` produced. It carries its own cues.json and sheets.json but symlinks
-the strips, which are gigabytes of PNG.
+It builds the sheets inside the episode's own work dir (`<slug>.work`),
+beside the strips they are cut from.
 """
 import argparse
 import json
 import os
 
+from scripts.news import episodes
 from scripts.news import paths
 from scripts.ocr import sheets
 from scripts import lowpri
 from scripts.errors import PipelineError
 
 WORK = paths.WORK
-WORK_EXT = ".work"
 
 
 # Both tools here rebuild sheets for news work dirs only -- 開會了 has its
@@ -60,34 +59,31 @@ def already_read(dst):
 
 
 def prepare(slug):
+    """Build this episode's sheets in its own work dir.
+
+    This used to build a second dir beside it (`<slug>.B.work`) with a copy
+    of the timeline and a symlink to the strips. The copy is gone with the
+    second dir: the sheets are built from whichever stage `cues_to_read`
+    picks, and writing that manifest back would overwrite the coarse file,
+    which is meant to be written once and never touched again.
+    """
     paths.check_name(slug, "slug")
-    src = os.path.join(WORK, slug + WORK_EXT)
-    dst = os.path.join(WORK, slug + ".B.work")
-    if already_read(dst):
+    work = paths.work_dir(slug, WORK)
+    if already_read(work):
         raise PipelineError(
             "%s already holds verified transcripts; refusing to "
-            "overwrite" % dst)
-    os.makedirs(dst, exist_ok=True)
+            "overwrite" % work)
+    os.makedirs(work, exist_ok=True)
 
-    with open(paths.cues_to_read(src), encoding="utf-8") as handle:
+    with open(paths.cues_to_read(work), encoding="utf-8") as handle:
         manifest = json.load(handle)
 
-    # Point at the original strips rather than copying gigabytes of PNG.
-    link = os.path.join(dst, "strips")
-    if not os.path.islink(link):
-        os.symlink(os.path.join("..", slug + WORK_EXT, "strips"), link)
-
-    copied = paths.coarse_cues(dst)
-    os.makedirs(os.path.dirname(copied), exist_ok=True)
-    with open(copied, "w", encoding="utf-8") as handle:
-        json.dump(manifest, handle, ensure_ascii=False, indent=2,
-                  sort_keys=True)
     slots, cols = news_sheet_layout()
-    made = sheets.build_sheets(dst, manifest, row_slots=slots,
+    made = sheets.build_sheets(work, manifest, row_slots=slots,
                                compare_cols=cols)
 
     for name in ("transcripts.json", "verified.json"):
-        with open(os.path.join(dst, name), "w", encoding="utf-8") as handle:
+        with open(os.path.join(work, name), "w", encoding="utf-8") as handle:
             json.dump({}, handle, ensure_ascii=False, indent=2,
                       sort_keys=True)
 
@@ -100,20 +96,18 @@ def main(argv=None):
     ap.add_argument("slugs", nargs="*", help="work-dir slugs; default all")
     args = ap.parse_args(argv)
 
-    entries = paths.load_inventory()
+    entries = episodes.load()
     total_sheets = 0
     for entry in entries:
-        if entry["truncated"]:
-            continue
         slug = entry["slug"]
         if args.slugs and slug not in args.slugs:
             continue
-        if not paths.cues_to_read(os.path.join(WORK, slug + WORK_EXT)):
+        work = paths.work_dir(slug, WORK)
+        if not paths.cues_to_read(work):
             print("skip %s (not decoded)" % slug)
             continue
-        dst = os.path.join(WORK, slug + ".B.work")
-        if os.path.exists(os.path.join(dst, "sheets.json")) \
-                or already_read(dst):
+        if os.path.exists(os.path.join(work, "sheets.json")) \
+                or already_read(work):
             print("skip %s (already prepared or read)" % slug)
             continue
         cues, made = prepare(slug)

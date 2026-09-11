@@ -11,6 +11,7 @@ import argparse
 import json
 import os
 
+from scripts.news import episodes
 from scripts.news import paths
 from scripts.news.vision_tools import prompt
 from scripts.errors import PipelineError
@@ -64,7 +65,7 @@ def srt_name_of(slug):
     means readers write where nothing will ever look, and the first sign of it
     is an episode that assembles with no text.
     """
-    for entry in paths.load_inventory():
+    for entry in episodes.load():
         if entry["slug"] == slug:
             return entry["srt_name"]
     raise PipelineError("slug %r is not in inventory.json" % slug)
@@ -78,7 +79,7 @@ def main():
     args = ap.parse_args()
     args.slug = paths.check_name(args.slug, "slug")
 
-    work = os.path.join(WORK, args.slug + ".B.work")
+    work = os.path.join(WORK, args.slug + ".work")
     tag = srt_name_of(args.slug)
     sheets = pending_sheets(work)
     print("# %s: %d sheet(s) pending" % (args.slug, len(sheets)))

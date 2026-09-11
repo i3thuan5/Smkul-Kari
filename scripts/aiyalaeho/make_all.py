@@ -5,22 +5,19 @@
     python3 -m scripts.aiyalaeho.make_all 開會了_068_Amis_阿美
 
 Safe to re-run at any point: an episode still being read is reported as
-待處理 rather than assembled, so the table can be refreshed while a long
-vision pass is running.
+待處理 rather than assembled.
 
-The table written here is the work copy. The delivered one is written by
-`publish`, once a whole batch is finished -- a mid-batch row says which
-step an episode is stuck at, and that state lives in a work dir, which the
-offline rebuild does not have.
+這爿無寫任何一張表——兩張 smkul 表是節目目錄，人維護ê輸入。某一集做
+到佗一步，答案佇階段目錄。
 """
 import json
 import os
 import sys
 
 from scripts import datadirs
+from scripts.aiyalaeho import episodes
 from scripts.aiyalaeho import make_srt
 from scripts.aiyalaeho import paths
-from scripts.aiyalaeho import tracker
 
 
 def vision_complete(work):
@@ -54,12 +51,12 @@ def vision_complete(work):
 
 def make_one(entry):
     """Build one episode's SRT; return its status line."""
-    if tracker.is_abnormal(entry):
+    if entry["abnormal"]:
         # No band, or no Formosan row: there is nothing to assemble, and
         # a 0-line SRT in 3-srt/ would claim a deliverable that is not
         # one. It is listed in smkul-字幕版型異常.csv with the reason.
         return "字幕版型異常（%s；列於 %s）" % (
-            entry["理由"], os.path.basename(paths.ABNORMAL_STORE))
+            entry["備註"], os.path.basename(paths.ABNORMAL_STORE))
     work = paths.work_dir(entry["srt_name"])
     if not datadirs.cues_to_read(work):
         return "待處理（尚未切cue）"
@@ -69,10 +66,6 @@ def make_one(entry):
     out = paths.stage_path(paths.SRT_DIR, entry["srt_name"], ".srt")
     os.makedirs(os.path.dirname(out), exist_ok=True)
     qc = make_srt.run(work, out)
-    with open(os.path.splitext(out)[0] + ".qc.json", "w",
-              encoding="utf-8") as handle:
-        json.dump(qc, handle, ensure_ascii=False, indent=2,
-                  sort_keys=True)
     if not qc["cues"]:
         return "交付：0 條 cue（這集無字幕）"
     return "交付：%d 行字幕（族語 %d、華語 %d）" % (
@@ -81,7 +74,7 @@ def make_one(entry):
 
 def main(argv=None):
     names = list(argv or [])
-    entries = paths.load_inventory()
+    entries = episodes.load()
     os.makedirs(paths.SRT_DIR, exist_ok=True)
 
     for entry in entries:
@@ -89,16 +82,8 @@ def main(argv=None):
             continue
         status = make_one(entry)
         print("%-30s %s" % (entry["srt_name"], status))
-    # Every episode gets a row in the work copy, pending ones included --
-    # that is what it is for: seeing how far the batch has got.
-    rows = tracker.tracker_rows(entries, include_pending=True)
-    tracker.write_tracker(rows, paths.TRACKER_CACHE)
-    abnormal = tracker.abnormal_rows(entries, include_pending=True)
-    tracker.write_tracker(abnormal, paths.ABNORMAL_CACHE,
-                          tracker.ABNORMAL_FIELDS)
-    print("\nwrote", paths.TRACKER_CACHE)
-    print("wrote", paths.ABNORMAL_CACHE)
-    print("（store ê兩張表是 publish 寫ê，規批做煞才寫）")
+    # 這爿無閣寫任何一張表矣：兩張 smkul 表是**節目目錄**，人維護ê
+    # 輸入。某一集做到佗一步，答案佇階段目錄。
     publish_report(entries)
     return 0
 
@@ -113,14 +98,18 @@ def publish_report(entries):
     the end.
     """
     from scripts.aiyalaeho import publish
-    listed = tracker.abnormal_rows(entries, include_pending=True)
+    listed = []
+    for entry in entries:
+        if entry["abnormal"]:
+            listed.append(entry)
     if not listed:
         return
     measured = set(publish.measured_reasons(entries))
     print("\n字幕版型異常 %d 集：" % len(listed))
-    for row in listed:
-        mark = "  ← 量測抑是人判ê，看一目" if row["成果檔名"] in measured else ""
-        print("  %-30s %s%s" % (row["成果檔名"], row["理由"], mark))
+    for entry in listed:
+        mark = ("  ← 量測抑是人判ê，看一目"
+                if entry["srt_name"] in measured else "")
+        print("  %-30s %s%s" % (entry["srt_name"], entry["備註"], mark))
 
 
 if __name__ == "__main__":

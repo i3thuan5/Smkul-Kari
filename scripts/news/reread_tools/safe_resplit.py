@@ -29,8 +29,8 @@ RD = os.path.join("kithann/out/reread", NAME)
 # 對 TSV 讀，彼寡字就無去矣；閣較歹ê是編號一改，舊條目會指去**別
 # ê cue**，字就走位，而且無一个所在會報錯。
 W = None
-for d in sorted(glob.glob("kithann/out/mxf/*.B.work")):
-    stem = os.path.basename(d)[:-len(".B.work")]
+for d in sorted(glob.glob("kithann/out/mxf/*.work")):
+    stem = os.path.basename(d)[:-len(".work")]
     bits = stem.split("_")
     if bits[1] == NAME.split("_")[1] and bits[3] == NAME.split("_")[2]:
         W = d
@@ -123,10 +123,6 @@ else:
     doc = cues
 json.dump(doc, open(os.path.join(W, "cues.json"), "w", encoding="utf-8"),
           ensure_ascii=False, indent=2, sort_keys=True)
-other = os.path.join(W.replace(".B.work", ".work"), "cues.json")
-if os.path.exists(other):
-    json.dump(doc, open(other, "w", encoding="utf-8"),
-              ensure_ascii=False, indent=2, sort_keys=True)
 for f in glob.glob(os.path.join(D, "b*.tsv")):
     os.remove(f)
 idx = sorted(rows)

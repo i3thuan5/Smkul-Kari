@@ -11,20 +11,57 @@
 import argparse
 import csv
 import os
+import re
 
 from scripts.aiyalaeho.text import decode
 from scripts.aiyalaeho.text import lang
 from scripts.aiyalaeho.text import parse
 from scripts.aiyalaeho.text import split
 from scripts.aiyalaeho import paths
+from scripts import catalogue_checks as checks
+from scripts import languages
 from scripts.errors import PipelineError
 
-FIELDS = ("集", "來源檔", "來源檔編碼格式", "行號", "類型", "語言別代號",
-          "族語", "華語", "開始時間", "結束時間")
+# 頭七欄佮其他五張表同名同序（見 `scripts/catalogue_checks.py`）。
+FIELDS = tuple(checks.head(checks.EPISODE_KEYS)) + (
+    "來源文字檔檔案位置", "來源文字檔編碼格式", "行號", "類型",
+    "族語", "華語", "開始時間", "結束時間")
+
+# 目錄名親像 `開會001_賽夏族`、`開會041-旅北阿美`——兩款分隔符攏有。
+_EPISODE = re.compile(r"^開會(\d+)[-_]")
 
 
 def _tab_to_space(text):
     return text.replace("\t", " ")
+
+
+def head_of(episode):
+    """目錄名 → 共同ê頭七欄。
+
+    `集` 彼欄本底囥ê是規串（`開會001_賽夏族`），拆做 `集數`。尾溜彼段
+    （族語別、語言別抑是主題字樣）無另外囥欄位——`來源文字檔檔案位置`
+    ê路徑前綴本底就完整含著伊，驗過 55785 逝零例外。
+
+    `成果檔名` 照《開會了》ê命名規矩推。這 41 集是上字文稿、無影片，
+    永遠袂有交付 SRT，所以彼欄干焦做集別識別鍵用——「表裡逐逝攏有對
+    應ê檔」彼條不變量對這張表愛放行。
+    """
+    found = _EPISODE.match(episode)
+    if not found:
+        raise PipelineError("目錄名剖無集數：%s" % episode)
+    code = lang.resolve(episode)
+    chinese = languages.language_of(code)
+    row = {
+        "成果檔名": "",          # 下跤才算——欄序照 FIELDS
+        "節目名稱": checks.AIYALAEHO,
+        "集數": str(int(found.group(1))),
+        "族語別(英)": languages.english_for(chinese),
+        "族語別(中)": chinese,
+        "語言別": languages.variety_of(code),
+        "語言別代號": code,
+    }
+    row["成果檔名"] = checks.srt_name_of(row)
+    return row
 
 
 def build_rows(root_dir, split_table):
@@ -41,7 +78,7 @@ def build_rows(root_dir, split_table):
     rows = []
     for episode in episodes:
         episode_dir = os.path.join(root_dir, episode)
-        language_code = lang.resolve(episode)
+        head = head_of(episode)
 
         source_files = []
         for dirpath, _dirnames, filenames in os.walk(episode_dir):
@@ -56,20 +93,21 @@ def build_rows(root_dir, split_table):
             rel = os.path.relpath(path, root_dir)
             text, fmt = decode.decode(path)
             for line in parse.parse_lines(text, split_table=split_table):
-                rows.append({
-                    "集": episode,
-                    "來源檔": rel,
-                    "來源檔編碼格式": fmt,
+                row = dict(head)
+                row.update({
+                    "來源文字檔檔案位置": rel,
+                    "來源文字檔編碼格式": fmt,
                     "行號": line["行號"],
                     "類型": line["類型"],
-                    "語言別代號": language_code,
                     "族語": _tab_to_space(line["族語"]),
                     "華語": _tab_to_space(line["華語"]),
                     "開始時間": line["開始時間"],
                     "結束時間": line["結束時間"],
                 })
+                rows.append(row)
 
-    rows.sort(key=lambda r: (r["集"], r["來源檔"], r["行號"]))
+    rows.sort(key=lambda r: (r["成果檔名"], r["來源文字檔檔案位置"],
+                             r["行號"]))
     return rows
 
 

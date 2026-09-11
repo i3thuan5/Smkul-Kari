@@ -75,7 +75,7 @@ class TestBatchRejection(unittest.TestCase):
     def _run(self, sheet_cues, tsv_body):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        work = os.path.join(tmp.name, "ep.B.work")
+        work = os.path.join(tmp.name, "ep.work")
         os.makedirs(work)
         with open(os.path.join(work, "sheets.json"), "w",
                   encoding="utf-8") as handle:
@@ -118,7 +118,7 @@ class TestOnlyBatchFiles(unittest.TestCase):
     def _dir(self, *files):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        work = os.path.join(tmp.name, "ep.B.work")
+        work = os.path.join(tmp.name, "ep.work")
         os.makedirs(work)
         with open(os.path.join(work, "sheets.json"), "w",
                   encoding="utf-8") as handle:

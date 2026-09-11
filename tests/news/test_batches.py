@@ -1,10 +1,12 @@
 """batches: which sheets are offered, and where their TSVs are told to go."""
+import csv
 import json
 import os
 import tempfile
 import unittest
 from unittest import mock
 
+from scripts import catalogue_checks as checks
 from scripts.news import batches
 from scripts.news.vision_tools import prompt
 from scripts.errors import PipelineError
@@ -54,31 +56,37 @@ class TestSrtNameOf(unittest.TestCase):
     order, so a name derived from it lands the reading where nothing reads
     it -- and the only symptom is an episode that assembles empty."""
 
-    # 完整形狀：load_inventory 會擋掉缺欄位的條目
-    ENTRY = {"slug": "2021_041_2021-02-10_午間_Cou_鄒",
-             "srt_name": "20210210_041_午間_Cou_鄒",
-             "video": "ilrdf-corpus/族語新聞/21NL003_41午間族語新聞.mp4",
-             "truncated": "", "文稿位置": "", "節目名稱": "午間族語新聞",
-             "年度": "2021", "集數": "41", "播出日期": "2021-02-10",
-             "播出時段": "午間", "族語別(英)": "Cou", "族語別(中)": "鄒"}
+    ROW = {"成果檔名": "20210210_041_午間_Cou_鄒",
+           "節目名稱": "午間族語新聞", "年度": "2021", "集數": "41",
+           "播出日期": "2021-02-10", "族語別(英)": "Cou",
+           "族語別(中)": "鄒", "語言別": "", "語言別代號": "tsu",
+           "原始影片檔案位置":
+               "ilrdf-corpus/族語新聞/21NL003_41午間族語新聞.mp4",
+           "備註": ""}
+    SLUG = "2021_041_2021-02-10_午間_Cou_鄒"
 
-    def _inventory(self, entries):
+    def _table(self, rows):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        path = os.path.join(tmp.name, "inventory.json")
-        with open(path, "w", encoding="utf-8") as handle:
-            json.dump(entries, handle, ensure_ascii=False)
+        path = os.path.join(tmp.name, "smkul.csv")
+        head = list(checks.head(checks.NEWS_KEYS)) + [
+            "原始影片檔案位置", "備註"]
+        with open(path, "w", encoding="utf-8-sig", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=head)
+            writer.writeheader()
+            for row in rows:
+                writer.writerow(row)
         return path
 
-    def test_name_comes_from_the_inventory(self):
-        path = self._inventory([self.ENTRY])
-        with mock.patch.object(batches.paths, "INVENTORY", path):
-            got = batches.srt_name_of(self.ENTRY["slug"])
-        self.assertEqual(got, self.ENTRY["srt_name"])
+    def test_name_comes_from_the_catalogue(self):
+        path = self._table([self.ROW])
+        with mock.patch.object(batches.paths, "TRACKER_STORE", path):
+            got = batches.srt_name_of(self.SLUG)
+        self.assertEqual(got, self.ROW["成果檔名"])
 
     def test_unknown_slug_stops_rather_than_guessing_a_folder(self):
-        path = self._inventory([self.ENTRY])
-        with mock.patch.object(batches.paths, "INVENTORY", path):
+        path = self._table([self.ROW])
+        with mock.patch.object(batches.paths, "TRACKER_STORE", path):
             with self.assertRaises(PipelineError):
                 batches.srt_name_of("2021_999_2021-01-01_午間_Nope_無")
 

@@ -75,7 +75,7 @@ strips/ 檔名        照起始時間號名（`t<毫秒八碼>_<列>.png`）
 
 ```bash
 PYTHONPATH=. .tox/rebuild/bin/python -m scripts.ocr.cli cues \
-  "kithann/out/mkv/<srt_name>.mkv" -o "kithann/out/mxf/<slug>.B.work" \
+  "kithann/out/mkv/<srt_name>.mkv" -o "kithann/out/mxf/<slug>.work" \
   --presets scripts/news/presets.json --preset titv-news --sheets --progress
 ```
 

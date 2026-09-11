@@ -15,19 +15,32 @@ import csv
 import os
 import sys
 
+from scripts import catalogue_checks as checks
 from scripts.aiyalaeho import paths
 from scripts.aiyalaeho.langcheck import dictionary
 from scripts.aiyalaeho.langcheck import mark
 from scripts.errors import PipelineError
 
-MARK_HEADER = ["成果檔名", "本集族語", "字幕編號", "開始時間", "結束時間",
-               "這列的語言", "疑似語言", "疑似語言詞庫比對命中率",
-               "族語列", "華語列"]
+# 前七欄佮其他五張表同名同序（見 `scripts/catalogue_checks.py`）。
+# 本底這爿ê `本集族語` 就是 `族語別(中)`——仝一件代誌兩个名，開兩張表
+# 對照ê時愛佇心內先翻一擺。
+HEAD = list(checks.head(checks.EPISODE_KEYS))
 
-DIST_HEADER = ["成果檔名", "本集族語", "字幕條數", "純族語",
-               "族語夾雜華語", "華語", "無法確定"]
+MARK_HEADER = HEAD + ["字幕編號", "開始時間", "結束時間",
+                      "這列的語言", "疑似語言", "疑似語言詞庫比對命中率",
+                      "族語列", "華語列"]
 
-Episode = collections.namedtuple("Episode", "srt_name tribe code text")
+DIST_HEADER = HEAD + ["字幕條數", "純族語",
+                      "族語夾雜華語", "華語", "無法確定"]
+
+Episode = collections.namedtuple(
+    "Episode", "srt_name number tribe english variety code text")
+
+
+def _head_cells(episode):
+    """共同ê頭七欄，照 `HEAD` ê順序。"""
+    return [episode.srt_name, checks.AIYALAEHO, episode.number,
+            episode.english, episode.tribe, episode.variety, episode.code]
 
 
 def percent(rate):
@@ -58,9 +71,9 @@ def mark_rows(episodes, lexicons):
                             language_code=episode.code)
         for one in sorted(marked, key=lambda m: m.number):
             rate = percent(one.rate) if one.label == mark.UNSURE else ""
-            out.append([episode.srt_name, episode.tribe, one.number,
-                        one.start, one.end, one.label, one.suspect, rate,
-                        one.formosan, one.han])
+            out.append(_head_cells(episode)
+                       + [one.number, one.start, one.end, one.label,
+                          one.suspect, rate, one.formosan, one.han])
     return out
 
 
@@ -72,9 +85,9 @@ def dist_rows(episodes, lexicons):
         tally = collections.Counter()
         for one in marked:
             tally[one.label] += 1
-        out.append([episode.srt_name, episode.tribe, len(marked),
-                    tally[mark.PURE], tally[mark.MIXED],
-                    tally[mark.CHINESE], tally[mark.UNSURE]])
+        out.append(_head_cells(episode)
+                   + [len(marked), tally[mark.PURE], tally[mark.MIXED],
+                      tally[mark.CHINESE], tally[mark.UNSURE]])
     return out
 
 
@@ -153,8 +166,9 @@ def load_episodes(tracker_path=None, srt_dir=None):
         if not os.path.exists(srt_path):
             raise PipelineError("欠交付 SRT：%s" % srt_path)
         with open(srt_path, encoding="utf-8") as srt_handle:
-            out.append(Episode(name, row["族語別(中)"],
-                               row["語言代號"], srt_handle.read()))
+            out.append(Episode(name, row["集數"], row["族語別(中)"],
+                               row["族語別(英)"], row["語言別"],
+                               row["語言別代號"], srt_handle.read()))
     return out
 
 

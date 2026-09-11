@@ -48,11 +48,14 @@ transcripts beside the videos on the server stop at episode 045 on a
 different numbering. Its language has to be listened for.
 """
 import argparse
-import json
+import csv
 import os
 import re
 import sys
 
+from scripts import catalogue_checks as checks
+from scripts import languages
+from scripts.aiyalaeho import episodes
 from scripts.aiyalaeho import paths
 from scripts.errors import PipelineError
 
@@ -64,111 +67,15 @@ CORPUS_DIR = "ilrdf-corpus/族語節目/開會了/"
 
 VIDEO_EXT = ".mp4"
 
-# 族語別：中文 -> (目錄用ê英文拼法, ISO 639 三碼)
-#
-# 英文拼法沿 `ilrdf-corpus.csv` ê用字（SaySiyat、Pinuyumayan、Hla'alua
-# 這幾个佮別位無仝款），按呢兩个語料ê族語別欄才對得起來。代號照
-# `kithann/規範/族語及語言別名稱 - 族語名稱.csv`：太魯閣佮賽德克 ISO
-# 歸做仝一个 trv，短期照 RFC 5646 私有標籤分做 trv-x-truku 佮 trv。
-# 「（未知）」：人聽過才命名會著ê集數，等袂得ê時先按呢登記。
-# 116 就是——伊無語言卡（規片 2880 秒抽 20 格，右頂角彼位攏空ê）、
-# 嘛無燒印字幕，畫面頂懸無半个線索；伺服器仝層彼份上字文稿是
-# 001–045 另外一套編號，佮 068–164 對袂起來。伊佮 088／090／098
-# 仝款是「無字幕」ê異常集，袂產 SRT，所以族語別是啥其實無影響
-# 交付——毋過**無登記ê話，44 支影片ê帳會少一支**。使用者裁定
-# 2026-09-08。
-#
-# 代號用 `und`：彼是 ISO 639-2／639-3 家己對「未確定語言」ê答案，
-# 毋是咱掰ê（看下跤 `code_for` ê註解）。人聽過了後改做真ê族語別，
-# 跑一擺 `catalogue --language 116ALL_無字.mp4=<族語別中>` 就好。
-UNKNOWN = "（未知）"
-
-LANGUAGES = {
-    UNKNOWN: ("Unknown", "und"),
-    "阿美": ("Amis", "ami"),
-    "泰雅": ("Atayal", "tay"),
-    "排灣": ("Paiwan", "pwn"),
-    "布農": ("Bunun", "bnn"),
-    "卑南": ("Pinuyumayan", "pyu"),
-    "魯凱": ("Rukai", "dru"),
-    "鄒": ("Cou", "tsu"),
-    "賽夏": ("SaySiyat", "xsy"),
-    "雅美": ("Yami", "tao"),
-    "邵": ("Thau", "ssf"),
-    "噶瑪蘭": ("Kavalan", "ckv"),
-    "撒奇萊雅": ("Sakizaya", "szy"),
-    "太魯閣": ("Truku", "trv-x-truku"),
-    "賽德克": ("Seediq", "trv"),
-    "拉阿魯哇": ("Hla'alua", "sxr"),
-    "卡那卡那富": ("Kanakanavu", "xnb"),
-}
-
-# 語言別（族語別下底ê變體）：族語別 -> {字樣: 代號}
-#
-# 正本是 `kithann/規範/族語及語言別名稱 - 語言別名稱.csv`，彼份是
-# gitignore ê——換一台機器就無去，所以表囥佇遮，規範若改就改這搭閣走測試。
-VARIETIES = {
-    "阿美": {
-        "南勢": "ami-x-iams", "秀姑巒": "ami-x-skl",
-        "海岸": "ami-x-pswl", "馬蘭": "ami-x-frng",
-        "恆春": "ami-x-pld",
-    },
-    "泰雅": {
-        "賽考利克": "tay-x-sql", "澤敖利": "tay-x-sul",
-        "四季": "tay-x-cql", "宜蘭澤敖利": "tay-x-kls",
-        "汶水": "tay-x-mtuw", "萬大": "tay-x-plngw",
-    },
-    "排灣": {
-        "東排灣": "pwn-x-kcdsn", "北排灣": "pwn-x-vnrn",
-        "中排灣": "pwn-x-pnvn", "南排灣": "pwn-x-ynvl",
-    },
-    "布農": {
-        "卓群": "bnn-x-td", "卡群": "bnn-x-bkh",
-        "丹群": "bnn-x-vtn", "巒群": "bnn-x-bnz",
-        "郡群": "bnn-x-isbk",
-    },
-    "卑南": {
-        "南王": "pyu-x-pym", "知本": "pyu-x-ktrp",
-        "西群": "pyu-x-mkzy", "建和": "pyu-x-ksvk",
-    },
-    # 規範寫「霧臺」，檔名寫「霧台」——查表進前正規化（見 _key）。
-    "魯凱": {
-        "東魯凱": "dru-x-trmk", "霧台": "dru-x-ngdr",
-        "大武": "dru-x-lbw", "多納": "dru-x-kgdv",
-        "茂林": "dru-x-tldr", "萬山": "dru-x-opnh",
-    },
-    # 檔名寫「德路固」，規範寫「德鹿谷賽德克語」——仝一个，賽德克底下ê
-    # 變體。莫佮「太魯閣語」（trv-x-truku）濫做伙：兩爿 ISO 碼相仝，
-    # 毋過是無仝ê語言。
-    "賽德克": {
-        "都達": "trv-x-td", "德固達雅": "trv-x-tgdy",
-        "德鹿谷": "trv-x-trk", "德路固": "trv-x-trk",
-    },
-}
-
-
-def _variety_owner(name):
-    """The language a variety名 belongs to, when it names one on its own.
-
-    `98-東魯凱-無字幕.mp4` writes the variety where the language goes, so a
-    reverse lookup is needed. It refuses a name claimed by two languages
-    rather than picking one, though the standard has no such name today.
-    """
-    owners = []
-    for language in sorted(VARIETIES):
-        if name in VARIETIES[language]:
-            owners.append(language)
-    if len(owners) == 1:
-        return owners[0]
-    return None
-
-
-def _key(token):
-    """One token, normalised for lookup: no brackets, no 語, 臺 as 台."""
-    token = re.sub(r"[（(][^）)]*[）)]", "", token).strip()
-    if token.endswith("語"):
-        token = token[:-1]
-    return token.replace("臺", "台")
+# 族語別／語言別ê對照表蹛 `scripts/languages.py`（兩爿語料公家用）。
+# 本底伊佇遮，族語新聞這馬嘛愛填 `語言別代號`，若叫 news 去 import
+# aiyalaeho，依賴ê方向就顛倒去，所以搬去頂層。
+UNKNOWN = languages.UNKNOWN
+LANGUAGES = languages.LANGUAGES
+VARIETIES = languages.VARIETIES
+_variety_owner = languages.variety_owner
+_key = languages.key
+code_for = languages.code_for
 
 
 def _tokens(stem):
@@ -269,20 +176,6 @@ def source_path(entry_or_name):
     return os.path.join(paths.SOURCE, os.path.basename(name))
 
 
-def code_for(language, variety):
-    """The language tag: a private variety tag, else the ISO 639 code.
-
-    A variety the standard does not list -- `083-魯凱語-非霧台` is the one
-    in this batch -- keeps its wording in the 語言別 column and falls back
-    to the language's own code. Inventing a tag would put a code in the
-    delivered table that means nothing to anybody else.
-    """
-    table = VARIETIES.get(language) or {}
-    if variety and variety in table:
-        return table[variety]
-    return LANGUAGES[language][1]
-
-
 def parse(file_name, language="", probe=None):
     """(entry, problem) for one video file name.
 
@@ -327,19 +220,12 @@ def parse(file_name, language="", probe=None):
         "族語別(英)": english,
         "族語別(中)": found,
         "語言別": variety,
-        "語言代號": code_for(found, variety),
-        # Registered, not delivered. The store's claim is that it can
-        # rebuild whatever it names, and there is nothing to rebuild from
-        # yet; `publish` clears the flag once the batch is finished.
-        "pending": True,
+        "語言別代號": code_for(found, variety),
+        # 檔名ê字幕狀態字樣（`無字幕`／`僅華語字幕`）就是這集袂使做
+        # 雙語交付ê理由。`備註` 非空ê彼幾集入字幕版型異常表——兩張表
+        # 欄位完全相仝，彼是唯一ê自我宣告。
+        "備註": subtitle_state(tokens),
     }
-    reason = subtitle_state(tokens)
-    if reason:
-        # Only these carry the two extra fields: a bilingual episode's
-        # length comes from its timeline in 1-cues/, and adding an empty
-        # column to forty entries would be a column that means nothing.
-        entry["理由"] = reason
-        entry["影片長度秒"] = (probe or _probe_duration)(source_path(entry))
     return entry, ""
 
 
@@ -380,7 +266,7 @@ def merge(planned, existing):
 
 
 def annotate(entries, named=None, probe=None):
-    """Fill in `理由` and `影片長度秒` where they are missing.
+    """Fill in `備註` where it is missing.
 
     `merge()` leaves a registered entry exactly as it is -- that is what
     protects a name somebody corrected by hand -- so bringing the four
@@ -396,7 +282,6 @@ def annotate(entries, named=None, probe=None):
     Returns [(srt_name, field, value)…] -- what actually changed, so the
     caller can print it and skip writing when nothing did.
     """
-    probe = probe or _probe_duration
     wanted = None
     if named is not None:
         wanted, reason = named
@@ -405,22 +290,18 @@ def annotate(entries, named=None, probe=None):
                 "--annotate ê理由袂使是空ê：欲寫啥理由愛講出來，"
                 "親像 '%s=無字幕'" % wanted)
         if not _has(entries, wanted):
-            raise PipelineError("inventory 內底無 %s 這集" % wanted)
+            raise PipelineError("節目目錄內底無 %s 這集" % wanted)
 
     changed = []
     for entry in entries:
         name = entry["srt_name"]
         if wanted is not None and name != wanted:
             continue
-        if not entry.get("理由"):
+        if not entry.get("備註"):
             found = reason if wanted is not None else _reason_of(entry)
             if found:
-                entry["理由"] = found
-                changed.append((name, "理由", found))
-        if entry.get("理由") and not entry.get("影片長度秒"):
-            seconds = probe(source_path(entry))
-            entry["影片長度秒"] = seconds
-            changed.append((name, "影片長度秒", seconds))
+                entry["備註"] = found
+                changed.append((name, "備註", found))
     return changed
 
 
@@ -439,16 +320,47 @@ def _reason_of(entry):
     return subtitle_state(tokens)
 
 
-def write(entries, path=None):
-    """Write the inventory back, entries in registration order."""
-    target = path or paths.INVENTORY
-    folder = os.path.dirname(target)
-    if folder:
-        os.makedirs(folder, exist_ok=True)
-    with open(target, "w", encoding="utf-8") as handle:
-        json.dump(entries, handle, ensure_ascii=False, indent=2,
-                  sort_keys=True)
-    return target
+def row_of(entry):
+    """一筆條目 → 節目目錄彼一逝（九欄）。"""
+    return {
+        "成果檔名": entry["srt_name"],
+        "節目名稱": PROGRAMME,
+        "集數": entry["集數"],
+        "族語別(英)": entry["族語別(英)"],
+        "族語別(中)": entry["族語別(中)"],
+        "語言別": entry["語言別"],
+        "語言別代號": entry["語言別代號"],
+        "原始影片檔案位置": entry["video"],
+        "備註": entry.get("備註", ""),
+    }
+
+
+FIELDS = list(checks.head(checks.EPISODE_KEYS)) + [
+    "原始影片檔案位置", "備註"]
+
+
+def write(entries, table=None, abnormal_table=None):
+    """寫兩張節目目錄表。`備註` 非空ê彼幾集入字幕版型異常表。
+
+    本底這爿寫ê是 `inventory.json`。彼份檔ê逐一欄對兩張表推導會出來
+    （驗過 44 筆零處無仝），所以提掉；登記這个動作這馬就是「照來源
+    資料夾ê影片檔清單重寫這兩張表」。
+    """
+    normal, abnormal = [], []
+    for entry in entries:
+        row = row_of(entry)
+        (abnormal if row["備註"] else normal).append(row)
+    normal.sort(key=lambda one: one["成果檔名"])
+    abnormal.sort(key=lambda one: one["成果檔名"])
+    for path, rows in ((table or paths.TRACKER_STORE, normal),
+                       (abnormal_table or paths.ABNORMAL_STORE, abnormal)):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8-sig", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=FIELDS)
+            writer.writeheader()
+            for row in rows:
+                writer.writerow(row)
+    return len(normal), len(abnormal)
 
 
 def listing(folder=None, only=""):
@@ -496,7 +408,7 @@ def _annotate_cli(args):
                 "'開會了_106_Paiwan_排灣=無字幕'；收著ê是 %r" % args.annotate)
         named = (paths.check_srt_name(name.strip()), reason.strip())
 
-    entries = paths.load_inventory()
+    entries = episodes.load()
     changed = annotate(entries, named=named)
     for srt_name, field, value in changed:
         print("set   %-30s %s = %s" % (srt_name, field, value))
@@ -512,16 +424,16 @@ def main(argv=None):
     ap.add_argument("videos", nargs="*",
                     help="檔名（無寫就是規个來源資料夾）")
     ap.add_argument("-n", "--dry-run", action="store_true",
-                    help="報告欲登記啥，毋寫入 inventory")
+                    help="報告欲登記啥，一字都無寫")
     ap.add_argument("--only", default="",
                     help="干焦檔名合這个 regex ê")
     ap.add_argument("--language", action="append", metavar="檔名=族語別",
                     help="人判過ê族語別，予檔名講無ê彼幾支用")
     ap.add_argument("--annotate", nargs="?", const="", default=None,
                     metavar="srt_name=理由",
-                    help="補既有條目ê「理由」佮「影片長度秒」；無寫參數"
-                         "就是照檔名補規份，寫 srt_name=理由 就是指名"
-                         "（量測抑是人判ê結果按呢寫入）")
+                    help="補既有條目ê「備註」；無寫參數就是照檔名補規份，"
+                         "寫 srt_name=理由 就是指名（量測抑是人判ê結果"
+                         "按呢寫入）")
     args = ap.parse_args(argv)
 
     if args.annotate is not None:
@@ -531,8 +443,8 @@ def main(argv=None):
     entries, skipped = resolve(names, _overrides(args.language))
 
     existing = []
-    if os.path.exists(paths.INVENTORY):
-        existing = paths.load_inventory()
+    if os.path.exists(paths.TRACKER_STORE):
+        existing = episodes.load()
     merged, added = merge(entries, existing)
 
     for entry in added:
@@ -542,7 +454,7 @@ def main(argv=None):
 
     if not args.dry_run and added:
         write(merged)
-    print("\n登記 %d 集%s，跳過 %d 支；inventory 這馬有 %d 集"
+    print("\n登記 %d 集%s，跳過 %d 支；節目目錄這馬有 %d 集"
           % (len(added), "" if not args.dry_run else "（試跑，無寫入）",
              len(skipped), len(merged)))
     if skipped:

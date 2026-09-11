@@ -17,6 +17,7 @@ import tempfile
 import unittest
 from unittest import mock
 
+from scripts import datadirs
 from scripts.news import paths, rebuild
 
 
@@ -52,3 +53,58 @@ class TestOnlyBatchTsvs(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestStageContainment(unittest.TestCase):
+    """下跤ê階段愛是頂懸階段ê子集。
+
+    一集一个階段做煞就家己入 Kari-SRT（時間軸幾點鐘、Claude Vision 幾
+    十點鐘），所以「`1-cues` 有 75 集、`3-srt` 才 40 集」是正常狀態，
+    毋是缺件。倒轉來就是錯：`3-srt` 有一份 SRT，`1-cues` 無彼集ê時間
+    軸，彼份交付物重建袂出來——伊毋知影對佗位來ê。
+
+    孤兒檔嘛是按呢掠ê。
+    """
+
+    def test_downstream_missing_upstream_is_named(self):
+        problems = datadirs.stage_problems([
+            ("1-cues", {"a", "b"}),
+            ("2-vision", {"a", "b"}),
+            ("3-srt", {"a", "b", "c"}),
+        ])
+        # 只比頂懸彼一站：鏈仔家己會傳遞，比規組ê話仝一个名會講三擺
+        self.assertEqual(len(problems), 1)
+        self.assertIn("c", problems[0])
+        self.assertIn("2-vision", problems[0])
+
+    def test_it_says_which_layer_is_missing(self):
+        problems = datadirs.stage_problems([
+            ("1-cues", {"a", "b"}),
+            ("2-vision", {"a"}),
+            ("3-srt", {"a", "b"}),
+        ])
+        self.assertEqual(len(problems), 1)
+        self.assertIn("2-vision", problems[0])
+        self.assertIn("b", problems[0])
+
+    def test_upstream_running_ahead_is_fine(self):
+        # 1-cues 75 集、3-srt 40 集——分階段入庫就是按呢。
+        self.assertEqual(datadirs.stage_problems([
+            ("1-cues", set("abcdefgh")),
+            ("2-vision", set("abcd")),
+            ("3-srt", set("ab")),
+        ]), [])
+
+    def test_all_equal_is_fine(self):
+        self.assertEqual(datadirs.stage_problems([
+            ("1-cues", {"a"}), ("2-vision", {"a"}), ("3-srt", {"a"}),
+        ]), [])
+
+    def test_every_missing_name_is_named_not_just_the_first(self):
+        problems = datadirs.stage_problems([
+            ("1-cues", set()),
+            ("3-srt", {"x", "y"}),
+        ])
+        self.assertEqual(len(problems), 2)
+        self.assertIn("x", " ".join(problems))
+        self.assertIn("y", " ".join(problems))

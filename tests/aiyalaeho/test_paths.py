@@ -7,7 +7,6 @@ text, which nothing reports.
 """
 import json
 import os
-import tempfile
 import unittest
 
 from scripts.aiyalaeho import paths
@@ -57,8 +56,6 @@ class TestStoreLayout(unittest.TestCase):
         self.assertNotIn(paths.KARI, paths.LEXICON_REMOTE)
 
     def test_tables_live_at_the_corpus_level(self):
-        self.assertEqual(paths.INVENTORY,
-                         os.path.join(paths.AIYA_STORE, "inventory.json"))
         self.assertEqual(paths.TRACKER_STORE,
                          os.path.join(paths.AIYA_STORE, "smkul.csv"))
 
@@ -275,104 +272,6 @@ class TestStagePath(unittest.TestCase):
         # slug＝srt_name：新語料無 news 彼段「work dir 改名會孤兒化」ê歷史。
         self.assertEqual(paths.work_dir(NAME),
                          os.path.join(paths.WORK, NAME + ".work"))
-
-
-class TestInventory(unittest.TestCase):
-    def _entry(self, **over):
-        entry = {
-            "file": "068-阿美語-秀姑巒-雙語字幕.mp4",
-            "video": "ilrdf-corpus/族語節目/開會了/"
-                     "068-阿美語-秀姑巒-雙語字幕.mp4",
-            "srt_name": NAME,
-            "節目名稱": "開會了",
-            "集數": "68",
-            "族語別(英)": "Amis",
-            "族語別(中)": "阿美",
-            "語言別": "秀姑巒",
-            "語言代號": "ami-x-skl",
-            "pending": True,
-        }
-        entry.update(over)
-        return entry
-
-    def _write(self, entries):
-        handle = tempfile.NamedTemporaryFile(
-            "w", suffix=".json", delete=False, encoding="utf-8")
-        json.dump(entries, handle, ensure_ascii=False)
-        handle.close()
-        return handle.name
-
-    def test_a_full_entry_loads(self):
-        got = paths.load_inventory(self._write([self._entry()]))
-        self.assertEqual(got[0]["srt_name"], NAME)
-        self.assertEqual(got[0]["語言代號"], "ami-x-skl")
-
-    def test_a_missing_field_says_which(self):
-        entry = self._entry()
-        del entry["語言代號"]
-        with self.assertRaises(PipelineError) as caught:
-            paths.load_inventory(self._write([entry]))
-        self.assertIn("語言代號", str(caught.exception))
-
-    def test_an_undeclared_field_is_refused(self):
-        # 條目是照宣告一欄一欄重建ê，無宣告ê會佇寫轉去 store 時無去。
-        entry = self._entry(播出日期="2021-01-01")
-        self.assertRaises(PipelineError, paths.load_inventory,
-                          self._write([entry]))
-
-    def test_optional_fields_may_be_absent(self):
-        entry = self._entry()
-        del entry["pending"]
-        del entry["file"]
-        got = paths.load_inventory(self._write([entry]))
-        self.assertNotIn("pending", got[0])
-
-    def test_the_name_is_checked_on_the_way_in(self):
-        entry = self._entry(srt_name="../x")
-        self.assertRaises(PipelineError, paths.load_inventory,
-                          self._write([entry]))
-
-
-class TestAbnormalFields(TestInventory):
-    """字幕版型異常集ê兩个新欄位：理由、影片長度秒。
-
-    理由非空就是異常集——伊行袂過這个節目雙列雙語ê流程，毋管理由是
-    檔名標ê（`無字幕`／`僅華語字幕`）、量測判ê（`版型不符：…`）抑是
-    人看 sheet 判ê（`人工判定：…`）。
-
-    長度ê欄名寫做「影片長度秒」，佮 smkul.csv 彼欄「影片長度」分開：
-    表彼欄是「時:分:秒」，inventory 這欄是浮點ê秒數。仝名無仝款式，
-    人拍開檔案會看無——`Kari-SRT/` ê物件愛人讀有。
-    """
-
-    def test_the_two_new_fields_are_last(self):
-        # 條目是照這張表一欄一欄重建ê，順序換去等於規份 diff，所以
-        # 新欄位干焦會使加佇尾溜。
-        self.assertEqual(paths.INVENTORY_FIELDS[-2:],
-                         ("理由", "影片長度秒"))
-
-    def test_both_are_optional(self):
-        # 雙語集無這兩欄；舊條目嘛無。
-        for field in ("理由", "影片長度秒"):
-            self.assertIn(field, paths.INVENTORY_OPTIONAL)
-
-    def test_an_entry_carrying_them_loads(self):
-        got = paths.load_inventory(self._write([
-            self._entry(理由="無字幕", 影片長度秒=2969.967)]))
-        self.assertEqual(got[0]["理由"], "無字幕")
-        self.assertEqual(got[0]["影片長度秒"], 2969.967)
-
-    def test_an_entry_without_them_still_loads(self):
-        got = paths.load_inventory(self._write([self._entry()]))
-        self.assertNotIn("理由", got[0])
-        self.assertNotIn("影片長度秒", got[0])
-
-    def test_the_reason_survives_the_round_trip(self):
-        # `catalogue` 佮 `publish` kā條目原樣寫轉去 store——理由若佇
-        # 重建ê時無去，異常表隔轉工就空一半。
-        reason = "版型不符：字幕逝 y=1005..1014 無囥佇任何一个宣告ê槽內"
-        got = paths.load_inventory(self._write([self._entry(理由=reason)]))
-        self.assertEqual(got[0]["理由"], reason)
 
 
 class TestAbnormalTablePaths(unittest.TestCase):

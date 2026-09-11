@@ -1,6 +1,8 @@
 """make_srt: the slate guard, source priority, and rebuild's missing-input
 failure (the srt-data-store spec's "缺件時明確失敗" scenario)."""
+import json
 import os
+import shutil
 import tempfile
 import unittest
 from unittest import mock
@@ -41,10 +43,43 @@ class TestEntriesFrom(unittest.TestCase):
                          [(0.0, 1.0, "有字")])
 
 
+class TestNoQcSummaryFile(unittest.TestCase):
+    """組裝了後 SRT 邊仔無仝名ê .qc.json。
+
+    彼份摘要（cue 數、有字 cue 數、SRT 行數）無半个生產程式咧讀——
+    `make_all` 佮 `rebuild` 用ê是 `run()` ê**回傳值**，毋是彼个檔；
+    `rebuild --verify` 嘛無比對伊。逐一个數字對時間軸佮交付 SRT 當場
+    算會出來，愛予人看ê逐集數字應該囥一張逐集 CSV，毋是散做一集
+    一个細檔。
+    """
+
+    def test_main_writes_the_srt_but_no_qc_json(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        work = os.path.join(tmp, "20210201_032.work")
+        timeline = paths.coarse_cues(work)
+        os.makedirs(os.path.dirname(timeline))
+        with open(timeline, "w", encoding="utf-8") as handle:
+            json.dump({"duration": 10.0, "refined": True,
+                       "cues": [{"index": 1, "start": 1.0, "end": 2.0}]},
+                      handle, ensure_ascii=False, indent=2, sort_keys=True)
+        with open(os.path.join(work, "transcripts.json"), "w",
+                  encoding="utf-8") as handle:
+            json.dump({"1": {"han": "有字"}}, handle, ensure_ascii=False,
+                      indent=2, sort_keys=True)
+
+        out = os.path.join(tmp, "20210201_032.srt")
+        make_srt.main([work, "-o", out])
+
+        self.assertTrue(os.path.exists(out))
+        self.assertFalse(os.path.exists(os.path.splitext(out)[0] + ".qc.json"))
+
+
 class TestRebuildMissingInputs(unittest.TestCase):
     """Missing pieces are named and fail the run -- no partial delivery."""
 
-    ENTRY = {"srt_name": "20210201_032_午間_Atayal_泰雅", "truncated": ""}
+    ENTRY = {"srt_name": "20210201_032_午間_Atayal_泰雅",
+             "pending": False}
 
     def test_missing_cues_json_is_named(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -58,14 +93,13 @@ class TestRebuildMissingInputs(unittest.TestCase):
         self.assertIn("cues/20210201_032_午間_Atayal_泰雅.json", text)
         self.assertIn("no vision TSVs", text)
 
-    def test_truncated_episodes_need_no_inputs(self):
-        entry = {"srt_name": "whatever", "truncated": "上傳不完整"}
-        with tempfile.TemporaryDirectory() as tmp:
-            with mock.patch.object(paths, "KARI_CUES", tmp), \
-                    mock.patch.object(paths, "KARI_VISION", tmp), \
-                    mock.patch.object(paths, "SRT_DIR", tmp):
-                problems = rebuild.check_inputs([entry])
-        self.assertEqual(problems, [])
+    def test_a_pending_episode_needs_no_inputs(self):
+        """猶未做ê集數毋是缺件。
+
+        表有 969 逝、階段目錄才 75 集——分階段入庫ê正常狀態。
+        """
+        entry = {"srt_name": "whatever", "pending": True}
+        self.assertEqual(rebuild.check_inputs([entry]), [])
 
 
 if __name__ == "__main__":

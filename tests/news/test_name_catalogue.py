@@ -1,4 +1,4 @@
-"""name_catalogue：kā `srt_name` 這欄寫入目錄，予外部單位看有。
+"""name_catalogue：kā `成果檔名` 這欄寫入目錄，予外部單位看有。
 
 `srt_name` 本底是**推算**出來的（`resolve_slug.srt_name`），目錄內底無這
 欄。毋過交出去的檔案、smkul.csv、佮外部單位講話攏用這个名，所以目錄嘛
@@ -18,23 +18,24 @@ import unittest
 from scripts.news import name_catalogue
 
 
-HEAD = ["節目名稱", "年度", "集數", "播出日期", "播出時段",
-        "族語別(英)", "族語別(中)", "有無影片", "影片檔案位置"]
+HEAD = ["節目名稱", "年度", "集數", "播出日期",
+        "族語別(英)", "族語別(中)", "語言別", "語言別代號",
+        "原始影片檔案位置", "備註"]
 
 
 def row(**over):
     entry = {"節目名稱": "午間族語新聞", "年度": "2021", "集數": "1",
-             "播出日期": "2021-01-01", "播出時段": "午間",
+             "播出日期": "2021-01-01",
              "族語別(英)": "Rukai", "族語別(中)": "魯凱",
-             "有無影片": "是", "影片檔案位置": "ilrdf-corpus/魯凱語.mp4"}
+             "語言別": "", "語言別代號": "dru",
+             "原始影片檔案位置": "ilrdf-corpus/魯凱語.mp4", "備註": ""}
     entry.update(over)
     return entry
 
 
-def meeting_row():
-    """《開會了》：無年度嘛無播出日期，命袂出名。"""
-    return row(節目名稱="開會了", 年度="", 集數="79", 播出日期="",
-               播出時段="", **{"族語別(英)": "", "族語別(中)": ""})
+def unnameable_row():
+    """節目名稱對袂著任何一个播出時段——命袂出名，留空。"""
+    return row(節目名稱="特別節目")
 
 
 class TestNameOf(unittest.TestCase):
@@ -47,18 +48,18 @@ class TestNameOf(unittest.TestCase):
         self.assertEqual(name_catalogue.name_of(row(集數="7"))[9:12], "007")
 
     def test_a_row_the_catalogue_cannot_name_is_empty_not_a_crash(self):
-        # 《開會了》46 逝就是按呢。留空，莫烏白掠一个名。
-        self.assertEqual(name_catalogue.name_of(meeting_row()), "")
+        # 節目名稱對袂著時段ê時：留空，莫烏白掠一个名。
+        self.assertEqual(name_catalogue.name_of(unnameable_row()), "")
 
     def test_a_non_numeric_episode_is_empty_too(self):
         self.assertEqual(name_catalogue.name_of(row(集數="待補")), "")
 
 
 class TestNamed(unittest.TestCase):
-    def test_srt_name_goes_first(self):
+    def test_the_name_column_goes_first(self):
         # 外部單位掀開就看著，毋免捲到上尾。
         out, head = name_catalogue.named([row()], HEAD)
-        self.assertEqual(head[0], "srt_name")
+        self.assertEqual(head[0], "成果檔名")
 
     def test_the_other_columns_keep_their_order(self):
         out, head = name_catalogue.named([row()], HEAD)
@@ -67,7 +68,7 @@ class TestNamed(unittest.TestCase):
     def test_the_input_rows_are_not_touched(self):
         original = row()
         name_catalogue.named([original], HEAD)
-        self.assertNotIn("srt_name", original)
+        self.assertNotIn("成果檔名", original)
 
     def test_running_it_twice_changes_nothing(self):
         once, head = name_catalogue.named([row()], HEAD)
@@ -78,19 +79,19 @@ class TestNamed(unittest.TestCase):
     def test_a_stale_value_is_overwritten_not_kept(self):
         # 手改過ê值無算數：算法是唯一ê正本。
         stale = row()
-        stale["srt_name"] = "亂寫的"
-        out, _ = name_catalogue.named([stale], ["srt_name"] + HEAD)
-        self.assertEqual(out[0]["srt_name"], "20210101_001_午間_Rukai_魯凱")
+        stale["成果檔名"] = "亂寫的"
+        out, _ = name_catalogue.named([stale], ["成果檔名"] + HEAD)
+        self.assertEqual(out[0]["成果檔名"], "20210101_001_午間_Rukai_魯凱")
 
 
 class TestCheck(unittest.TestCase):
     def test_a_consistent_catalogue_reports_nothing(self):
-        out, head = name_catalogue.named([row(), meeting_row()], HEAD)
+        out, head = name_catalogue.named([row(), unnameable_row()], HEAD)
         self.assertEqual(name_catalogue.check(out), [])
 
     def test_a_hand_edited_cell_is_caught(self):
         out, head = name_catalogue.named([row()], HEAD)
-        out[0]["srt_name"] = "20210101_001_午間_Rukai_魯凱X"
+        out[0]["成果檔名"] = "20210101_001_午間_Rukai_魯凱X"
         bad = name_catalogue.check(out)
         self.assertEqual(len(bad), 1)
         line, stored, wanted = bad[0]
@@ -112,7 +113,7 @@ class TestRoundTrip(unittest.TestCase):
             writer = csv.DictWriter(out, HEAD, lineterminator="\r\n")
             writer.writeheader()
             writer.writerow(row())
-            writer.writerow(meeting_row())
+            writer.writerow(unnameable_row())
 
     def test_it_keeps_the_bom(self):
         name_catalogue.rewrite(self.path)
@@ -128,10 +129,10 @@ class TestRoundTrip(unittest.TestCase):
     def test_the_column_is_there_after_a_rewrite(self):
         name_catalogue.rewrite(self.path)
         rows, head = name_catalogue.read(self.path)
-        self.assertEqual(head[0], "srt_name")
-        self.assertEqual(rows[0]["srt_name"],
+        self.assertEqual(head[0], "成果檔名")
+        self.assertEqual(rows[0]["成果檔名"],
                          "20210101_001_午間_Rukai_魯凱")
-        self.assertEqual(rows[1]["srt_name"], "")
+        self.assertEqual(rows[1]["成果檔名"], "")
 
     def test_a_rewrite_is_idempotent_byte_for_byte(self):
         name_catalogue.rewrite(self.path)

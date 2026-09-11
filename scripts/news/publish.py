@@ -1,52 +1,34 @@
 #!/usr/bin/env python3
-"""Copy an episode's process data into Kari-SRT, the canonical store.
+"""Put an episode's timeline into Kari-SRT.
 
-    python3 -m scripts.news.publish            # every finished episode
+    python3 -m scripts.news.publish            # every cut, refined episode
     python3 -m scripts.news.publish --check    # report, write nothing
 
-`make_all.py` writes the deliverable SRTs straight into news/1-ocr/3-srt/, and
-the vision TSVs are written there by the readers themselves. What is left is
-the per-episode data that `rebuild.py` needs to put an SRT back together
-without touching a video: `cues/<srt_name>.json` and the inventory it
-walks. A one-off migration script did this once for
-the February batch; this does it for every batch after.
+三个階段逐个各自入庫。`make_all.py` kā交付ê SRT 直接寫入
+news/1-ocr/3-srt/，Claude Vision 彼爿家己kā TSV 寫入 2-vision/——剩ê
+就是 `rebuild.py` 欲kā SRT 組轉來所需ê彼份：`1-cues/<成果檔名>.json`。
 
-This is also where the store smkul.csv is written. make_all keeps a work
-copy
-in kithann/out/ that it can refresh as often as it likes; only the version
-written here is a deliverable. The reason is that a mid-batch row says which
-step an episode is stuck at, and that lives in the work dir -- which rebuild
-does not have, so it could never rebuild such a table byte-for-byte.
+**視覺辨識讀煞才准入庫彼道門提掉矣。** 時間軸切好、精修好就入庫，
+免等彼幾十點鐘ê閱讀。理由：彼幾十點鐘ê成果囥佇工作區——gitignore ê
+所在——連一份備份都無。捌有一集ê時間軸干焦賰工作目錄一份，而且伊ê
+母帶已經刣掉矣。
 
-Only episodes whose vision pass is finished are published. A half-read
-episode has no SRT yet, so shipping its cues would put an input in the store
-for a deliverable that is not there -- exactly the inconsistency
-`rebuild --verify` exists to catch.
+猶原擋落來ê干焦兩項：無時間軸、時間軸猶未精修。粗切佮精修精度差
+一个數量級（0.2 秒 vs 0.05 秒），兩種濫做伙ê話，`1-cues/` 就無法度
+直接宣告「內底逐一份攏是精修過ê」。
 
-The unit of that judgement is **one episode**, not a batch. It was the whole
-inventory once, then a broadcast month (2026-08-31), and is now per-episode
-(2026-09-09) -- because each of the two narrowings found the same thing: the
-wider unit was holding finished work hostage to unrelated work. January had
-58 episodes not yet cut, and that kept 006午 -- cut, refined, read and
-verified -- out of the store, while the only copy of its timeline sat in a
-work dir whose master had already been deleted.
-
-Per-episode stays self-consistent because no episode vouches for another:
-`publishable` already demands that this episode was cut, refined and fully
-read; `smkul.csv` lists only the non-pending ones; and `rebuild --verify`
-walks only the non-pending ones. Publishing one moves that one from pending
-to delivered and puts its own inputs in the store. Nothing is claimed about
-the rest.
+這爿無閣寫 `smkul.csv` 矣——彼是節目目錄，人維護ê輸入。嘛無閣清
+`pending`：某一集做到佗一步，答案佇階段目錄。
 """
 import argparse
 import json
 import os
 import sys
 
-from scripts.news import make_all
+from scripts import datadirs
+from scripts.news import episodes
 from scripts.news import paths
 from scripts.news import redump_store
-from scripts.news import tracker
 from scripts.errors import PipelineError
 
 WORK = paths.WORK
@@ -59,18 +41,12 @@ def publishable(entry):
     whose work dir has been cleared away is simply nothing to do: its inputs
     are in the store, which is exactly why the work dir was safe to delete.
     """
-    if entry["truncated"]:
-        return "", "略過（%s）" % entry["truncated"]
-    # The .B.work dir is the one make_all assembled the SRT from, so it is
-    # the one whose cues.json the store must hold.
-    work = os.path.join(WORK, entry["slug"] + ".B.work")
+    work = paths.work_dir(entry["slug"], WORK)
     # Asked through the helper, so every layout the timeline can arrive in
     # counts. Spelling `<work>/cues.json` out here reads a staged work dir
     # as uncut, and the batch is then held back for the wrong reason.
     if paths.cues_to_read(work) is None:
         return "", "尚未切cue"
-    if not make_all.vision_complete(work):
-        return "", "視覺辨識尚未讀完"
     return work, ""
 
 
@@ -97,7 +73,7 @@ def gate(entries, month=None):
     for entry in entries:
         if month is not None and paths.month_of(entry["srt_name"]) != month:
             continue
-        if not tracker.is_pending(entry):
+        if not entry["pending"]:
             continue
         _work, reason = publishable(entry)
         if reason:
@@ -150,54 +126,14 @@ def publish_one(entry, work, cues_dir=None):
     os.makedirs(os.path.dirname(target), exist_ok=True)
     with open(source, encoding="utf-8") as handle:
         manifest = json.load(handle)
+    body = redump_store.dump(datadirs.store_timeline(manifest))
+    if os.path.exists(target):
+        with open(target, encoding="utf-8") as handle:
+            if handle.read() == body:
+                return []
     with open(target, "w", encoding="utf-8") as handle:
-        handle.write(redump_store.dump(manifest))
+        handle.write(body)
     return [os.path.basename(folder)]
-
-
-def delivered_status(entry):
-    """The tracker status for an episode that is already in the store.
-
-    Read back off the store rather than carried over from make_all, and
-    without re-running the assembly: `rebuild` counts the same lines out of
-    the same file, so a row built here is the row it will rebuild.
-    """
-    if entry["truncated"]:
-        return tracker.skipped_status(entry["truncated"])
-    name = entry["srt_name"]
-    with open(paths.stage_path(paths.SRT_DIR, name, ".srt"),
-              encoding="utf-8") as handle:
-        srt_lines = handle.read().count("-->")
-    return tracker.vision_status(srt_lines)
-
-
-def write_deliverable_tracker(entries):
-    rows = tracker.tracker_rows(entries, delivered_status)
-    path = paths.TRACKER_STORE
-    tracker.write_tracker(rows, path)
-    return path
-
-
-def clear_pending(entries, published):
-    """Drop the pending flag from the episodes actually written this run.
-
-    `published` is the set of srt_names that were. It used to clear every
-    pending flag in the inventory, which was right while publishing was
-    whole-inventory; now that one episode can go out while its neighbours
-    are still being read, clearing them all would mark unread episodes
-    delivered -- the store would claim deliverables that are not there.
-    """
-    cleared = 0
-    for entry in entries:
-        if entry["srt_name"] not in published:
-            continue
-        if tracker.is_pending(entry):
-            del entry["pending"]
-            cleared += 1
-    with open(paths.INVENTORY, "w", encoding="utf-8") as handle:
-        json.dump(entries, handle, ensure_ascii=False, indent=2,
-                  sort_keys=True)
-    return cleared
 
 
 def main(argv=None):
@@ -206,7 +142,7 @@ def main(argv=None):
                     help="report what would be published, write nothing")
     args = ap.parse_args(argv)
 
-    entries = paths.load_inventory()
+    entries = episodes.load()
 
     # Decide everything before writing anything. The unit is one episode:
     # each is judged by `publishable` alone, and an unfinished one holds
@@ -232,22 +168,16 @@ def main(argv=None):
               % (len(ready), len(entries)))
         return 0
 
+    written = 0
     for entry, work in ready:
-        written = publish_one(entry, work)
-        print("write %-46s %s" % (entry["srt_name"], ", ".join(written)))
+        if publish_one(entry, work):
+            written += 1
+            print("write %s" % entry["srt_name"])
+        else:
+            print("same  %s" % entry["srt_name"])
 
-    # There is no inventory to copy: it lives in the store already, and
-    # add_episodes writes it there directly. This used to overwrite the
-    # store's copy with a second one kept in the main repo, which is how the
-    # two could disagree about which episodes exist. What is written back is
-    # the same file with the pending flags gone.
-    published = set()
-    for entry, _work in ready:
-        published.add(entry["srt_name"])
-    cleared = clear_pending(entries, published)
-    path = write_deliverable_tracker(entries)
-    print("\npublished %d of %d episode(s); %d no longer pending; wrote %s"
-          % (len(ready), len(entries), cleared, os.path.basename(path)))
+    print("\n%d 集ê時間軸入庫（%d 集內容相仝，無重寫）"
+          % (written, len(ready) - written))
     print("next: python3 -m scripts.news.rebuild --verify")
     return 0
 

@@ -19,14 +19,13 @@ and the batch moves on to the next one.
 """
 import argparse
 import contextlib
-import csv
 import json
 import os
 import subprocess
 import sys
 
+from scripts.news import episodes
 from scripts.news import paths
-from scripts.news import resolve_slug
 from scripts.news import sources
 from scripts.transcode import audio_tracks
 from scripts.errors import PipelineError
@@ -44,89 +43,32 @@ ENCODE_SCRIPT = os.path.join(HERE, "encode_master.sh")
 SFTP_SCRIPT = os.path.join(paths.ROOT, "scripts", "news", "sftp.sh")
 
 
-def _cell_path(cell, slot):
-    """One catalogue cell -> the path naming this slot, or None.
-
-    Defensive: the master catalogue sometimes packs several paths into
-    one cell separated by ";" (see asrmt_run.mp3_remote).
-    """
-    candidates = []
-    for part in cell.split(";"):
-        if part.strip():
-            candidates.append(part.strip())
-    if not candidates:
-        return None
-    for part in candidates:
-        if slot in part:
-            return part
-    return candidates[0]
-
-
-def master_remote(srt_name, catalogue_rows, rows, inventory):
+def master_remote(srt_name, entries):
     """The best master this episode has, on the SFTP host.
 
-    Ask the **catalogue** first, not `smkul.csv`. The two answer different
-    questions and only one of them is about masters:
-
-    - `smkul.csv` records which file this SRT was *made from* -- one path,
-      fixed at delivery, and correctly never revised.
-    - the catalogue's cell is a *candidate list*, and `sources.pick()`
-      applies 「mxf 母帶優先」 to it.
-
-    February's first 13 episodes were delivered before `sources.py`
-    existed, from the `7月/` mp4s. Their masters are still on the server,
-    but asking `smkul.csv` returns the mp4, `is_master()` says no, and all
-    13 are silently skipped -- which is exactly what happened when the
-    archives were backfilled.
-
-    Falls back to `video_remote` when the catalogue does not know the
-    episode, so an episode registered by hand still archives.
+    目錄佮交付表合做一張了後，這爿干焦一个來源矣。彼欄是**候選清單**，
+    `sources.pick()` kā「mxf 母帶優先」彼條規矩套落去——毋是提交付ê
+    彼支。二月頭 13 集是佇 `sources.py` 出世進前交ê，對 `7月/` ê mp4
+    做ê；in ê母帶猶佇伺服器頂，毋過若問「這支 SRT 對佗位來」，答案是
+    mp4，`is_master()` 講毋是，13 集就恬恬去予跳過——封存補做彼擺就
+    是按呢。
     """
-    for row in catalogue_rows:
-        if row.get("srt_name") != srt_name:
+    for entry in entries:
+        if entry.get("srt_name") != srt_name:
             continue
-        chosen, _ = sources.pick(row)
+        chosen, _ = sources.pick(entry)
         if chosen:
             return _expand(chosen)
-    return video_remote(srt_name, rows, inventory=inventory)
+        chosen = (entry.get("video") or "").split(";")[0].strip()
+        if chosen:
+            return _expand(chosen)
+    raise PipelineError("節目目錄內底無 %s ê影片" % srt_name)
 
 
 def _expand(chosen):
     if chosen.startswith(FEB_MXF_SHORTHAND):
         chosen = FEB_MXF_REAL_DIR + chosen[len(FEB_MXF_SHORTHAND):]
     return REMOTE_ROOT + "/" + chosen
-
-
-def video_remote(srt_name, rows, inventory=None):
-    """The episode's master path on the SFTP host.
-
-    `rows` is the delivered `smkul.csv`, which is the source of truth --
-    but it deliberately omits `pending` episodes, and archiving happens
-    *while* an episode is pending: `fetch_sftp.sh` keeps the master staged
-    the moment the cues are cut, precisely so a 19 GB file is not fetched
-    twice, and that is long before `publish` clears the flag.
-
-    So a miss falls back to the inventory, which is the registry and lists
-    every episode registered, pending or delivered. Without this the
-    per-episode flow dies with "no video in smkul.csv", which reads like
-    the catalogue is wrong when nothing is wrong at all.
-    """
-    date = "%s-%s-%s" % (srt_name[0:4], srt_name[4:6], srt_name[6:8])
-    slot = srt_name.split("_")[2]
-    for row in rows:
-        if row["播出日期"] != date or row["播出時段"] != slot:
-            continue
-        chosen = _cell_path(row["影片檔案位置"].strip(), slot)
-        if chosen is None:
-            continue
-        return _expand(chosen)
-    for entry in inventory or []:
-        if entry.get("srt_name") != srt_name:
-            continue
-        chosen = (entry.get("video") or "").strip()
-        if chosen:
-            return _expand(chosen)
-    raise PipelineError("smkul.csv 佮 inventory 攏無 %s ê影片" % srt_name)
 
 
 # Where the archival copies also live, on the server, laid out by broadcast
@@ -169,26 +111,23 @@ def remote_archive_path(srt_name):
                           paths.check_srt_name(srt_name))
 
 
-def master_episodes(catalogue):
+def master_episodes(entries):
     """[(srt_name, remote path)] for every episode whose source is a master.
 
-    Built from the catalogue rather than from `smkul.csv`, which lists only
-    delivered episodes: archiving a master has nothing to do with how far
-    the subtitle work has got. Which file is the episode's is decided by the
-    same rules everything else uses (`sources.py`), so an episode archived
-    here and the same episode fetched by the pipeline are the same file.
+    節目目錄涵蓋全部集數（猶未讀字幕ê嘛在內）——封存母帶佮字幕做到佗
+    位無關係。揀佗一支是照逐位攏用ê彼套規則（`sources.py`），所以遮
+    封存ê佮流程抓ê是仝一支檔。
     """
     rows = []
-    for row in catalogue.rows:
+    for row in entries:
         if row.get("播出日期"):
             rows.append(row)
     out = []
     for row, (video, _problem) in zip(rows, sources.resolve(rows)):
         if not video or not is_master(video):
             continue
-        try:
-            name = resolve_slug.srt_name(row, int(row["集數"]))
-        except (PipelineError, KeyError, ValueError):
+        name = row.get("srt_name") or row.get("成果檔名")
+        if not name:
             continue
         # The catalogue's paths are already relative to REMOTE_ROOT
         # ("ilrdf-corpus/…"); normalising would strip that and point one
@@ -501,14 +440,14 @@ def run_all_masters(args):
     os.makedirs(paths.STAGE, exist_ok=True)
     os.makedirs(paths.MKV_ARCHIVE, exist_ok=True)
 
-    episodes = master_episodes(resolve_slug.load())
+    masters = master_episodes(episodes.load())
     todo = []
-    for name, remote in episodes:
+    for name, remote in masters:
         if already_done(name):
             continue
         todo.append((name, remote))
-    print("目錄內底 %d 支母帶，猶未封存 %d 支"
-          % (len(episodes), len(todo)))
+    print("節目目錄內底 %d 支母帶，猶未封存 %d 支"
+          % (len(masters), len(todo)))
     # Applied before the listing, not after: `--list` answers "is this the
     # set I meant?", and a list that does not match what dropping --list
     # would actually do is the worst kind of wrong documentation.
@@ -588,10 +527,7 @@ def main(argv=None):
     os.makedirs(paths.STAGE, exist_ok=True)
     os.makedirs(paths.MKV_ARCHIVE, exist_ok=True)
 
-    entries = paths.load_inventory()
-    catalogue = resolve_slug.load().rows
-    with open(paths.TRACKER_STORE, encoding="utf-8-sig", newline="") as handle:
-        rows = list(csv.DictReader(handle))
+    entries = episodes.load()
 
     done = []
     failed = []
@@ -619,8 +555,6 @@ def main(argv=None):
                 failed.append((name, str(error)))
                 print("FAILED:", name, "--", error, flush=True)
             continue
-        if entry.get("truncated"):
-            continue
         # A pending episode is fair game here: the master is on disk right
         # now, straight out of the cue cutting, and this is the one moment
         # it does not have to be fetched again. Waiting for `publish` would
@@ -631,7 +565,7 @@ def main(argv=None):
             continue
         if args.limit and len(done) + len(failed) >= args.limit:
             break
-        remote = master_remote(name, catalogue, rows, entries)
+        remote = master_remote(name, entries)
         if not is_master(remote):
             continue
         print("==", name, flush=True)

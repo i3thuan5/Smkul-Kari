@@ -5,15 +5,19 @@ This is the store's core promise in executable form -- code plus
 byte, with no video and no model. If it holds, everything in the
 workspace really is a cache.
 """
+import csv
 import json
 import os
 import shutil
 import tempfile
 import unittest
+from unittest import mock
 
+from scripts import catalogue_checks as checks
+from scripts import datadirs
+from scripts.aiyalaeho import episodes
 from scripts.aiyalaeho import paths
 from scripts.aiyalaeho import rebuild
-from scripts.aiyalaeho import tracker
 from scripts.aiyalaeho.langcheck import report
 from scripts.errors import PipelineError
 
@@ -27,7 +31,6 @@ class Store(unittest.TestCase):
         self.srt = os.path.join(self.tmp, "3-srt")
         for folder in (self.cues, self.vision, self.srt):
             os.makedirs(folder)
-        self.inventory = os.path.join(self.tmp, "inventory.json")
         self.table = os.path.join(self.tmp, "smkul.csv")
         self.abnormal = os.path.join(self.tmp, "smkul-字幕版型異常.csv")
         self.lexicons = os.path.join(self.tmp, "詞庫")
@@ -37,7 +40,6 @@ class Store(unittest.TestCase):
         self._patch(paths, "KARI_CUES", self.cues)
         self._patch(paths, "KARI_VISION", self.vision)
         self._patch(paths, "SRT_DIR", self.srt)
-        self._patch(paths, "INVENTORY", self.inventory)
         self._patch(paths, "TRACKER_STORE", self.table)
         self._patch(paths, "ABNORMAL_STORE", self.abnormal)
         self._patch(paths, "LEXICON_DIR", self.lexicons)
@@ -63,44 +65,37 @@ class Store(unittest.TestCase):
                          pending=False):
         """登記矣、有理由、`1-ocr/` 底下一隻檔都無ê集。"""
         name = "開會了_%03d_Atayal_泰雅" % number
-        entry = {
-            "file": "%d-泰雅語-無字幕.mp4" % number,
-            "video": "ilrdf-corpus/族語節目/開會了/%d-泰雅語-無字幕.mp4"
-                     % number,
-            "srt_name": name,
+        self.entries.append({
+            "成果檔名": name,
             "節目名稱": "開會了",
             "集數": str(number),
             "族語別(英)": "Atayal",
             "族語別(中)": "泰雅",
             "語言別": "",
-            "語言代號": "tay",
-            "理由": reason,
-            "影片長度秒": seconds,
-        }
-        if pending:
-            entry["pending"] = True
-        self.entries.append(entry)
-        self._write_inventory()
+            "語言別代號": "tay",
+            "原始影片檔案位置":
+                "ilrdf-corpus/族語節目/開會了/%d-泰雅語-無字幕.mp4" % number,
+            "備註": reason,
+        })
+        self._write_tables()
         self.deliver()
         return name
 
     def episode(self, number, cues=2, rows=True, pending=False,
                 deliver=True):
         name = "開會了_%03d_Amis_阿美" % number
-        entry = {
-            "file": "%03d-x.mp4" % number,
-            "video": "ilrdf-corpus/族語節目/開會了/%03d-x.mp4" % number,
-            "srt_name": name,
+        self.entries.append({
+            "成果檔名": name,
             "節目名稱": "開會了",
             "集數": str(number),
             "族語別(英)": "Amis",
             "族語別(中)": "阿美",
             "語言別": "",
-            "語言代號": "ami",
-        }
-        if pending:
-            entry["pending"] = True
-        self.entries.append(entry)
+            "語言別代號": "ami",
+            "原始影片檔案位置":
+                "ilrdf-corpus/族語節目/開會了/%03d-x.mp4" % number,
+            "備註": "",
+        })
 
         manifest = {"duration": 3000.0,
                     "lines": [{"name": "formosan", "y": 12, "h": 60},
@@ -124,26 +119,41 @@ class Store(unittest.TestCase):
                       encoding="utf-8") as handle:
                 handle.write("\n".join(lines) + "\n")
 
-        self._write_inventory()
+        self._write_tables()
         if deliver:
             self.deliver()
         return name
 
-    def _write_inventory(self):
-        with open(self.inventory, "w", encoding="utf-8") as handle:
-            json.dump(self.entries, handle, ensure_ascii=False)
+    def _write_tables(self):
+        head = list(checks.head(checks.EPISODE_KEYS)) + [
+            "原始影片檔案位置", "備註"]
+        normal, abnormal = [], []
+        for row in sorted(self.entries, key=lambda one: one["成果檔名"]):
+            (abnormal if row["備註"] else normal).append(row)
+        for path, rows in ((self.table, normal),
+                           (self.abnormal, abnormal)):
+            with open(path, "w", encoding="utf-8-sig",
+                      newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=head)
+                writer.writeheader()
+                for row in rows:
+                    writer.writerow(row)
 
     def deliver(self):
-        """Produce the deliverables the way the pipeline would have."""
-        built = rebuild.rebuild_all()
+        """Produce the deliverables the way the pipeline would have.
+
+        `pending` 是問「`3-srt/` 有無彼支」——交付品猶未產出ê時逐集
+        攏是 pending，所以遮愛明講「這幾集當做已交付」，若無會啥物
+        攏無組。
+        """
+        entries = episodes.load()
+        for entry in entries:
+            entry["pending"] = False
+        built = rebuild.rebuild_all(entries)
         for name in built["srt"]:
             with open(os.path.join(self.srt, name + ".srt"), "w",
                       encoding="utf-8") as handle:
                 handle.write(built["srt"][name])
-        tracker.write_tracker(built["rows"], self.table)
-        if built["abnormal"]:
-            tracker.write_tracker(built["abnormal"], self.abnormal,
-                                  tracker.ABNORMAL_FIELDS)
         report.write_table(paths.LANGCHECK_MARKS, report.MARK_HEADER,
                            built["lang_marks"])
         report.write_table(paths.LANGCHECK_DIST, report.DIST_HEADER,
@@ -177,11 +187,17 @@ class TestRebuild(Store):
             handle.write("\n999\n00:00:01,000 --> 00:00:02,000\n族語：x\n")
         self.assertEqual(rebuild.verify(), [name + ".srt"])
 
-    def test_a_changed_table_is_reported(self):
+    def test_a_hand_broken_row_is_named_by_line_and_column(self):
+        """表這馬是輸入——逐 byte 比對無意義矣，換做不變量。
+
+        逐 byte 干焦會講「smkul.csv 對袂起來」，不變量會講是佗一逝、
+        佗一欄、按怎毋著。
+        """
         self.episode(68)
-        with open(self.table, "a", encoding="utf-8") as handle:
-            handle.write("開會了,99,Amis,阿美,,ami,x,,開會了_099_Amis_阿美\n")
-        self.assertEqual(rebuild.verify(), ["smkul.csv"])
+        self.entries[0]["語言別代號"] = "amis"
+        self._write_tables()
+        problems = rebuild.verify()
+        self.assertTrue(any("amis" in p for p in problems), problems)
 
 
 class TestMissing(Store):
@@ -194,7 +210,7 @@ class TestMissing(Store):
     def test_missing_transcripts_are_named(self):
         name = self.episode(68)
         shutil.rmtree(os.path.join(self.vision, name))
-        problems = rebuild.check_inputs(paths.load_inventory())
+        problems = rebuild.check_inputs(episodes.load())
         self.assertEqual(len(problems), 1)
         self.assertIn(name, problems[0])
 
@@ -202,56 +218,52 @@ class TestMissing(Store):
         # 登記矣、猶未做煞ê集數：無交付品嘛袂使予驗證失敗。
         self.episode(68)
         self.entries.append({
-            "file": "085-x.mp4",
-            "video": "ilrdf-corpus/族語節目/開會了/085-x.mp4",
-            "srt_name": "開會了_085_Amis_阿美",
+            "成果檔名": "開會了_085_Amis_阿美",
             "節目名稱": "開會了", "集數": "85",
             "族語別(英)": "Amis", "族語別(中)": "阿美",
-            "語言別": "", "語言代號": "ami", "pending": True})
-        self._write_inventory()
-        self.assertEqual(rebuild.check_inputs(paths.load_inventory()), [])
+            "語言別": "", "語言別代號": "ami",
+            "原始影片檔案位置": "ilrdf-corpus/族語節目/開會了/085-x.mp4",
+            "備註": ""})
+        self._write_tables()
+        self.assertEqual(rebuild.check_inputs(episodes.load()), [])
         self.assertEqual(rebuild.verify(), [])
 
 
 class TestAbnormalTable(Store):
-    """第二張表嘛愛干焦靠 store 逐 byte 重建會出來。"""
+    """字幕版型異常表這馬是**輸入**，驗ê是不變量毋是逐 byte。
 
-    def test_it_is_rebuilt_and_compared(self):
-        self.episode(68)
+    兩張表欄位完全相仝，分別干焦佇「這一逝佇佗一个檔」——所以「異常
+    表逐逝ê `備註` 愛非空」是彼張表唯一ê自我宣告。有人kā一逝徙毋著
+    檔ê話，對欄位看袂出來。
+    """
+
+    def test_an_abnormal_episode_needs_no_inputs(self):
         self.abnormal_episode(88)
         self.assertEqual(rebuild.verify(), [])
 
-    def test_a_changed_second_table_is_reported(self):
-        self.episode(68)
+    def test_a_blank_note_is_named(self):
         self.abnormal_episode(88)
-        with open(self.abnormal, "a", encoding="utf-8") as handle:
-            handle.write("開會了,99,Amis,阿美,,ami,x,,開會了_099_Amis_阿美,"
-                         "無字幕\n")
-        self.assertEqual(rebuild.verify(),
-                         [os.path.basename(self.abnormal)])
+        # 空備註ê彼逝會予 `_write_tables` 排去正常表，所以家己寫
+        head = list(checks.head(checks.EPISODE_KEYS)) + [
+            "原始影片檔案位置", "備註"]
+        row = dict(self.entries[0], 備註="")
+        with open(self.abnormal, "w", encoding="utf-8-sig",
+                  newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=head)
+            writer.writeheader()
+            writer.writerow(row)
+        problems = rebuild.verify()
+        self.assertTrue(any("開會了_088_Atayal_泰雅" in p for p in problems))
 
-    def test_its_length_comes_from_the_inventory_not_a_video(self):
-        self.episode(68)
-        self.abnormal_episode(88, seconds=2969.967)
-        rebuild.verify()
-        with open(self.abnormal, encoding="utf-8-sig") as handle:
-            self.assertIn("00:49:30", handle.read())
-
-    def test_a_missing_second_table_is_named(self):
-        self.episode(68)
+    def test_a_broken_language_code_is_named(self):
         self.abnormal_episode(88)
-        os.remove(self.abnormal)
-        with self.assertRaises(PipelineError):
-            rebuild.verify()
+        self.entries[0]["語言別代號"] = "atayal"
+        self._write_tables()
+        self.assertTrue(any("atayal" in p for p in rebuild.verify()))
 
-    def test_no_abnormal_episodes_means_no_second_table_is_required(self):
+    def test_no_abnormal_episodes_is_fine(self):
         self.episode(68)
-        self.assertFalse(os.path.exists(self.abnormal))
         self.assertEqual(rebuild.verify(), [])
-
-
-if __name__ == "__main__":
-    unittest.main()
 
 
 class TestLanguageTables(Store):
@@ -297,3 +309,47 @@ class TestLanguageTables(Store):
         with self.assertRaises(PipelineError) as caught:
             rebuild.verify()
         self.assertIn("阿美", str(caught.exception))
+
+
+class TestStageContainment(unittest.TestCase):
+    """下跤階段愛是頂懸ê子集——本語料ê store 無月份彼層。
+
+    `3-srt` 有一份 SRT、`1-cues` 無彼集ê時間軸，彼份交付物重建袂出來。
+    倒轉來（`1-cues` 39 集、`3-srt` 才 20 集）是分階段入庫ê正常狀態。
+    """
+
+    def _store(self, cues, vision, srt):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        made = {}
+        for stage, names, ext in (("1-cues", cues, ".json"),
+                                  ("2-vision", vision, ""),
+                                  ("3-srt", srt, ".srt")):
+            base = os.path.join(tmp.name, stage)
+            os.makedirs(base)
+            made[stage] = base
+            for name in names:
+                path = os.path.join(base, name + ext)
+                if ext:
+                    with open(path, "w", encoding="utf-8") as handle:
+                        handle.write("{}")
+                else:
+                    os.makedirs(path)
+        return made
+
+    def _problems(self, cues, vision, srt):
+        made = self._store(cues, vision, srt)
+        with mock.patch.object(rebuild.paths, "KARI_CUES", made["1-cues"]), \
+             mock.patch.object(rebuild.paths, "KARI_VISION",
+                               made["2-vision"]), \
+             mock.patch.object(rebuild.paths, "SRT_DIR", made["3-srt"]):
+            return datadirs.stage_problems(rebuild.stage_names())
+
+    def test_an_srt_with_no_timeline_is_named(self):
+        problems = self._problems(["a"], ["a"], ["a", "b"])
+        self.assertEqual(len(problems), 1)
+        self.assertIn("b", problems[0])
+
+    def test_upstream_running_ahead_is_fine(self):
+        self.assertEqual(self._problems(["a", "b", "c"], ["a", "b"], ["a"]),
+                         [])

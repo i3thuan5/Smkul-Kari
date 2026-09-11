@@ -136,12 +136,9 @@ def main(argv=None):
     args.work = paths.check_under(args.work, "work")
     args.out = paths.check_under(args.out, "-o/--out")
 
-    qc = run(args.work, args.out)
-    with open(os.path.splitext(args.out)[0] + ".qc.json", "w",
-              encoding="utf-8") as handle:
-        json.dump(qc, handle, ensure_ascii=False, indent=2,
-                  sort_keys=True)
-    print(json.dumps(qc, ensure_ascii=False))
+    # 印出來就好，無另外落一份 .qc.json：彼幾个數字無人讀，
+    # `rebuild --verify` 嘛無比對，對時間軸佮交付 SRT 當場算會出來。
+    print(json.dumps(run(args.work, args.out), ensure_ascii=False))
     return 0
 
 

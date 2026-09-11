@@ -147,12 +147,8 @@ def main(argv=None):
     work = paths.check_under(args.work, "work")
     out = paths.check_under(args.out, "-o/--out")
 
-    qc = run(work, out)
-    with open(os.path.splitext(out)[0] + ".qc.json", "w",
-              encoding="utf-8") as handle:
-        json.dump(qc, handle, ensure_ascii=False, indent=2,
-                  sort_keys=True)
-    print(json.dumps(qc, ensure_ascii=False))
+    # 印出來就好，無另外落一份 .qc.json——理由仝 news 彼爿。
+    print(json.dumps(run(work, out), ensure_ascii=False))
     return 0
 
 

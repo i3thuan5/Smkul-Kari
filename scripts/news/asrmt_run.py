@@ -39,7 +39,9 @@ from scripts.asrmt import judge
 from scripts.asrmt import mtclient
 from scripts.asrmt import project
 from scripts.news import make_srt
+from scripts.news import episodes
 from scripts.news import paths
+from scripts.news import sources
 from scripts.news import rebuild
 from scripts.srtlib import assemble
 from scripts import lowpri
@@ -103,35 +105,42 @@ def model_id_of(ethnicity):
     return MODEL_ID % fixed
 
 
-def _mp3_cell_path(cell, slot):
-    """One catalogue cell -> the path naming this slot, or None.
+def audio_source(entry):
+    """這集ê影片，予抽音軌用ê。
 
-    The catalogue sometimes packs several paths into one cell separated
-    by ";" -- pick the one naming this slot.
+    影片ê正本佇遠端，毋過這條流程本底就會kā伊抓落來切 cue。所以揣ê
+    順序是：本機暫存ê原檔 → 本機封存 mkv → 攏無ê時照節目目錄ê
+    `原始影片檔案位置` 對遠端提（佮切 cue 仝一條路、仝一組憑證）。
+
+    本底這爿是問目錄ê `音檔位置(mp3)`，直接抓伺服器頂ê mp3。彼一欄
+    推導袂出來——量過 983 逝，干焦 835 逝ê音檔佮影片仝資料夾仝主檔名，
+    69 逝主檔名無仝（影片帶族語前綴、音檔無），64 逝規氣無仝資料夾，
+    15% 無規則通循。影片位置彼欄是規條流程攏咧用ê，音軌對伊抽就免
+    閣飼第二份路徑。
     """
-    candidates = []
-    for part in cell.split(";"):
-        if part.strip():
-            candidates.append(part.strip())
-    if not candidates:
-        return None
-    for part in candidates:
-        if slot in part:
-            return part
-    return candidates[0]
+    name = entry["srt_name"]
+    staged = os.path.join(paths.STAGE, os.path.basename(entry["file"]))
+    if os.path.exists(staged):
+        return staged, ""
+    archived = os.path.join(paths.MKV_ARCHIVE, name + ".mkv")
+    if os.path.exists(archived):
+        return archived, ""
+    chosen, problem = sources.pick(entry)
+    if not chosen:
+        raise PipelineError("%s：本機無影片，節目目錄嘛揀袂出來源（%s）"
+                            % (name, problem))
+    return "", REMOTE_ROOT + "/" + chosen
 
 
-def mp3_remote(srt_name, rows):
-    """The episode's mp3 path on the SFTP host, from the catalogue."""
-    date = "%s-%s-%s" % (srt_name[0:4], srt_name[4:6], srt_name[6:8])
-    slot = srt_name.split("_")[2]
-    for row in rows:
-        if row["播出日期"] != date or row["播出時段"] != slot:
-            continue
-        chosen = _mp3_cell_path(row["音檔位置(mp3)"].strip(), slot)
-        if chosen is not None:
-            return "/docker/" + chosen
-    raise PipelineError("no mp3 in the catalogue for %s" % srt_name)
+def extract_audio(local_video, out):
+    """對影片抽音軌，落做辨識食ê mp3。"""
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    done = subprocess.run(["ffmpeg", "-nostdin", "-y", "-i", local_video,
+                           "-vn", "-ac", "1", "-ar", "16000", out],
+                          capture_output=True)
+    if done.returncode or not os.path.exists(out):
+        raise PipelineError("對 %s 抽音軌失敗" % local_video)
+    return out
 
 
 AMI_CODES = ["ami_Coas", "ami_Heng", "ami_Mala", "ami_Sout", "ami_Xiug"]
@@ -140,6 +149,9 @@ DIALECT_SAMPLE = 50
 ANCHORS = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                        "anchors_ami.json")
 
+
+# 伺服器頂ê語料根，佮 transcode 彼爿仝款。
+REMOTE_ROOT = "/docker"
 
 _REDO = False
 
@@ -192,7 +204,7 @@ def _workdir(srt_name):
 
 
 def _entry_of(srt_name):
-    for entry in paths.load_inventory():
+    for entry in episodes.load():
         if entry["srt_name"] == srt_name:
             return entry
     raise PipelineError("%s is not in the inventory" % srt_name)
@@ -213,7 +225,7 @@ def _cues_path(srt_name, slug):
     first -- OCR, then 2-srt-raw, then publish -- so looking only in the
     store would mean waiting for a step that is itself waiting for this one.
 
-    `.B.work` is the one that counts: `make_all` assembled the delivered SRT
+    `.work` is the one that counts: `make_all` assembled the delivered SRT
     from it and `publish` moves that same cues.json into the store, so both
     sides read one timeline and the two SRTs stay line-for-line aligned.
     """
@@ -221,7 +233,7 @@ def _cues_path(srt_name, slug):
     if os.path.exists(stored):
         return stored
     work = os.path.join(paths.WORK,
-                        paths.check_name(slug, "slug") + ".B.work")
+                        paths.check_name(slug, "slug") + ".work")
     pending = paths.cues_to_read(work)
     if pending:
         return pending

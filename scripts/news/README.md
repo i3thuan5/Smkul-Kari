@@ -7,7 +7,7 @@
 
 三個位置各司其職：
 
-- **這裡（`scripts/news/`）**：程式與 `presets.json`、`inventory.json`。
+- **這裡（`scripts/news/`）**：程式與 `presets.json`。
 - **`Kari-SRT/` submodule**：資料正本——交付 SRT（`news/1-ocr/3-srt/`）、
   `news/smkul.csv`、每集時間軸 `news/1-ocr/1-cues/`、視覺逐字稿
   `news/1-ocr/2-vision/`；逐集檔案都在階段目錄下的
@@ -27,7 +27,6 @@
 |---|---|---|---|
 | `out/mxf/<slug>.work/` | `fetch_sftp.sh`／`run_cues.sh` 跑 `cues` 步驟 | `cues.json`（時間軸）、`sheets.json`、`sheets/*.png`、`strips/*.png` | 快取，遷入 Kari-SRT 後可刪 |
 | `out/mxf/<slug>.work/transcripts.json` | 有跑 `ocr --engine tesseract` 才有（非預設）| tesseract 辨識草稿 | 快取，不供字，可刪 |
-| `out/mxf/<slug>.B.work/` | `gap_sheets.py` 出 contact sheet | `cues.json`、`sheets.json`、`transcripts.json`、`verified.json`；`strips` 是 symlink 回 `.work/strips` | 快取，可刪 |
 | `out/smkul.csv` | `make_all.py` | 進度表**工作版**（含還沒做完的集數）| 快取，可刪；交付版由 `publish.py` 寫進 Kari-SRT |
 | `out/mxf-logs/<slug>.get.log` | `fetch_sftp.sh` 下載階段 | SFTP `get` 輸出紀錄 | 日誌，可刪 |
 | `out/mxf-logs/<slug>.cues.log` | `fetch_sftp.sh` 切 cue 階段 | `cues` 指令 stdout/stderr | 日誌，可刪 |
@@ -46,7 +45,7 @@ python3 -m scripts.news.rebuild --verify   # 通過的集數＝已交付集數
 ```
 
 集數、cue 數、族語涵蓋一律以 `Kari-SRT/news/smkul.csv` 與
-`Kari-SRT/news/inventory.json` 為準。第一批（2021-02）的來由值得記著：
+`Kari-SRT/news/smkul.csv` 為準。第一批（2021-02）的來由值得記著：
 本機 24 個 mxf 母帶扣掉 2 個上傳不完整，另從 `110.1-110.10/7月/` 的 mp4
 補齊族語涵蓋——其中 037晚 排灣就是那兩個壞檔之一，mp4 版本完整、救回來
 了；041午 鄒兩個來源都是同一份短檔，照做但標 `partial`。
@@ -81,13 +80,12 @@ bash    scripts/news/fetch_sftp.sh 2021-03      # 先加 --limit 2 試跑
 **已在本機的影片**（2 月那批 mxf 就是這樣做的）：
 
 ```bash
-python3 -m scripts.news.add_episodes <路徑>… # 1. 影片 → 節目資料 → SRT 檔名
-bash    scripts/news/run_cues.sh                 # 2. 切 cue（約 2.5 小時，I/O 綁死）
-# 3. 視覺辨識：subagent 一批讀 4 張 sheet、直接把 TSV 寫進磁碟
+bash    scripts/news/run_cues.sh                 # 1. 切 cue（約 2.5 小時，I/O 綁死）
+# 2. 視覺辨識：subagent 一批讀 4 張 sheet、直接把 TSV 寫進磁碟
 python3 -m scripts.news.ingest <slug> <tsv 目錄>   # 驗證＋匯入
-python3 -m scripts.news.make_all          # 4. 產 SRT（進度表寫 kithann/out/）
-python3 -m scripts.news.publish           # 5. 遷資料＋定版 smkul.csv
-python3 -m scripts.news.rebuild --verify  # 6. 驗離線重建
+python3 -m scripts.news.make_all          # 3. 產 SRT（直接寫 1-ocr/3-srt/）
+python3 -m scripts.news.publish           # 4. 時間軸入庫 1-ocr/1-cues/
+python3 -m scripts.news.rebuild --verify  # 5. 驗離線重建
 ```
 
 **補特定幾集**（不是整個月，例如把某幾個族語從 0 集補到 2 集）：
@@ -96,43 +94,34 @@ python3 -m scripts.news.rebuild --verify  # 6. 驗離線重建
 # 1. 只抓指定的幾支：--only 是對「檔名」比對的 ERE
 bash scripts/news/fetch_sftp.sh 2021-02 \
      --only '^(21NL005_37晨間|21NL004_37晚間)族語新聞\.mp4$'
-# 2. 把這幾集寫進 inventory（影片已經刪掉了，所以只能用檔名查目錄）
-python3 -m scripts.news.add_episodes '族語新聞/110.1-110.10/7月/21NL005_37晨間族語新聞.mp4' …
-# 3. 出 contact sheet（全部 cue 都上）
+# 2. 出 contact sheet（全部 cue 都上）
 python3 -m scripts.news.gap_sheets <slug> …
-# 4. 視覺辨識 → ingest → make_all（同上）
-# 5. publish：逐集判斷，做好的就定版、清 pending、遷 cues
+# 3. 視覺辨識 → ingest → make_all（同上）
+# 4. publish：切好精修好的時間軸就入庫，不必等視覺辨識讀完
 python3 -m scripts.news.publish
 python3 -m scripts.news.rebuild --verify
 ```
 
 `--only` 存在的理由是磁碟：一個月動輒上百支、幾百 GB，補三支不該用
-`--limit` 從頭數。`add_episodes.py` 存在的理由是**一集一集指定路徑**這條
-路仍然要有：`plan_month.py` 依規則挑不出來的集數（全語料 8 集）判定之後
-就走這條補做，被寫掉的來源找回來時也是。已經在 inventory 裡的集數會跳過，
-只有標記 `truncated` 的會被新來源取代。
+`--limit` 從頭數。
 
-### `pending`：登記了，但還沒做完
+### 做到哪一步：問階段目錄，不問欄位
 
-`inventory.json` 的正本在 `Kari-SRT/`（spec 說主 repo 只放程式／測試／文件）。
-但登記必須發生在校讀之前——`batches.py`、`ingest.py` 都要靠它查每集的
-`srt_name`。所以 `add_episodes.py` 寫進去的集數帶 `"pending": true`：
+節目目錄（`Kari-SRT/news/smkul.csv`）從第一天就涵蓋全部 969 集——有影片的
+每一集都有一列，不管做了沒有。它是**輸入**，人維護的，沒有任何一欄記處理
+狀態：
 
-- `rebuild --verify` **跳過** pending 集數，不要求它們的 cues／TSV／SRT
-- `smkul.csv` 的交付版也**不列** pending 集數
-- `publish.py` 逐集判斷：這一集做完就清掉旗標、定版；同批其他集未完成不會擋住它（2026-09-09 改逐集，之前是整批）
+- 某集做到哪一步，數階段目錄裡有沒有它的檔就知道，`/news-stage-count` 會
+  把每個階段各有幾集做成表
+- `rebuild --verify` 要驗哪幾集，看 `1-ocr/3-srt/` 實際有哪些檔
+- `publish.py` 逐集判斷：時間軸切好精修好就入庫，**不等視覺辨識讀完**
+  ——那幾十小時的成果放在 gitignore 的工作區，連一份備份都沒有
 
-於是批次做到一半，store 仍然自洽，`rebuild --verify` 全程可以是綠的。三個
-標記語意不重疊：`truncated`（來源不完整，永不交付）、`partial`（已交付但
-來源短）、`pending`（本批還在做）。
+三個階段各自入庫，所以「`1-cues` 有 75 集、`3-srt` 只有 40 集」是正常狀態。
+反過來（`3-srt` 有而 `1-cues` 沒有）才是錯，`rebuild --verify` 用子集不變量
+`3-srt ⊆ 2-vision ⊆ 1-cues` 擋下來。
 
-### 兩份 `smkul.csv`
-
-`make_all.py` 寫 `kithann/out/smkul.csv`，列**全部**集數含還沒做完的，隨時可
-刷新，是給人看進度的。`publish.py` 寫 `Kari-SRT/news/smkul.csv`，只列已交付
-的，而且整批做完才寫。分開的理由是可重建性：「待處理（尚未切cue）」這種狀態
-只存在 work dir，而 `rebuild` 沒有 work dir，重建不出來——交付版裡若有這種
-列，就永遠對不起來了。
+來源殘缺這類「從檔案推不出來、必須由人記」的事實，寫在 `備註` 欄。
 
 每一步都可中斷重跑：`run_cues.sh` 跳過已有 `cues.json` 的 work dir，
 `fetch_sftp.sh` 也是，`gap_sheets.py` 拒絕覆蓋已校讀的 work dir，
@@ -155,7 +144,7 @@ python3 -m scripts.news.rebuild --verify
 **約 1,065 支、2.3 TB**。下載實測 **75 MB/s**，比本機那顆 NTFS-FUSE
 外接碟（42 MB/s）還快，所以從 SFTP 抓比從本機碟讀更划算。
 
-檔名跟 `ilrdf-corpus.csv` 的「影片檔案位置」欄一一對應，整批可以直接由
+檔名跟節目目錄的「原始影片檔案位置」欄一一對應，整批可以直接由
 那份目錄驅動，不必再爬遠端。
 
 ### 連線
@@ -214,7 +203,7 @@ size，不符就重抓、不進解碼。
 
 **「切過了沒」要問兩個地方**（`plan_month.already_cut`）：
 
-1. 本機 work dir——`<slug>.work` 和 `<slug>.B.work` 任一個有 `cues.json`
+1. 本機 work dir——`<slug>.work` 有 `cues.json`
    就算（054–059 那批只有後者）。這份判斷 `make_all` 也要用，所以收在
    `paths.has_cues`，只留一份。
 2. **store**：`1-cues/<月份>/<srt_name>.json`，交付時間軸的正本。
@@ -348,7 +337,7 @@ mp4 是 1920×1080 h264，沒有 soft subtitle。region 一樣是
 
 **檔名不可信，要用畫面驗證。** 五個 2021 年 2 月的檔名年份打成 `20`，
 `21NL004_37午間` 掛的是晚間的 NL 代碼卻是午間。集數其實是「當年第幾天」
-（集 32 ＝ 2 月 1 日），所以用「集數＋時段」查 `ilrdf-corpus.csv` 就夠。
+（集 32 ＝ 2 月 1 日），所以用「集數＋時段」查節目目錄就夠。
 時段取檔名裡的中文字，不取 NL 代碼；再把畫面左下角燒死的族語標章
 （泰雅／撒奇萊雅／Seediq…）截出來跟目錄對照，24 個檔全部相符。
 
@@ -365,7 +354,7 @@ mp4 是 1920×1080 h264，沒有 soft subtitle。region 一樣是
   「約完整檔 45%」完全吻合——伺服器上兩個位置是同一份短檔。
 
 所以「來源短缺」跟「這一份抓壞了」是兩件事：前者換來源沒用，後者換就好。
-041午 鄒照樣做成 SRT（有總比沒有好），inventory 多一個 `partial` 欄，
+041午 鄒照樣做成 SRT（有總比沒有好），那件事記在節目目錄的 `備註` 欄，
 `make_all.tracker_row()` 把它接在狀態後面 —— 掛在 `tracker_row()` 而不是
 產 SRT 的地方，`rebuild.py` 才不會跟 `make_all.py` 講不一樣的話。
 
@@ -447,13 +436,13 @@ mp4 是 1920×1080 h264，沒有 soft subtitle。region 一樣是
 
 - `Kari-SRT/news/smkul.csv`：集數、播出日期、播出時段、族語別、影片位置、
   字幕狀態。查 `055午` 就是揣「集數 55、時段 午間」彼逝。
-- `Kari-SRT/ilrdf-corpus.csv`：閣有 `srt_name` 彼欄，就是檔名。
+- `Kari-SRT/news/smkul.csv`：頭一欄 `成果檔名` 就是檔名。
 
 檔名揣著了後，欲揣ê物件佇：
 
 | 物件 | 路徑 |
 |---|---|
-| 圖條佮 strips | `kithann/out/mxf/<slug>.B.work/` |
+| 圖條佮 strips | `kithann/out/mxf/<slug>.work/` |
 | 視覺辨識 TSV | `Kari-SRT/news/1-ocr/2-vision/<月份>/<srt_name>/b*.tsv` |
 | 交付ê SRT | `Kari-SRT/news/1-ocr/3-srt/<月份>/<srt_name>.srt` |
 | Cue 時間 | `Kari-SRT/news/1-ocr/1-cues/<月份>/<srt_name>.json` |
@@ -850,7 +839,7 @@ crop（`crop=1920:360:0:690`）才看會著。這條已經寫入 brief。
 負例）。**樣本猶少，拄著新ê病灶愛kā伊加入去重校**——數字囥佇
 `blank_runs.py` ê `EDGE_INK`／`EDGE_SHARE`，改一擺就好。
 
-圖條是囥佇 work dir（`kithann/out/mxf/<slug>.B.work/strips/`）ê，會
+圖條是囥佇 work dir（`kithann/out/mxf/<slug>.work/strips/`）ê，會
 重生毋過嘛會予人清掉。Work dir 無矣ê集數，這支報「無圖條通量」，
 **毋是**報「無代誌」——兩句話無仝款。
 
@@ -1313,15 +1302,13 @@ sheet 讀了一遍，還多花了建兩次 contact sheet 的工。真正的價�
 
 | | |
 |---|---|
-| `add_episodes.py` | 逐支指定路徑寫 inventory；**合併不覆蓋**，已在的跳過 |
-| `add_episodes.py` | 補登 SFTP 抓來的集數（影片已刪，只剩檔名可查）|
 | `run_cues.sh` | 複製到本機 → 切 cue |
-| `gap_sheets.py` | 把全部 cue 做成 contact sheet（`.B.work`）|
+| `gap_sheets.py` | 把全部 cue 做成 contact sheet（`<slug>.work/sheets/`）|
 | `batches.py` | 列出一集還沒讀的 sheet，照 `prompt.SIZE` 切批 |
 | `ingest.py` | 驗證 TSV（格式＋cue 編號歸屬）並匯入 |
 | `make_srt.py` | 單集組裝 SRT |
 | `make_all.py` | 全部組裝＋寫進度表工作版 |
-| `tracker.py` | `smkul.csv` 的欄位與單列組法，三方共用 |
+| `episodes.py` | 節目目錄讀出來ê逐集條目；`slug`／`file`／`pending` 攏是推導ê（`inventory.json` 提掉矣）|
 | `sftp.sh` | SFTP 包裝：密碼只以檔案存在，處理 BatchMode／askpass 兩個坑 |
 | `sftp-askpass.sh` | 給 OpenSSH 讀密碼檔的 hook（`SSH_ASKPASS`）|
 | `fetch_sftp.sh` | 吃播出月份；逐集：下載 → 驗位元組 → 驗band → 切cue → 精修 → **刪影片** |
@@ -1331,11 +1318,10 @@ sheet 讀了一遍，還多花了建兩次 contact sheet 的工。真正的價�
 | `rescan_band.py` | kā一段用毋著帶切ê cue 重切、接轉去、規集重新編號（五項用號碼做鍵ê物件做伙徙）|
 | `split_cue.py` | 一條 cue 內底有兩句ê時，佇量出來ê彼點kā伊剖開（`images` 留原本ê，strip 免改名）|
 | `migrate_strips.py` | Strip 檔名對序號換做起始時間；`scripts/ocr/stripname.py` 是號名ê所在 |
-| `migrate_workdirs.py` | 舊 work dir ê平 `cues.json` 徙入階段目錄（帶 `refined` ê入 `2-refined/`，無ê入 `1-cues/`）；冪等，做過矣（news 75 个、《開會了》40 个）|
 | `redump_store.py` | 店面ê JSON 重排做人讀有ê形（縮排、鍵排序、漢字免跳脫）；JSONL 一逝一筆免縮排。干焦改排版，內容無動 |
 | `plan_month.py` | 一批＝一个播出月份：揀來源、登記 pending、出跳過報告 |
 | `sources.py` | 一集配一支檔的四條規則；揀袂出來就跳過並回報 |
-| `resolve_slug.py` | 用 `ilrdf-corpus.csv` 把路徑對成 work dir／SRT 名稱 |
+| `resolve_slug.py` | 用 `news/smkul.csv` 把路徑對成 work dir／SRT 名稱 |
 | `paths.py` | 全部路徑的單一出處；`stage_path()` 是階段目錄唯一出口；`--var` 供 shell 取值 |
 | `publish.py` | 逐集把關→清 `pending`、遷 `cues`、定版 `smkul.csv`（未完成的集只擋自己，不擋同批其他集）|
 | `rebuild.py` | 從 Kari-SRT 離線重建全部 SRT 並逐 byte 驗證 |
@@ -1354,7 +1340,7 @@ sheet 讀了一遍，還多花了建兩次 contact sheet 的工。真正的價�
 - `news/1-ocr/3-srt/<年-月>/<播出日期>_<集數>_<時段>_<族語英>_<族語中>.srt`
 - `news/smkul.csv` —— 進度表（含影片長度欄，由時間軸推導）
 - `news/1-ocr/{1-cues,2-vision}/<年-月>/`、
-  `news/inventory.json` —— 重建 SRT 所需的全部過程資料
+  `news/smkul.csv` —— 重建 SRT 所需的全部過程資料
 
 驗證離線閉環：`python3 -m scripts.news.rebuild --verify` 會只用
 Kari-SRT 的資料重組全部 SRT 並逐 byte 比對，缺件即指名失敗。
@@ -1373,14 +1359,14 @@ Kari-SRT 的資料重組全部 SRT 並逐 byte 比對，缺件即指名失敗。
 
 進 git 的（跟著 repo 走，不用管）：主 repo（程式 `scripts/`、測試
 `tests/`、`.claude/` 說明）＋ `Kari-SRT` submodule（上面那些資料正本，
-**含 `inventory.json`**——它已經不在主 repo 了，不必另外搬）。
+**含 `smkul.csv`**——它已經不在主 repo 了，不必另外搬）。
 
 **不在 git、要自己搬或重建的**：
 
 | | 怎麼辦 |
 |---|---|
 | `kithann/out/mxf/*.work/` | 純快取（strips/sheets 約 15 GB）。**不用搬**，`rebuild --verify` 保證正本可離線重生 |
-| `Kari-SRT/ilrdf-corpus.csv` | 節目目錄正本，`resolve_slug.py`、`plan_month.py` 都要它 |
+| `Kari-SRT/news/smkul.csv` | 節目目錄正本，`resolve_slug.py`、`plan_month.py`、`episodes.py` 都要它 |
 | `.sftp-pass` | 故意不進 git。到新機器**自己在終端機重建**，不要叫 Claude 寫 |
 
 新機器上還要做的：
@@ -1694,9 +1680,8 @@ checkpoint hőng蓋去，改用家己ê context 重起。**兩爿攏靠讀者細
 內底第幾張」，毋是識別碼——cue 一剖開，sheet 重生，第三張就是別段
 節目矣。改做 `t<毫秒八碼>.png`，用該張頭一格 cue ê起始時間。
 
-    python3 -m scripts.news.migrate_workdirs --sheets --write
-
-改名佮 `sheets.json` ê鍵是**做伙改ê**：彼份對照ê鍵就是檔名，干焦改
+遷移ê程式（`migrate_workdirs.py`）做煞就提掉矣；`sheets.build_sheets`
+這馬本底就用起始時間號名。改名佮 `sheets.json` ê鍵是**做伙改ê**：彼份對照ê鍵就是檔名，干焦改
 一爿對照就斷去。實跑：news 7,191 張、《開會了》9,029 張，攏改煞，
 舊命名賰 0 張，檔案總數無變。讀 sheet ê程式（`batches.py`、
 `aiyalaeho/ingest.py`）本底就是讀 `sheets.json` ê對照，無看檔名，
@@ -1713,7 +1698,7 @@ checkpoint hőng蓋去，改用家己ê context 重起。**兩爿攏靠讀者細
 
 #### 遷移ê時掠著ê三項
 
-1. **`.B.work/strips` 是 symlink 指去 `.work/strips`**——兩个 work
+1. **（已無此事）舊底 `.B.work/strips` 是 symlink 指去 `.work/strips`**——兩个 work
    dir 公家一批檔。改一爿ê時是穿過 symlink 改著實體檔，另外彼爿ê
    `cues.json` 就落後矣。判準：新名有、舊名無 ＝ 已經改好。
 2. **`.C.work`（16 个）是舊ê、無仝ê切法**（1085 條對 1188 條），

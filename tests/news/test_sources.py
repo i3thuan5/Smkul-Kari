@@ -16,9 +16,9 @@ CORPUS_111 = "ilrdf-corpus/族語新聞/111.1-111.5/"
 
 def row(slot, paths, **over):
     entry = {"年度": "2021", "集數": "37", "播出日期": "2021-02-06",
-             "播出時段": slot, "族語別(英)": "Paiwan", "族語別(中)": "排灣",
-             "有無影片": "是" if paths else "否",
-             "影片檔案位置": ";".join(paths)}
+             "節目名稱": "%s族語新聞" % slot,
+             "族語別(英)": "Paiwan", "族語別(中)": "排灣",
+             "原始影片檔案位置": ";".join(paths)}
     entry.update(over)
     return entry
 

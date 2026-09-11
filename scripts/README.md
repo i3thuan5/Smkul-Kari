@@ -23,7 +23,7 @@
 `scripts/` 與 `openspec/` 是程式碼與規格，不是資料）。
 
 放頂層是因為 `ocr/` 刻意不依賴 `news/`：這裡放的是 repo 版面與參數
-驗證，兩邊都不擁有；語料專屬的路徑（stage、inventory、catalogue）
+驗證，兩邊都不擁有；語料專屬的路徑（stage、階段目錄）
 留在 `news/paths.py`。
 
 ## lowpri.py——長時間工課ê優先權（頂層，兩側共用）
@@ -31,6 +31,26 @@
 轉檔、解碼這款走幾點鐘ê步數，`be_nice()` kā伊降去 nice 15，才袂kā
 互動ê工課拖牢。`os.nice()` 是**累加**ê，呼叫兩擺就變 30，所以內底
 有擋牢，仝一个行程叫幾擺攏仝款。
+
+## languages.py——族語別佮語言別ê代號對照表（頂層，兩側共用）
+
+`LANGUAGES`（族語別中 → 英文拼法＋ISO 639 三碼）、`VARIETIES`（族語別
+下底ê變體字樣 → 私有標籤）、`code_for()`、佮倒轉查ê `language_of()`／
+`variety_of()`。規範正本（`kithann/規範/` 彼兩份 CSV）是 gitignore ê，
+換一台機器就無去，所以表愛綴 repo 走——規範若改，兩爿做伙改、做伙走
+`tests/languages/`。
+
+本底伊蹛佇 `aiyalaeho/catalogue.py`（彼陣干焦《開會了》對檔名剖語言別
+用著）。族語新聞這馬嘛愛填 `語言別代號`，若叫 news 去 import
+aiyalaeho，依賴ê方向就顛倒去（這馬是 aiyalaeho → news），所以徙來頂層
+——理由佮 `datadirs.py` 仝一條：兩爿攏用著，兩爿攏無擁有伊。
+
+## catalogue_checks.py——節目目錄ê共同欄位佮不變量（頂層，兩側共用）
+
+六張表攏用仝一組欄位起頭，所以「前七欄是啥、按怎驗」愛有一个所在講。
+`smkul.csv` 這馬是**輸入**毋是產出，逐 byte 重算比對無意義矣，
+`rebuild --verify` 對伊ê把關換做這幾條：成果檔名規格佮唯一性、佮識別欄
+互推、`語言別代號` 值域、族語別中英一對一、素材位置非空、列序、孤兒檔。
 
 ## ocr/——影像側引擎（燒印字幕抽取）
 
@@ -74,20 +94,19 @@
 | `asrmt_batch.py` | 語音側整批：逐集 抓音檔→解碼→投影＋render→刪音檔 |
 | `asrmt_run.py` | 語音側單集步驟（預設 words→raw；翻譯佮品質判斷 `--step` 指名） |
 | `anchors_ami.json` | 阿美語錨點表（數詞＋借詞專名，拼法對照模型 lexicon） |
-| `plan_month.py` | 一批＝一个播出月份：揀來源、寫 pending 條目、出跳過報告 |
+| `plan_month.py` | 一批＝一个播出月份：揀來源、出跳過報告（**唯讀**，無寫任何檔）|
 | `sources.py` | 一集配一支檔的規則（母帶優先→時段相符→同名不同夾→一檔一集） |
-| `add_episodes.py`／`resolve_slug.py` | 逐支指定路徑登記；目錄索引與命名 |
-| `fetch_sftp.sh`／`run_cues.sh`／`sftp.sh`／`sftp-askpass.sh` | 影像側抓檔與切 cue（吃播出月份，清單對 inventory 提；密碼只以檔案存在；`sftp.sh` 收動詞＋獨立參數，路徑不進指令字串） |
+| `episodes.py`／`resolve_slug.py` | 節目目錄讀出來ê逐集條目（`slug`／`file`／`pending` 攏是推導ê）；目錄索引與命名 |
+| `fetch_sftp.sh`／`run_cues.sh`／`sftp.sh`／`sftp-askpass.sh` | 影像側抓檔與切 cue（吃播出月份，清單對節目目錄提；密碼只以檔案存在；`sftp.sh` 收動詞＋獨立參數，路徑不進指令字串） |
 | `refine_cues.py`／`verify_band.py` | cue 邊界精修（**愛 `--preset`／`--presets`**，精修愛佮切 cue 用仝一款判準，無講就拒絕走）、字幕帶前驗（順紲驗欄方向：字幕ê右緣有無猶佇比對遮罩內底） |
 | `ocr/stripname.py` | Strip ê檔名：用 cue ê起始時間，因為序號會綴重新編號走 |
 | `blank_runs.py` | 掠 vision TSV 內底ê長連紲空白：字幕印佇帶外ê段會規段變空白 |
 | `rescan_band.py` | 用改正ê帶重切一段，接轉原本ê cue 排、規集重新編號 |
 | `split_cue.py` | 佇量出來ê時間點kā一條 cue 剖做兩條，後壁ê重新編號 |
 | `migrate_strips.py` | Strip ê檔名對 cue 序號換做起始時間（照磁碟頂ê檔案走，毋是照 cue）|
-| `migrate_workdirs.py` | 舊 work dir ê平 `cues.json` 徙入階段目錄（看檔案家己有無 `refined` 決定入 `1-cues/` 抑 `2-refined/`）；冪等，做過矣 |
 | `redump_store.py` | 店面ê JSON 重排做人讀有ê形（縮排、鍵排序、漢字免跳脫）；JSONL 一逝一筆免縮排。干焦改排版，內容無動 |
 | `gap_sheets.py`／`batches.py`／`ingest.py` | 視覺辨識批次的出題與收卷 |
-| `make_srt.py`／`make_all.py`／`publish.py`／`tracker.py`／`rebuild.py` | 組裝、定版、進度表、離線重建驗證 |
+| `make_srt.py`／`make_all.py`／`publish.py`／`rebuild.py` | 組裝、時間軸入庫、離線重建驗證 |
 | `coaxial.py` | 比影像側佮語音側交付ê (index, 起, 迄)——兩爿攏有ê時愛逐條仝款；干焦影像側ê免比（語音側是家己ê一條線）|
 | `name_catalogue.py` | kā `srt_name` 寫入目錄ê**產生欄**（`--check` 重算逐格、對袂起來就 exit 1；CRLF＋BOM 原樣保留） |
 | `blind_cues.py` | 揀出 contact sheet 無真正看著ê cue（`frames × 0.2` 對 `end - start` ê差額），補查ê出題單 |
@@ -108,11 +127,11 @@
 | 檔 | 做什麼 |
 |---|---|
 | `paths.py` | 語料路徑單一出處（`stage_path()` 逐集檔案**無分層**；`check_srt_name` 認 `開會了_<集數3碼>_…`） |
-| `catalogue.py` | 檔名就是這一集：解析集數／族語別／語言別／語言代號＋整批登記；**無讀** `ilrdf-corpus.csv`（彼 46 逝無日期、無族語別，43 逝標無影片煞有影片） |
+| `catalogue.py` | 檔名就是這一集：解析集數／族語別／語言別／語言別代號＋整批寫兩張節目目錄表 |
 | `verify_band.py` | 切 cue 前逐集驗版型：量帶ê色佮字幕列ê位置（門檻攏是量出來ê，見該 README） |
 | `ingest.py` | 兩逝一 cue ê TSV 驗證匯入（cue↔sheet 歸屬、空白列補 tab、干焦提 `b*.tsv`） |
 | `make_srt.py` | 單集組裝：每條兩行帶標籤，走共用組裝鏈（0.5 秒留白仝款） |
-| `make_all.py`／`publish.py`／`tracker.py`／`rebuild.py` | 整批組裝、定版、九欄進度表、離線重建驗證 |
+| `make_all.py`／`publish.py`／`rebuild.py`／`episodes.py` | 整批組裝、時間軸入庫、離線重建驗證、兩張目錄表讀取 |
 | `presets.json` | `aiyalaeho-bilingual`（黃底雙列帶；本底寄佇 `news/presets.json`，這改搬轉來家己遮） |
 | `blobs.py` | 連通元件（8-連通ê `label`／`boxes`，佮「族語逝ê墨底」ê `deepest_bottom`）——環境無 scipy，讀者逐擺家己重寫就逐擺無仝，收做一支才免 |
 | `brief.md` | 視覺辨識讀者判準ê**正本**（逐批ê提示攏對這份提，判準才袂逐批走鐘） |
@@ -120,7 +139,7 @@
 | `langcheck/script.py`／`dictionary.py`／`vocab.py`／`mark.py`／`report.py` | 交付 SRT 逐條ê語言判定：字元分類（Unicode 類別，毋是 ASCII 範圍）、官方族語辭典 xlsx 蒸餾做詞庫（標準函式庫讀，無 openpyxl）、逐族詞庫命中率佮方言別正音、逐條標記、兩張 CSV。**干焦讀 `3-srt/`**，離線、無叫模型；詳見 [Kari-SRT/aiyalaeho/1-ocr/4-語言檢查/README.md](../Kari-SRT/aiyalaeho/1-ocr/4-語言檢查/README.md) |
 
 news 有而遮無ê四支：`fetch_sftp.sh`（素材已經佇本機）、`plan_month.py`
-（無月份批次，登記併入 `catalogue.py`）、`gap_sheets.py`（無 `.B.work`
+（無月份批次，登記併入 `catalogue.py`）、`gap_sheets.py`（無 `.work`
 彼層歷史）、`batches.py`（`ocr.cli pending` 就會列未讀ê sheet）。
 
 ## transcode/
@@ -143,7 +162,7 @@ ffmpeg 共來源全部聲軌攏紮入去封存，順紲算出**逐條來源聲�
 
 `tools/mxf2mkv/` 是仝一套編碼佮聲軌邏輯ê另外一个呼叫端：**隨身硬碟**
 一个資料夾底ê mxf 逐支轉、轉一支傳一支，遠端結構照來源排，囥
-`/home/mkv-raw/`。伊無查目錄、無查 `smkul.csv`、無查 inventory，所以
+`/home/mkv-raw/`。伊無查節目目錄，所以
 猶未登記ê母帶嘛轉會動；佮 `/home/news/mkv/` 彼爿無相干，重複ê照轉。
 按怎走看 `tools/mxf2mkv/README.md`。
 

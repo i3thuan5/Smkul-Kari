@@ -11,8 +11,8 @@ import unittest
 from scripts.news import resolve_slug
 from scripts.errors import PipelineError
 
-HEAD = ("節目名稱,年度,集數,播出日期,播出時段,族語別(英),族語別(中),"
-        "有無影片,影片檔案位置,音檔位置(mp3),音檔位置(wav),文稿位置,備註")
+HEAD = ("成果檔名,節目名稱,年度,集數,播出日期,族語別(英),族語別(中),"
+        "語言別,語言別代號,原始影片檔案位置,備註")
 
 MXF = "ilrdf-corpus/族語新聞/110.1-110.10/2月原始mxf檔/21NL004_37晚間族語新聞.mxf"
 MP4 = "ilrdf-corpus/族語新聞/110.1-110.10/7月/21NL004_37晚間族語新聞.mp4"
@@ -30,8 +30,9 @@ def catalogue_file(test, rows):
 
 
 class TestIndex(unittest.TestCase):
-    ROW = ("晚間族語新聞,2021,37,2021-02-06,晚間,Paiwan,排灣,是,"
-           + MXF + ";" + MP4 + ",,,,")
+    ROW = ("20210206_037_晚間_Paiwan_排灣,晚間族語新聞,2021,37,"
+           "2021-02-06,Paiwan,排灣,,pwn,"
+           + MXF + ";" + MP4 + ",")
 
     def _load(self, rows=None):
         path = catalogue_file(self, rows if rows is not None else [self.ROW])
@@ -64,10 +65,10 @@ class TestIndex(unittest.TestCase):
         # 2021-03-21：拉阿魯哇佮卡那卡那富兩逝指著仝一支檔。舊版
         # `setdefault` 是頭一逝贏，贏的是「誰排代先」。
         shared = "ilrdf-corpus/族語新聞/110.1-110.10/3月/21NL003_80五間族語新聞.mp4"
-        rows = ["午間族語新聞,2021,80,2021-03-21,午間,Hla'alua,拉阿魯哇,是,"
-                + shared + ",,,,",
-                "午間族語新聞,2021,80,2021-03-21,午間,Kanakanavu,卡那卡那富,是,"
-                + shared + ",,,,"]
+        rows = ["20210321_080_午間_Hla'alua_拉阿魯哇,午間族語新聞,2021,80,"
+                "2021-03-21,Hla'alua,拉阿魯哇,,sxr," + shared + ",",
+                "20210321_080_午間_Kanakanavu_卡那卡那富,午間族語新聞,2021,"
+                "80,2021-03-21,Kanakanavu,卡那卡那富,,xnb," + shared + ","]
         cat = self._load(rows)
         row, problem = cat.row_for("21NL003_80五間族語新聞.mp4")
         self.assertIsNone(row)
@@ -93,7 +94,7 @@ class TestNames(unittest.TestCase):
     ROW = {
         "年度": "2021",
         "播出日期": "2021-02-01",
-        "播出時段": "午間",
+        "節目名稱": "午間族語新聞",
         "族語別(英)": "Atayal",
         "族語別(中)": "泰雅",
     }

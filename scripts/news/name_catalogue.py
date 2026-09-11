@@ -28,11 +28,11 @@ import csv
 import os
 import sys
 
+from scripts import catalogue_checks as checks
 from scripts.news import paths
-from scripts.news import resolve_slug
 from scripts.errors import PipelineError
 
-COLUMN = "srt_name"
+COLUMN = "成果檔名"
 
 # What the catalogue is on disk. Excel is the reader on the other end.
 ENCODING = "utf-8-sig"
@@ -47,7 +47,7 @@ def name_of(row):
     with no broadcast date should say so rather than invent a name.
     """
     try:
-        return resolve_slug.srt_name(row, row["集數"])
+        return checks.srt_name_of(row)
     except (PipelineError, KeyError, TypeError, ValueError):
         return ""
 
@@ -96,7 +96,7 @@ def check(rows):
 
 def read(path=None):
     """(rows, column order) as the file has them."""
-    source = path or paths.CATALOGUE
+    source = path or paths.TRACKER_STORE
     if not os.path.exists(source):
         raise PipelineError("揣無目錄：%s" % source)
     with open(source, encoding=ENCODING, newline="") as handle:
@@ -116,7 +116,7 @@ def write(path, rows, head):
 
 def rewrite(path=None):
     """Fill the column in place; return how many rows got a name."""
-    target = path or paths.CATALOGUE
+    target = path or paths.TRACKER_STORE
     rows, head = read(target)
     rows, head = named(rows, head)
     write(target, rows, head)
@@ -130,11 +130,11 @@ def rewrite(path=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("catalogue", nargs="?", default=None,
-                        help="目錄 CSV（省略就用 paths.CATALOGUE）")
+                        help="目錄 CSV（省略就用 paths.TRACKER_STORE）")
     parser.add_argument("--check", action="store_true",
                         help="干焦核對，無寫入；無合就 exit 1")
     args = parser.parse_args()
-    target = args.catalogue or paths.CATALOGUE
+    target = args.catalogue or paths.TRACKER_STORE
 
     if args.check:
         rows, head = read(target)

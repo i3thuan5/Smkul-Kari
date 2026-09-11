@@ -2,15 +2,15 @@
 """Turn every finished work dir into an SRT and record progress in smkul.csv.
 
 Safe to re-run at any point: episodes still decoding are simply reported as
-待處理, so the tracker can be refreshed while the long pass is running.
+待處理, so a person can see how far the long pass has got.
 """
 import json
 import os
 import sys
 
 from scripts.news import make_srt
+from scripts.news import episodes
 from scripts.news import paths
-from scripts.news import tracker
 
 WORK = paths.WORK
 SRT_DIR = paths.SRT_DIR
@@ -50,9 +50,9 @@ def vision_complete(work):
 def make_one(entry):
     """Build one episode's SRT; return its status line."""
     slug = entry["slug"]
-    # "Has it been cut?" is true if *either* work dir holds cues -- see
-    # paths.has_cues, which `fetch_sftp.sh` asks the same question of.
-    vision = paths.work_dirs(slug, WORK)[0]
+    # "Has it been cut?" -- see paths.has_cues, which `fetch_sftp.sh`
+    # asks the same question of.
+    vision = paths.work_dir(slug, WORK)
     if not paths.has_cues(slug, WORK):
         return "待處理（尚未切cue）"
 
@@ -66,35 +66,23 @@ def make_one(entry):
     out = paths.stage_path(SRT_DIR, entry["srt_name"], ".srt")
     os.makedirs(os.path.dirname(out), exist_ok=True)
     qc = make_srt.run(vision, out)
-    return tracker.vision_status(qc["srt_lines"])
+    return "Claude Vision OCR 已產生 %d 行字幕" % qc["srt_lines"]
 
 
 def main():
-    entries = paths.load_inventory()
+    entries = episodes.load()
     os.makedirs(SRT_DIR, exist_ok=True)
-    os.makedirs(os.path.dirname(paths.TRACKER_CACHE), exist_ok=True)
 
-    # Every episode gets a row here, pending ones included -- that is the
-    # point of the working copy: it is where you look to see how far the
-    # batch has got. Do NOT reach for tracker.tracker_rows(), which drops
-    # pending episodes; that rule is for the delivered table, whose every
-    # row has to be rebuildable from the store.
-    rows = []
+    # 這爿無閣寫任何一張表矣。`smkul.csv` 是**節目目錄**——人維護ê輸入，
+    # 毋是這條流程ê產出；某一集做到佗一步，答案佇階段目錄，用
+    # `/news-stage-count` 數就有。組ê結果印出來，予人看這輪做著啥。
+    done = 0
     for entry in entries:
-        if entry["truncated"]:
-            status = tracker.skipped_status(entry["truncated"])
-        else:
-            status = make_one(entry)
-        rows.append(tracker.tracker_row(entry, status))
+        status = make_one(entry)
+        if status.startswith("Claude Vision"):
+            done += 1
         print("%-46s %s" % (entry["srt_name"], status))
-
-    # The working copy, not the deliverable. `publish` writes the one in
-    # Kari-SRT, and only once every episode in the batch is finished -- see
-    # paths.TRACKER_CACHE for why a mid-batch table cannot live in the store.
-    tracker.write_tracker(rows, paths.TRACKER_CACHE)
-    print("\nwrote", paths.TRACKER_CACHE)
-    print("(Kari-SRT/news/smkul.csv is written by `publish`, once the whole "
-          "batch is done)")
+    print("\n組好 %d 集；交付ê SRT 直接寫入 %s" % (done, SRT_DIR))
 
 
 if __name__ == "__main__":

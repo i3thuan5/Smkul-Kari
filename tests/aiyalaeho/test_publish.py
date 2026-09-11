@@ -6,6 +6,7 @@ marked 無字幕 and cut to no cues; the news side's test -- every cue read,
 and at least one cue -- reads those as unfinished and would hold the whole
 batch open forever.
 """
+import csv
 import json
 import os
 import shutil
@@ -14,6 +15,8 @@ import unittest
 
 from scripts import datadirs
 from scripts.aiyalaeho import make_all
+from scripts import catalogue_checks as checks
+from scripts.aiyalaeho import episodes
 from scripts.aiyalaeho import paths
 from scripts.aiyalaeho import publish
 
@@ -30,7 +33,6 @@ class Batch(unittest.TestCase):
         self.srt = os.path.join(self.store, "3-srt")
         for folder in (self.store, self.work, self.cues, self.srt):
             os.makedirs(folder)
-        self.inventory = os.path.join(self.store, "inventory.json")
         self.delivered = os.path.join(self.store, "smkul.csv")
         self.cache = os.path.join(self.work, "smkul.csv")
         self.abnormal = os.path.join(self.store, "smkul-字幕版型異常.csv")
@@ -39,7 +41,6 @@ class Batch(unittest.TestCase):
         self._patch(paths, "WORK", self.work)
         self._patch(paths, "KARI_CUES", self.cues)
         self._patch(paths, "SRT_DIR", self.srt)
-        self._patch(paths, "INVENTORY", self.inventory)
         self._patch(paths, "TRACKER_STORE", self.delivered)
         self._patch(paths, "TRACKER_CACHE", self.cache)
         self._patch(paths, "ABNORMAL_STORE", self.abnormal)
@@ -55,26 +56,23 @@ class Batch(unittest.TestCase):
             read=None, pending=True, reason="", seconds=None,
             file_name=None):
         name = "開會了_%03d_%s_%s" % (episode, language, chinese)
-        entry = {
-            "file": "%03d-x.mp4" % episode,
-            "video": "ilrdf-corpus/族語節目/開會了/%03d-x.mp4" % episode,
-            "srt_name": name,
+        code = {"Amis": "ami", "Atayal": "tay", "Rukai": "dru",
+                "Bunun": "bnn"}.get(language, "ami")
+        row = {
+            "成果檔名": name,
             "節目名稱": "開會了",
             "集數": str(episode),
             "族語別(英)": language,
             "族語別(中)": chinese,
             "語言別": "",
-            "語言代號": "ami",
+            "語言別代號": code,
+            "原始影片檔案位置":
+                "ilrdf-corpus/族語節目/開會了/%s" % (
+                    file_name or "%03d-x.mp4" % episode),
+            "備註": reason,
         }
-        if pending:
-            entry["pending"] = True
-        if reason:
-            entry["理由"] = reason
-            entry["影片長度秒"] = seconds if seconds is not None else 3000.0
-        if file_name:
-            entry["file"] = file_name
-        self.entries.append(entry)
-        self._write_inventory()
+        self.entries.append(row)
+        self._write_tables()
 
         work = os.path.join(self.work, name + ".work")
         os.makedirs(work, exist_ok=True)
@@ -105,8 +103,20 @@ class Batch(unittest.TestCase):
         with open(path, "w", encoding="utf-8") as handle:
             json.dump(value, handle, ensure_ascii=False)
 
-    def _write_inventory(self):
-        self._json(self.inventory, self.entries)
+    def _write_tables(self):
+        head = list(checks.head(checks.EPISODE_KEYS)) + [
+            "原始影片檔案位置", "備註"]
+        normal, abnormal = [], []
+        for row in sorted(self.entries, key=lambda one: one["成果檔名"]):
+            (abnormal if row["備註"] else normal).append(row)
+        for path, rows in ((self.delivered, normal),
+                           (self.abnormal, abnormal)):
+            with open(path, "w", encoding="utf-8-sig",
+                      newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=head)
+                writer.writeheader()
+                for row in rows:
+                    writer.writerow(row)
 
     def delivered_rows(self):
         with open(self.delivered, encoding="utf-8-sig") as handle:
@@ -150,22 +160,6 @@ class TestMakeAll(Batch):
         with open(target, encoding="utf-8") as handle:
             self.assertEqual(handle.read(), "")
 
-    def test_the_work_copy_lists_pending_episodes_too(self):
-        self.add(82, cues=2)
-        self.add(85, cues=2, read=[])
-        make_all.main([])
-        with open(self.cache, encoding="utf-8-sig") as handle:
-            body = handle.read()
-        self.assertIn("開會了_082_Amis_阿美", body)
-        self.assertIn("開會了_085_Amis_阿美", body)
-
-    def test_the_store_table_is_not_touched_mid_batch(self):
-        self.add(82, cues=2)
-        make_all.main([])
-        self.assertFalse(os.path.exists(self.delivered))
-
-
-class TestPublish(Batch):
     def test_an_unfinished_episode_holds_back_only_itself(self):
         """無做煞ê彼集擋家己就好，擋別集袂牢（2026-09-09 改逐集）。
 
@@ -179,12 +173,9 @@ class TestPublish(Batch):
         self.assertEqual(publish.main([]), 0)
         self.assertTrue(os.path.exists(os.path.join(self.cues,
                                                     done + ".json")))
-        after = paths.load_inventory(self.inventory)
-        by = {}
-        for one in after:
-            by[one["srt_name"]] = one
-        self.assertNotIn("pending", by[done])
-        self.assertTrue(by["開會了_085_Amis_阿美"].get("pending"))
+        # 無做煞ê彼集無入庫——伊ê時間軸無佇 1-cues/
+        self.assertFalse(os.path.exists(
+            os.path.join(self.cues, "開會了_085_Amis_阿美.json")))
 
     def test_a_finished_batch_is_written_and_cleared(self):
         name, _work = self.add(82, cues=2)
@@ -192,11 +183,10 @@ class TestPublish(Batch):
         self.assertEqual(publish.main([]), 0)
         self.assertTrue(os.path.exists(os.path.join(self.cues,
                                                     name + ".json")))
+        # 節目目錄是輸入，publish 無動伊；入庫ê是時間軸
         rows = self.delivered_rows()
         self.assertEqual(len(rows), 2)          # 表頭＋一集
         self.assertIn(name, rows[1])
-        after = paths.load_inventory(self.inventory)
-        self.assertNotIn("pending", after[0])
 
     def test_a_no_subtitle_episode_does_not_block_the_batch(self):
         self.add(82, cues=2)
@@ -208,10 +198,11 @@ class TestPublish(Batch):
                                                     no_subs + ".json")))
 
     def test_check_writes_nothing(self):
-        self.add(82, cues=2)
+        name, _work = self.add(82, cues=2)
         make_all.main([])
         publish.main(["--check"])
-        self.assertFalse(os.path.exists(self.delivered))
+        self.assertFalse(os.path.exists(
+            os.path.join(self.cues, name + ".json")))
 
 
 class TestAbnormalEpisodes(Batch):
@@ -219,23 +210,19 @@ class TestAbnormalEpisodes(Batch):
 
     def _abnormal(self, episode=88, reason="無字幕"):
         name = "開會了_%03d_Atayal_泰雅" % episode
-        entry = {
-            "file": "%d-泰雅語-無字幕.mp4" % episode,
-            "video": "ilrdf-corpus/族語節目/開會了/%d-泰雅語-無字幕.mp4"
-                     % episode,
-            "srt_name": name,
+        self.entries.append({
+            "成果檔名": name,
             "節目名稱": "開會了",
             "集數": str(episode),
             "族語別(英)": "Atayal",
             "族語別(中)": "泰雅",
             "語言別": "",
-            "語言代號": "tay",
-            "pending": True,
-            "理由": reason,
-            "影片長度秒": 2969.967,
-        }
-        self.entries.append(entry)
-        self._write_inventory()
+            "語言別代號": "tay",
+            "原始影片檔案位置":
+                "ilrdf-corpus/族語節目/開會了/%d-泰雅語-無字幕.mp4" % episode,
+            "備註": reason,
+        })
+        self._write_tables()
         return name
 
     def test_it_is_not_assembled(self):
@@ -246,8 +233,7 @@ class TestAbnormalEpisodes(Batch):
 
     def test_the_status_says_why(self):
         name = self._abnormal(reason="僅華語字幕")
-        entries = paths.load_inventory()
-        for entry in entries:
+        for entry in episodes.load():
             if entry["srt_name"] == name:
                 self.assertIn("僅華語字幕", make_all.make_one(entry))
 
@@ -266,49 +252,24 @@ class TestAbnormalEpisodes(Batch):
         self.assertFalse(os.path.exists(os.path.join(self.cues,
                                                      name + ".json")))
 
-    def test_its_pending_is_cleared(self):
-        name = self._abnormal()
-        self.add(82, cues=2)
-        make_all.main([])
-        publish.main([])
-        for entry in paths.load_inventory():
-            if entry["srt_name"] == name:
-                self.assertNotIn("pending", entry)
-
-    def test_it_lands_in_the_second_table(self):
-        name = self._abnormal()
-        self.add(82, cues=2)
-        make_all.main([])
-        publish.main([])
-        with open(self.abnormal, encoding="utf-8-sig") as handle:
-            body = handle.read()
-        self.assertIn(name, body)
-        self.assertIn("無字幕", body)
-
-    def test_the_work_copy_of_the_second_table_is_refreshed(self):
-        self._abnormal()
-        make_all.main([])
-        self.assertTrue(os.path.exists(self.abnormal_cache))
-
     def test_the_report_names_a_reason_that_did_not_come_from_the_name(self):
         # 檔名講「雙語字幕」煞予量測判做無字幕ê——愛佇報告點名，
         # 予人做煞了後看一目。
-        entry = {
-            "file": "106-排灣語-雙語字幕.mp4",
-            "video": "ilrdf-corpus/族語節目/開會了/106-排灣語-雙語字幕.mp4",
-            "srt_name": "開會了_106_Paiwan_排灣",
+        self.entries.append({
+            "成果檔名": "開會了_106_Paiwan_排灣",
             "節目名稱": "開會了", "集數": "106",
             "族語別(英)": "Paiwan", "族語別(中)": "排灣",
-            "語言別": "", "語言代號": "pwn", "pending": True,
-            "理由": "無字幕", "影片長度秒": 2900.0,
-        }
-        self.entries.append(entry)
-        self._write_inventory()
-        self.assertTrue(publish.measured_reasons(paths.load_inventory()))
+            "語言別": "", "語言別代號": "pwn",
+            "原始影片檔案位置":
+                "ilrdf-corpus/族語節目/開會了/106-排灣語-雙語字幕.mp4",
+            "備註": "無字幕",
+        })
+        self._write_tables()
+        self.assertTrue(publish.measured_reasons(episodes.load()))
 
     def test_a_reason_that_matches_the_file_name_is_not_flagged(self):
         self._abnormal()
-        self.assertEqual(publish.measured_reasons(paths.load_inventory()), [])
+        self.assertEqual(publish.measured_reasons(episodes.load()), [])
 
 
 class TestStoreIsReadable(Batch):
@@ -353,15 +314,6 @@ class TestStoreIsReadable(Batch):
             source = json.load(h)
         self.assertEqual(json.loads(self._stored(name)), source)
 
-    def test_the_inventory_is_written_key_sorted(self):
-        self.add(82, cues=2)
-        make_all.main([])
-        publish.main([])
-        with open(self.inventory, encoding="utf-8") as handle:
-            body = handle.read()
-        self.assertIn("\n", body)
-        self.assertNotIn("\\u", body)
-
     def test_publishing_twice_does_not_move_a_byte(self):
         name, _work = self.add(82, cues=2)
         make_all.main([])
@@ -372,18 +324,18 @@ class TestStoreIsReadable(Batch):
         with open(os.path.join(self.cues, name + ".json"), "rb") as handle:
             self.assertEqual(handle.read(), first)
 
-    def test_the_qc_file_is_key_sorted(self):
+    def test_no_qc_summary_is_left_beside_the_srt(self):
+        """組裝之後 3-srt/ 旁邊無仝名ê .qc.json。
+
+        彼份摘要（cue 數、有字 cue 數、族語列數、華語列數、SRT 行數）
+        無半个生產程式咧讀，`rebuild --verify` 嘛無比對伊，逐一个數字
+        攏對時間軸佮交付 SRT 當場算會出來。舊底干焦這條測試咧宣稱伊
+        存在。
+        """
         name, _work = self.add(82, cues=2)
         make_all.main([])
-        path = os.path.join(self.srt, name + ".qc.json")
-        with open(path, encoding="utf-8") as handle:
-            body = handle.read()
-        keys = []
-        for line in body.split("\n"):
-            stripped = line.strip()
-            if stripped.startswith('"') and '":' in stripped:
-                keys.append(stripped.split('"')[1])
-        self.assertEqual(keys, sorted(keys))
+        self.assertFalse(
+            os.path.exists(os.path.join(self.srt, name + ".qc.json")))
 
 
 if __name__ == "__main__":

@@ -5,8 +5,10 @@ Split out of `scripts.news.paths` so both sides can use it: `scripts/ocr/`
 is a reusable engine that deliberately does not depend on `scripts/news/`
 (the news orchestration), and inverting that just to validate a path would
 have been the wrong trade. What lives here is repo layout plus argument
-validation -- facts neither side owns. Corpus-specific paths (the store's
-stage folders, the inventory, the catalogue) stay in `scripts.news.paths`.
+validation -- facts neither side owns -- plus the two things both corpora
+must agree on about Kari-SRT itself: what a stored timeline keeps, and how
+the stages contain one another. Corpus-specific paths (the stage folders)
+stay in `scripts.news.paths`.
 """
 import os
 import re
@@ -43,13 +45,10 @@ def check_name(name, kind="name"):
     The stripped form is built first and then compared, rather than the
     stripped form being returned: a name that needed stripping stops the
     run. Silently rewriting one would be worse than the typo it came from
-    -- the inventory is read, edited and written back by `publish`,
-    `add_episodes` and `plan_month`, so a quietly corrected name
-    would be written into the store as if it had always said that.
+    -- 節目目錄是人維護ê，一个恬恬改好ê名會當做本底就按呢寫入 store。
     """
-    # None is what a hand-edited `"slug": null` in the inventory hands over;
-    # it is a missing name, not a name carrying path components, and the
-    # message has to say which so the file gets looked at.
+    # 節目目錄彼格空ê時提著ê就是空值；彼是「無名」，毋是「名帶路徑
+    # 成分」，訊息愛講對才揣會著問題。
     if not name:
         raise PipelineError("%s 無值" % kind)
     cleaned = _PATH_COMPONENTS.sub("", name)
@@ -113,6 +112,56 @@ def coarse_cues(work):
 def refined_cues(work):
     """The timeline `refine_cues` wrote: boundaries re-read at 25fps."""
     return os.path.join(work, REFINED_STAGE, "cues.json")
+
+
+# What a work dir's timeline records about *this machine* and the store has
+# no use for. `video` is the staged copy's absolute path -- the folder it
+# names is gitignored and gone on any other machine, so carrying it into
+# Kari-SRT would bind the delivered data to one checkout: the same episode
+# re-published elsewhere would differ by that one line. Where the source
+# actually lives is the catalogue's 原始影片檔案位置, relative to the
+# corpus root -- 節目目錄彼欄本底就規定愛相對路徑，時間軸這欄無人顧著。
+MACHINE_LOCAL_KEYS = ("video",)
+
+
+def store_timeline(manifest):
+    """A work dir's timeline as Kari-SRT keeps it.
+
+    Both corpora publish timelines and must agree to the byte, so the rule
+    lives here rather than in either publish.
+    """
+    kept = {}
+    for key in manifest:
+        if key not in MACHINE_LOCAL_KEYS:
+            kept[key] = manifest[key]
+    return kept
+
+
+def stage_problems(stages):
+    """Names a downstream stage claims that no upstream stage has.
+
+    `stages` is [(label, {name…})…], upstream first. Each stage's names must
+    be a subset of the one before it -- compared pairwise, not against every
+    earlier stage, because the chain is transitive and comparing against all
+    of them reports the same name once per layer.
+
+    Upstream running ahead is the normal state, not a defect: each stage
+    enters Kari-SRT on its own as soon as it is done for that episode, so
+    "1-cues has 75 and 3-srt has 40" means forty are read and thirty-five
+    are not. The other direction cannot be explained that way -- a
+    deliverable whose inputs are not in the store is one nothing can rebuild,
+    and that is what `rebuild --verify` exists to catch.
+
+    Every missing name is reported, not just the first: a person fixing this
+    wants the list, and stopping at one turns a single pass into several.
+    """
+    problems = []
+    for index in range(1, len(stages)):
+        label, names = stages[index]
+        above_label, above = stages[index - 1]
+        for name in sorted(names - above):
+            problems.append("%s 有 %s，%s 無" % (label, name, above_label))
+    return problems
 
 
 def cues_to_read(work):

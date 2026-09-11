@@ -11,12 +11,12 @@ the other spends model tokens. Episodes already done, pending or truncated are
 skipped; a failing episode is reported and the batch moves on.
 """
 import argparse
-import csv
 import os
 import subprocess
 import sys
 
 from scripts.news import asrmt_run
+from scripts.news import episodes
 from scripts.news import paths
 from scripts import lowpri
 from scripts.errors import PipelineError
@@ -65,20 +65,29 @@ def _todo(entries, worker, total, raw_dir, only=""):
             continue
         elif entry.get("pending"):
             continue
-        if entry.get("truncated"):
-            continue
         if os.path.exists(paths.stage_path(raw_dir, name, ".srt")):
             continue
         todo.append(entry)
     return todo
 
 
-def _run_episode(entry, catalogue):
-    """Fetch -> decode -> project+render -> delete audio, one episode."""
+def _run_episode(entry):
+    """抽音軌 → 解碼 → 投影＋render → 刣掉音檔，一集。
+
+    音檔對**這集ê影片**抽，無閣去問目錄ê音檔欄——彼一欄推導袂出來
+    （983 逝內底 148 逝無規則），閣干焦服務這一步。影片本底就愛抓
+    落來切 cue，兩步排做伙就干焦抓一擺。
+    """
     name = entry["srt_name"]
-    audio = os.path.join(asrmt_run._workdir(name), "audio.mp3")
+    work = asrmt_run._workdir(name)
+    audio = os.path.join(work, "audio.mp3")
     if not os.path.exists(audio):
-        _fetch(asrmt_run.mp3_remote(name, catalogue), audio)
+        local, remote = asrmt_run.audio_source(entry)
+        if not local:
+            local = os.path.join(paths.STAGE,
+                                 os.path.basename(entry["file"]))
+            _fetch(remote, local)
+        asrmt_run.extract_audio(local, audio)
     asrmt_run.step_words(name, entry["族語別(英)"])
     asrmt_run.step_raw(name)
     if os.path.exists(audio):
@@ -100,9 +109,7 @@ def main(argv=None):
     lowpri.be_nice()
     worker, total = parse_shard(args.shard)
 
-    entries = paths.load_inventory()
-    with open(paths.CATALOGUE, encoding="utf-8-sig", newline="") as handle:
-        catalogue = list(csv.DictReader(handle))
+    entries = episodes.load()
 
     raw_dir = paths.ASR_RAW
     todo = _todo(entries, worker, total, raw_dir, only=args.only)
@@ -115,7 +122,7 @@ def main(argv=None):
         name = entry["srt_name"]
         print("==", name, flush=True)
         try:
-            _run_episode(entry, catalogue)
+            _run_episode(entry)
             done.append(name)
         except PipelineError as error:
             failed.append((name, str(error)))

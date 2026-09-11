@@ -23,7 +23,7 @@ from scripts.news import publish
 
 
 def entry(name, pending=False):
-    return {"srt_name": name, "slug": name, "truncated": "",
+    return {"srt_name": name, "slug": name,
             "pending": pending}
 
 
@@ -86,7 +86,6 @@ class TestPublishPerEpisode(unittest.TestCase):
 
     def run_main(self, rows, unfinished=(), argv=None):
         written = []
-        cleared = {}
 
         def fake_publishable(one):
             if one["srt_name"] in unfinished:
@@ -97,21 +96,13 @@ class TestPublishPerEpisode(unittest.TestCase):
             written.append(one["srt_name"])
             return ["cues.json"]
 
-        def fake_clear(entries, published):
-            cleared["names"] = set(published)
-            return len(published)
-
-        with mock.patch.object(publish.paths, "load_inventory",
-                               lambda: rows), \
+        with mock.patch.object(publish.episodes, "load", lambda: rows), \
                 mock.patch.object(publish, "publishable",
                                   fake_publishable), \
                 mock.patch.object(publish, "publish_one",
-                                  fake_publish_one), \
-                mock.patch.object(publish, "clear_pending", fake_clear), \
-                mock.patch.object(publish, "write_deliverable_tracker",
-                                  lambda entries: "smkul.csv"):
+                                  fake_publish_one):
             code = publish.main(argv or [])
-        return code, written, cleared.get("names", set())
+        return code, written, set(written)
 
     def test_unfinished_episode_does_not_hold_a_finished_one(self):
         """踏著ê坑：2021-01 有 58 集猶未切 cue，共做煞ê 006午 擋牢。
@@ -150,43 +141,6 @@ class TestPublishPerEpisode(unittest.TestCase):
         code, written, cleared = self.run_main(rows, argv=["--check"])
         self.assertEqual(code, 0)
         self.assertEqual(written, [])
-
-
-class TestClearPending(unittest.TestCase):
-    """Pending ê旗只會使清掉**這遍實在有寫出去**ê彼幾集。
-
-    本底是行過規本 inventory 攏清掉——彼是「規本做伙發」ê時ê對做法。
-    這馬一遍干焦發一部份月份，若閣攏清，無發ê彼個月會hőng標做已交付，
-    store 就講伊有一項無佇咧ê交付物。
-    """
-
-    def clear(self, rows, published):
-        import json
-        import os
-        import tempfile
-        tmp = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False)
-        tmp.close()
-        self.addCleanup(os.unlink, tmp.name)
-        with mock.patch.object(publish.paths, "INVENTORY", tmp.name):
-            count = publish.clear_pending(rows, published)
-        with open(tmp.name, encoding="utf-8") as handle:
-            return count, json.load(handle)
-
-    def test_only_published_names_lose_the_flag(self):
-        rows = [entry(FEB, pending=True), entry(JAN, pending=True)]
-        count, out = self.clear(rows, {FEB})
-        self.assertEqual(count, 1)
-        by = {}
-        for one in out:
-            by[one["srt_name"]] = one
-        self.assertNotIn("pending", by[FEB])
-        self.assertTrue(by[JAN]["pending"])
-
-    def test_nothing_published_clears_nothing(self):
-        rows = [entry(FEB, pending=True)]
-        count, out = self.clear(rows, set())
-        self.assertEqual(count, 0)
-        self.assertTrue(out[0]["pending"])
 
 
 class TestMonthsOf(unittest.TestCase):

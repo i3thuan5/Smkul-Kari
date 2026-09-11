@@ -74,6 +74,41 @@ class TestRefinedTimelinesArePublished(Fixture):
         self.assertFalse(os.path.exists(self._published()))
 
 
+class TestMachineLocalFieldsAreStripped(Fixture):
+    """入 Kari-SRT ê時間軸內底無本機專屬ê路徑。
+
+    工作目錄彼份ê `video` 記ê是彼台機器ê暫存位置
+    （`/…/kithann/out/stage/魯凱語-霧台20210101S1100.mp4`），換一台機器
+    就無意義，煞會予 Kari-SRT ê內容縛佇一台機器頂——仝一份資料佇別
+    台機器重算會得著無仝ê位元組。`tracker.corpus_path()` 本底就咧防
+    inventory 彼欄，時間軸這欄無人顧著。影片位置由節目目錄ê
+    `原始影片檔案位置` 記，彼是相對語料根ê路徑。
+    """
+
+    def test_the_video_path_does_not_reach_the_store(self):
+        self._timeline(paths.refined_cues(self.work),
+                       dict(REFINED, video="/tmp/out/stage/魯凱語-霧台.mp4"))
+        publish.publish_one(ENTRY, self.work, cues_dir=self.store)
+        with open(self._published(), encoding="utf-8") as handle:
+            self.assertNotIn("video", json.load(handle))
+
+    def test_everything_else_survives(self):
+        self._timeline(paths.refined_cues(self.work),
+                       dict(REFINED, video="/tmp/x.mp4", duration=800.099))
+        publish.publish_one(ENTRY, self.work, cues_dir=self.store)
+        with open(self._published(), encoding="utf-8") as handle:
+            got = json.load(handle)
+        self.assertEqual(got["duration"], 800.099)
+        self.assertEqual(got["cues"], REFINED["cues"])
+        self.assertTrue(got["refined"])
+
+    def test_a_timeline_without_the_field_is_unaffected(self):
+        self._timeline(paths.refined_cues(self.work), REFINED)
+        publish.publish_one(ENTRY, self.work, cues_dir=self.store)
+        with open(self._published(), encoding="utf-8") as handle:
+            self.assertEqual(json.load(handle), REFINED)
+
+
 class TestCoarseTimelinesAreRefused(Fixture):
     def test_a_coarse_only_work_dir_is_named_and_stops_the_run(self):
         self._timeline(paths.coarse_cues(self.work), COARSE)
@@ -128,7 +163,7 @@ class TestPublishableSeesTheNewLayout(Fixture):
         return dict(ENTRY, slug=self.SLUG, truncated="")
 
     def _work_dir(self):
-        return os.path.join(self.root, self.SLUG + ".B.work")
+        return os.path.join(self.root, self.SLUG + ".work")
 
     def _ready(self, body):
         work = self._work_dir()

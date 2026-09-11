@@ -2,9 +2,9 @@
 """Name an episode from the catalogue: which row a file is, and what to
 call the work dir and the deliverable.
 
-`ilrdf-corpus.csv` lists every episode with its 影片檔案位置, so a file that
+`news/smkul.csv` lists every episode with its 原始影片檔案位置, so a file that
 appears there can be named the same way the February batch was
-(年度_集數_播出日期_播出時段_族語別) and its SRT will sort and read
+(年度_集數_播出日期_時段_族語別) and its SRT will sort and read
 consistently with the rest. A file the catalogue does not know about still
 gets processed -- it just falls back to its own stem.
 
@@ -27,11 +27,12 @@ import os
 import re
 import sys
 
+from scripts import catalogue_checks as checks
 from scripts.news import paths
 from scripts.news import sources
 from scripts.errors import PipelineError
 
-CATALOGUE = paths.CATALOGUE
+CATALOGUE = paths.TRACKER_STORE
 
 ETH_EN = "族語別(英)"
 ETH_ZH = "族語別(中)"
@@ -127,7 +128,7 @@ def srt_name(row, episode):
     return "_".join([
         _field(row, "播出日期").replace("-", ""),
         "%03d" % int(episode),
-        _field(row, "播出時段"),
+        _field(row, "節目名稱") and checks.slot_of(row["節目名稱"]),
         _field(row, ETH_EN),
         _field(row, ETH_ZH),
     ])
@@ -145,7 +146,7 @@ def slugify(row, episode):
         _field(row, "年度"),
         "%03d" % int(episode),
         _field(row, "播出日期"),
-        _field(row, "播出時段"),
+        _field(row, "節目名稱") and checks.slot_of(row["節目名稱"]),
         _field(row, ETH_EN),
         _field(row, ETH_ZH),
     ])
@@ -156,9 +157,12 @@ def slug_for(row, fallback):
         episode = "%03d" % int(row["集數"])
     except (KeyError, ValueError):
         return fallback
+    try:
+        slot = checks.slot_of(row.get("節目名稱", ""))
+    except PipelineError:
+        return fallback
     parts = [row.get("年度", ""), episode, row.get("播出日期", ""),
-             row.get("播出時段", ""), row.get(ETH_EN, ""),
-             row.get(ETH_ZH, "")]
+             slot, row.get(ETH_EN, ""), row.get(ETH_ZH, "")]
     if not all(parts):
         return fallback
     return "_".join(parts)

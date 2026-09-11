@@ -19,7 +19,7 @@ from scripts.ocr import stripname
 lowpri.be_nice()   # 重生規集圖條，是長時間ê重工
 
 NAME, SLUG = sys.argv[1], sys.argv[2]
-W = os.path.join("kithann/out/mxf", SLUG + ".B.work")
+W = os.path.join("kithann/out/mxf", SLUG + ".work")
 doc = json.load(open(os.path.join(W, "cues.json"), encoding="utf-8"))
 cues = doc["cues"] if isinstance(doc, dict) else doc
 spec = cuelib.MaskSpec.from_dict(
@@ -65,10 +65,8 @@ GUT, SCALE = 130, 0.62
 sw, sh = int(region[2] * SCALE), int(region[3] * SCALE)
 idx = [c["index"] for c in cues]
 manifest = {}
-for base in (os.path.join(W, "sheets"),
-             os.path.join(W.replace(".B.work", ".work"), "sheets")):
-    if not os.path.isdir(base):
-        continue
+base = os.path.join(W, "sheets")
+if os.path.isdir(base):
     for f in glob.glob(os.path.join(base, "*.png")):
         os.remove(f)
 shdir = os.path.realpath(os.path.join(W, "sheets"))

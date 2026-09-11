@@ -144,50 +144,51 @@ def timeline_is_refined(path):
 def is_refined(work):
     """Has the 25fps pass produced a timeline for this work dir?
 
-    A separate `2-refined/` file is the answer once the split has landed --
-    its existence is the record, which is what makes the coarse file
-    read-only and a killed refine harmless.
+    The `2-refined/` file existing is the whole answer -- that is what makes
+    the coarse file read-only and a killed refine harmless.
 
-    Until the migration has swept every work dir the flag inside a pre-split
-    `cues.json` has to count too, because another line is midway through a
-    long cutting batch that still writes that layout.
+    There used to be a second arm here, reading a `refined` flag out of
+    whatever `cues_to_read` returned, for the pre-split layout where a flat
+    `cues.json` was the only place that could say so. `migrate_workdirs`
+    swept those (news 75, 開會了 40, none left either side) and
+    `cues_to_read` no longer reads the flat file, so the arm could only ever
+    see `1-cues/cues.json` -- the coarse one. A stray flag in there would
+    have passed a 0.2s-grid timeline off as refined.
     """
-    if os.path.exists(refined_cues(work)):
-        return True
-    current = cues_to_read(work)
-    return bool(current) and timeline_is_refined(current)
+    return os.path.exists(refined_cues(work))
 
 
-def work_dirs(slug, work=None):
-    """Both work dirs an episode may have, the vision one first.
+# One work dir per episode. There used to be two: `cues` wrote
+# `<slug>.work`, then `gap_sheets` derived `<slug>.B.work` beside it with a
+# copy of the timeline and a symlink back to the strips. The B stood for the
+# second reading round -- the first one filled cues from the 文稿 and only
+# sheeted what it could not supply. That round is gone (measured: of 4,344
+# cues the script supplied, 336 disagreed with the picture and the picture
+# was right every time), so B named a round that has no A. The copy and the
+# symlink went with it.
+WORK_EXT = ".work"
 
-    Usually both exist -- `cues` writes `<slug>.work` and `gap_sheets`
-    derives `<slug>.B.work` from it -- but `fetch_sftp.sh` cuts straight
-    into `.B.work`, and the 054-059 batch has no `.work` at all.
-    """
-    root = WORK if work is None else work
-    return (os.path.join(root, slug + ".B.work"),
-            os.path.join(root, slug + ".work"))
+
+def work_dir(slug, work=None):
+    """This episode's work dir."""
+    return os.path.join(WORK if work is None else work, slug + WORK_EXT)
 
 
 def has_cues(slug, work=None):
-    """Has this episode been cut? Either work dir holding cues.json counts.
+    """Has this episode been cut?
 
     One definition, because two callers act on it and they must not
-    disagree. `make_all` asking only `.work` reported fourteen finished
+    disagree. `make_all` asking the wrong dir reported fourteen finished
     episodes as 尚未切cue and `publish` then died looking for an SRT that
     was never assembled; the same mistake in `fetch_sftp.sh` is worse than
     a wrong report -- it re-cuts a delivered episode, which renumbers every
     cue, and the shipped SRT's timings come from the numbering that is
     there now.
 
-    Asked through `cues_to_read`, so it accepts every layout the question
-    can arrive in -- staged or pre-split -- rather than naming one.
+    Asked through `cues_to_read`, so it accepts either stage rather than
+    naming one.
     """
-    for folder in work_dirs(slug, work):
-        if cues_to_read(folder):
-            return True
-    return False
+    return bool(cues_to_read(work_dir(slug, work)))
 
 
 # Shared download staging area (fetch_sftp.sh convention):
@@ -253,19 +254,7 @@ TRACKER_STORE = os.path.join(NEWS_STORE, "smkul.csv")
 # with the other; two copies of the same truth is a synchronisation problem
 # nobody asked for.
 ENGINE_PRESETS = os.path.join(HERE, "presets.json")
-INVENTORY = os.path.join(NEWS_STORE, "inventory.json")
 
-# The broadcaster's catalogue of the whole corpus -- which episode is which
-# language, and which file it is. It lives in the store, at the top rather
-# than under news/, because it lists 族語節目/開會了 as well as 族語新聞.
-#
-# It is source data, not a deliverable, and `rebuild --verify` never reads
-# it. It is here because it cannot be regenerated: the original is an xlsx
-# on the SFTP host, this CSV is what the pipeline was built to read, and it
-# is the source of every naming decision downstream. It used to sit under
-# kithann/, which is gitignored -- one rebuilt devcontainer and the thing
-# every future month is planned from would have been gone.
-CATALOGUE = os.path.join(KARI, "ilrdf-corpus.csv")
 
 # The interpreter `fetch_sftp.sh` and friends run the heavy steps with.
 # This used to be the one hard-coded path below, which is fine on the
@@ -318,95 +307,6 @@ def venv_py(candidates=None, usable=None):
         if usable(path):
             return path
     return sys.executable
-
-
-# What one inventory entry holds, in the order inventory.json holds it.
-# This is the shape eleven programs index into, and it was until now
-# implicit in their `entry["…"]` lines; declaring it here makes the file's
-# contract readable in one place and checkable at the boundary, so a
-# truncated or hand-edited inventory says so instead of failing as a
-# KeyError deep inside whichever program noticed first.
-#
-# The order is load-bearing, not decoration: publish / add_episodes /
-# plan_month write these entries straight back, so rebuilding them in
-# any other order would turn one publish into a diff of the whole file.
-INVENTORY_FIELDS = (
-    "file",          # the source's own file name, as the report shows it
-    "video",         # master's path, relative to the corpus root
-    "slug",          # work-dir name: <年度>_<集數>_<日期>_<時段>_<族英>_<族中>
-    "srt_name",      # deliverable: <日期8碼>_<集數3碼>_<時段>_<族英>_<族中>
-    "節目名稱", "年度", "集數", "播出日期", "播出時段",
-    "族語別(英)", "族語別(中)",   # these seven go straight into smkul.csv
-    "文稿位置",       # transcript folder, relative to the corpus root
-    "truncated",     # why the source was too incomplete ("" = it was fine)
-    "pending",       # registered, not yet delivered; publish deletes it
-    "partial",       # note on an incomplete source, folded into the status
-)
-
-# Everything else in INVENTORY_FIELDS is required. Keeping only this list
-# means one declaration governs the field set, its order and which are
-# optional -- three things that used to be written down separately and had
-# to be kept in step by hand.
-INVENTORY_OPTIONAL = ("file", "pending", "partial")
-
-# The two that become paths, so they are what gets checked on the way in.
-INVENTORY_NAMES = ("slug", "srt_name")
-
-
-def load_inventory(path=None):
-    """The inventory, with every name checked before it can become a path.
-
-    Eleven programs read this file and every one of them turns `slug` and
-    `srt_name` into a work dir or a store file name. Checking here -- the
-    single point where the file's contents enter the program -- is what
-    lets them do that without each repeating the check, and turns "the
-    names in the inventory are safe" from an assumption resting on
-    `resolve_slug.safe()` into an invariant that is enforced and testable.
-
-    Each entry is copied rather than edited in place, so what the parsed
-    file held and what the pipeline works with stay separate things. The
-    copy carries every field across: rebuilding from INVENTORY_REQUIRED
-    would silently drop whatever is not on that list, and publish /
-    add_episodes / plan_month write these entries straight back to
-    the store -- see INVENTORY_OPTIONAL.
-
-    The checked value is assigned into the copy rather than merely
-    validated: downstream has to be handed the value that was checked,
-    not a second reference to the one that was not.
-    """
-    with open(path or INVENTORY, encoding="utf-8") as handle:
-        raw = json.load(handle)
-    entries = []
-    for position, entry in enumerate(raw):
-        missing = []
-        for field in INVENTORY_FIELDS:
-            if field not in INVENTORY_OPTIONAL and field not in entry:
-                missing.append(field)
-        if missing:
-            raise PipelineError("inventory 第 %d 筆缺欄位：%s"
-                                % (position + 1, "、".join(missing)))
-
-        unknown = []
-        for field in entry:
-            if field not in INVENTORY_FIELDS:
-                unknown.append(field)
-        if unknown:
-            raise PipelineError(
-                "inventory 第 %d 筆有未宣告的欄位：%s"
-                "——條目是照 INVENTORY_FIELDS 一欄一欄重建的，未宣告的會"
-                "佇寫轉去 store 時無去，先加入宣告"
-                % (position + 1, "、".join(unknown)))
-
-        checked = {}
-        for field in INVENTORY_FIELDS:
-            if field not in entry:
-                continue
-            if field in INVENTORY_NAMES:
-                checked[field] = check_name(entry[field], field)
-            else:
-                checked[field] = entry[field]
-        entries.append(checked)
-    return entries
 
 
 def main():

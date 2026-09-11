@@ -58,6 +58,7 @@ import sys
 from scripts.errors import PipelineError
 from scripts import lowpri
 from scripts.news import gap_sheets
+from scripts.news import episodes
 from scripts.news import paths
 from scripts.ocr import sheets
 from scripts.ocr import stripname
@@ -231,7 +232,7 @@ def main(argv=None):
                     help="rebuild the contact sheets and stop")
     args = ap.parse_args(argv)
 
-    work = os.path.join(paths.WORK, args.stem + ".B.work")
+    work = os.path.join(paths.WORK, args.stem + ".work")
     with open(os.path.join(work, "cues.json"), encoding="utf-8") as handle:
         book = json.load(handle)
     cues = book["cues"]
@@ -300,8 +301,8 @@ def rebuild_sheets(work, book):
     **printed on them**, and the reader is told to trust what is printed
     over any arithmetic of their own. After a renumber every sheet from the
     re-cut stretch onward is captioned with numbers that no longer mean
-    anything. `gap_sheets` cannot do it either -- it builds `.B.work` out of
-    a `.work` beside it, and this batch was cut straight into `.B.work`.
+    anything. `gap_sheets` cannot do it either -- it builds `.work` out of
+    a `.work` beside it, and this batch was cut straight into `.work`.
     """
     for stale in ("transcripts.json", "verified.json"):
         target = os.path.join(work, stale)
@@ -323,7 +324,7 @@ def rebuild_sheets(work, book):
 
 def _srt_name(stem):
     """srt_name for a work-dir stem, off the inventory."""
-    for entry in paths.load_inventory():
+    for entry in episodes.load():
         if entry["slug"] == stem:
             return entry["srt_name"]
     raise PipelineError("inventory 內底揣無 %s" % stem)

@@ -10,6 +10,7 @@ import json
 import os
 import tempfile
 import unittest
+import shutil
 from unittest import mock
 
 from scripts.asrmt import judge
@@ -69,32 +70,63 @@ class TestModelMapping(unittest.TestCase):
             asrmt_run.model_id_of("Klingon")
 
 
-class TestMp3Resolution(unittest.TestCase):
-    def test_remote_path_from_catalogue_row(self):
-        rows = [{"播出日期": "2021-02-01", "播出時段": "晚間",
-                 "音檔位置(mp3)": "ilrdf-corpus/族語新聞/7月/x.mp3"}]
-        got = asrmt_run.mp3_remote("20210201_032_晚間_Amis_阿美", rows)
-        self.assertEqual(got, "/docker/ilrdf-corpus/族語新聞/7月/x.mp3")
+class TestAudioSource(unittest.TestCase):
+    """音檔對**這集ê影片**抽，無閣問目錄ê音檔欄。
 
-    def test_missing_row_fails_loud(self):
-        with self.assertRaises(PipelineError):
-            asrmt_run.mp3_remote("20210301_060_午間_Cou_鄒", [])
+    彼一欄推導袂出來——量過 983 逝，干焦 835 逝ê音檔佮影片仝資料夾
+    仝主檔名，69 逝主檔名無仝（影片帶族語前綴、音檔無），64 逝規氣
+    無仝資料夾，15% 無規則。影片位置彼欄是規條流程攏咧用ê。
+    """
 
-    def test_semicolon_cell_picks_the_matching_slot(self):
-        # 型錄的 mp3 欄有同格塞多路徑的情況（037 晚間實例）
-        rows = [{"播出日期": "2021-02-06", "播出時段": "晚間",
-                 "音檔位置(mp3)":
-                 "ilrdf-corpus/7月/21NL004_37午間族語新聞.mp3;"
-                 "ilrdf-corpus/7月/21NL004_37晚間族語新聞.mp3"}]
-        got = asrmt_run.mp3_remote("20210206_037_晚間_Paiwan_排灣", rows)
-        self.assertEqual(got,
-                         "/docker/ilrdf-corpus/7月/21NL004_37晚間族語新聞.mp3")
+    MXF = ("ilrdf-corpus/族語新聞/110.1-110.10/2月原始mxf檔/"
+           "20NL003_32午間族語新聞.mxf")
 
-    def test_semicolon_cell_without_slot_match_takes_the_first(self):
-        rows = [{"播出日期": "2021-02-06", "播出時段": "晚間",
-                 "音檔位置(mp3)": "ilrdf-corpus/a.mp3;ilrdf-corpus/b.mp3"}]
-        got = asrmt_run.mp3_remote("20210206_037_晚間_Paiwan_排灣", rows)
-        self.assertEqual(got, "/docker/ilrdf-corpus/a.mp3")
+    def _entry(self, **over):
+        one = {"srt_name": "20210201_032_午間_Atayal_泰雅",
+               "節目名稱": "午間族語新聞", "播出日期": "2021-02-01",
+               "集數": "32", "族語別(英)": "Atayal", "族語別(中)": "泰雅",
+               "file": "20NL003_32午間族語新聞.mxf",
+               "原始影片檔案位置": self.MXF}
+        one.update(over)
+        return one
+
+    def test_a_staged_original_is_used_first(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        staged = os.path.join(tmp, "20NL003_32午間族語新聞.mxf")
+        open(staged, "w").close()
+        with mock.patch.object(asrmt_run.paths, "STAGE", tmp):
+            local, remote = asrmt_run.audio_source(self._entry())
+        self.assertEqual(local, staged)
+        self.assertEqual(remote, "")
+
+    def test_the_archived_mkv_is_next(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        mkv = os.path.join(tmp, "20210201_032_午間_Atayal_泰雅.mkv")
+        open(mkv, "w").close()
+        with mock.patch.object(asrmt_run.paths, "STAGE", tmp), \
+                mock.patch.object(asrmt_run.paths, "MKV_ARCHIVE", tmp):
+            local, remote = asrmt_run.audio_source(self._entry())
+        self.assertEqual(local, mkv)
+
+    def test_nothing_local_falls_back_to_the_remote_video(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        with mock.patch.object(asrmt_run.paths, "STAGE", tmp), \
+                mock.patch.object(asrmt_run.paths, "MKV_ARCHIVE", tmp):
+            local, remote = asrmt_run.audio_source(self._entry())
+        self.assertEqual(local, "")
+        self.assertTrue(remote.startswith("/docker/ilrdf-corpus/"), remote)
+
+    def test_no_source_anywhere_is_named(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        with mock.patch.object(asrmt_run.paths, "STAGE", tmp), \
+                mock.patch.object(asrmt_run.paths, "MKV_ARCHIVE", tmp):
+            with self.assertRaises(PipelineError) as caught:
+                asrmt_run.audio_source(self._entry(原始影片檔案位置=""))
+        self.assertIn("20210201_032", str(caught.exception))
 
 
 class TestCuesPath(unittest.TestCase):
@@ -104,7 +136,7 @@ class TestCuesPath(unittest.TestCase):
     publish），而 cues.json 是 publish 才對 work dir 徙入 store ê。若干焦
     看 store，語音側就永遠等袂著——publish 顛倒愛等伊。
 
-    `.B.work` 彼个才是準ê：make_all 就是對彼跡組出交付ê SRT，publish 嘛
+    `.work` 彼个才是準ê：make_all 就是對彼跡組出交付ê SRT，publish 嘛
     是對彼跡kā cues.json 徙入 store。兩爿愛是仝一份，時間軸才對同。
     """
 
@@ -132,7 +164,7 @@ class TestCuesPath(unittest.TestCase):
         return path
 
     def _in_work(self):
-        folder = os.path.join(self.work, self.SLUG + ".B.work")
+        folder = os.path.join(self.work, self.SLUG + ".work")
         os.makedirs(folder, exist_ok=True)
         os.makedirs(os.path.join(folder, "1-cues"), exist_ok=True)
         path = paths.coarse_cues(folder)

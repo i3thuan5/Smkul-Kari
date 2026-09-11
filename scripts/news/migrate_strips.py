@@ -85,10 +85,11 @@ def rewrite(cues, moves):
 def already_done(exists, work, old, new):
     """Has this rename happened already, through a shared strips dir?
 
-    `gap_sheets` symlinks `<slug>.B.work/strips` at `<slug>.work/strips`,
-    so the two work dirs share one set of files. Migrating `.B.work`
-    renames them through the symlink but only updates its own cues.json;
-    when `.work`'s turn comes, its old names are gone -- not lost, moved.
+An episode used to have two work dirs sharing one set of strips through
+    a symlink, so a rename made under one was already made under the other
+    by the time its turn came. The two dirs are one now, but the check
+    stays: re-running the sweep over a dir it has already done must be a
+    no-op, not a loss.
 
     New name present and old one absent means done. Neither present is a
     real loss and has to say so.
@@ -129,17 +130,16 @@ def migrate(work, dry_run=False):
     return len(moves), moved
 
 
-SUFFIXES = (".B.work", ".work")
+SUFFIXES = (".work",)
 
 
 def is_work_dir(name):
-    """Both kinds count.
+    """One suffix now.
 
-    `ocr-cli cues` writes `<slug>.work` and `gap_sheets` derives
-    `<slug>.B.work` from it; `fetch_sftp.sh` sometimes cuts straight into
-    `.B.work`. The first pass of this migration only looked at `.B.work`
-    and left 1,149 strips behind in 20210106_006_午間_Cou_鄒, freshly
-    fetched and not yet made into sheets.
+    There were two -- `<slug>.work` and the `<slug>.B.work` that
+    `gap_sheets` derived from it -- and the first pass of this migration
+    looked only at `.B.work`, leaving 1,149 strips behind in
+    20210106_006_午間_Cou_鄒, freshly fetched and not yet made into sheets.
     """
     for suffix in SUFFIXES:
         if name.endswith(suffix):

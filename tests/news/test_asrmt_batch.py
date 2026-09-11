@@ -46,12 +46,10 @@ class TestTodoSelection(unittest.TestCase):
     """
 
     def _entries(self):
-        return [{"srt_name": "20210101_001_午間_Rukai_魯凱",
-                 "truncated": "", "pending": True},
-                {"srt_name": "20210102_002_午間_Seediq_賽德克",
-                 "truncated": "", "pending": True},
+        return [{"srt_name": "20210101_001_午間_Rukai_魯凱", "pending": True},
+                {"srt_name": "20210102_002_午間_Seediq_賽德克", "pending": True},
                 {"srt_name": "20210201_032_午間_Atayal_泰雅",
-                 "truncated": ""}]
+                 }]
 
     def _names(self, todo):
         out = []
@@ -77,14 +75,6 @@ class TestTodoSelection(unittest.TestCase):
                                      only="20210201_032_午間_Atayal_泰雅")
         self.assertEqual(self._names(todo),
                          ["20210201_032_午間_Atayal_泰雅"])
-
-    def test_a_truncated_source_is_never_taken(self):
-        entries = [{"srt_name": "20210101_001_午間_Rukai_魯凱",
-                    "truncated": "上傳不完整"}]
-        with tempfile.TemporaryDirectory() as raw:
-            todo = asrmt_batch._todo(entries, 0, 1, raw,
-                                     only="20210101_001_午間_Rukai_魯凱")
-        self.assertEqual(todo, [])
 
     def test_an_episode_that_already_has_its_raw_srt_is_done(self):
         name = "20210101_001_午間_Rukai_魯凱"

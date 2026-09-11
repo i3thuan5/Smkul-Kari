@@ -7,8 +7,8 @@
 `make_all` writes the delivered SRTs straight into 3-srt/, and the vision
 TSVs are written into 2-vision/ by the readers themselves. What is left is
 the per-episode input the offline rebuild needs to put an SRT back
-together without a video -- `1-cues/<srt_name>.json` -- plus the delivered
-progress table and the clearing of the pending flags.
+together without a video -- `1-cues/<srt_name>.json`。無閣寫任何一張
+表，嘛無閣清 pending：兩張 smkul 表是節目目錄，人維護ê輸入。
 
 The unit is **one episode**, not the batch. An unread episode holds back
 only itself; the finished ones go out. This was all-or-nothing until
@@ -30,8 +30,8 @@ import sys
 
 from scripts import datadirs
 from scripts.aiyalaeho import make_all
+from scripts.aiyalaeho import episodes
 from scripts.aiyalaeho import paths
-from scripts.aiyalaeho import tracker
 
 
 def publishable(entry):
@@ -46,7 +46,7 @@ def publishable(entry):
     it would hold the whole batch open forever waiting for a reading that
     is never going to happen.
     """
-    if tracker.is_abnormal(entry):
+    if entry["abnormal"]:
         return "", ""
     work = paths.work_dir(entry["srt_name"])
     if not datadirs.cues_to_read(work):
@@ -68,7 +68,7 @@ def gate(entries):
     """
     blocked = []
     for entry in entries:
-        if not tracker.is_pending(entry):
+        if not entry["pending"]:
             continue
         _work, reason = publishable(entry)
         if reason:
@@ -84,15 +84,23 @@ def publish_one(entry, work):
     layout through, and with another line of work re-indenting the store
     the two would have taken turns overwriting each other.
     """
-    if tracker.is_abnormal(entry):
+    if entry["abnormal"]:
         return ""
     target = paths.stage_path(paths.KARI_CUES, entry["srt_name"], ".json")
     os.makedirs(os.path.dirname(target), exist_ok=True)
     with open(datadirs.cues_to_read(work), encoding="utf-8") as handle:
         manifest = json.load(handle)
+    body = json.dumps(datadirs.store_timeline(manifest), ensure_ascii=False,
+                      indent=2, sort_keys=True)
+    # 內容相仝就莫重寫：捌有一擺入庫kā 74 份內容根本無變ê已交付檔
+    # 全部重寫過。比ê是**正規化了後**ê字串——工作目錄彼份ê鍵是插入
+    # 順序，比原始檔ê話逐擺攏會判做無仝。
+    if os.path.exists(target):
+        with open(target, encoding="utf-8") as handle:
+            if handle.read() == body:
+                return ""
     with open(target, "w", encoding="utf-8") as handle:
-        json.dump(manifest, handle, ensure_ascii=False, indent=2,
-                  sort_keys=True)
+        handle.write(body)
     return target
 
 
@@ -107,7 +115,7 @@ def measured_reasons(entries):
     from scripts.aiyalaeho import catalogue
     named = []
     for entry in entries:
-        reason = entry.get("理由")
+        reason = entry.get("備註")
         if not reason:
             continue
         stem = os.path.splitext(entry.get("file")
@@ -118,28 +126,13 @@ def measured_reasons(entries):
     return named
 
 
-def clear_pending(entries, published):
-    """Drop the pending flag from the episodes actually written."""
-    cleared = 0
-    for entry in entries:
-        if entry["srt_name"] not in published:
-            continue
-        if tracker.is_pending(entry):
-            del entry["pending"]
-            cleared += 1
-    with open(paths.INVENTORY, "w", encoding="utf-8") as handle:
-        json.dump(entries, handle, ensure_ascii=False, indent=2,
-                  sort_keys=True)
-    return cleared
-
-
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--check", action="store_true",
                     help="報告欲定版啥，一字都無寫")
     args = ap.parse_args(argv)
 
-    entries = paths.load_inventory()
+    entries = episodes.load()
 
     # Decide everything before writing anything. The unit is one episode:
     # each is judged by `publishable` alone, and an unfinished one holds
@@ -159,22 +152,16 @@ def main(argv=None):
               % (len(ready), len(entries)))
         return 0
 
-    published = set()
+    written = 0
     for entry, work in ready:
-        publish_one(entry, work)
-        published.add(entry["srt_name"])
-        print("write %s" % entry["srt_name"])
+        if publish_one(entry, work):
+            written += 1
+            print("write %s" % entry["srt_name"])
+        else:
+            print("same  %s" % entry["srt_name"])
 
-    cleared = clear_pending(entries, published)
-    rows = tracker.tracker_rows(entries)
-    tracker.write_tracker(rows, paths.TRACKER_STORE)
-    abnormal = tracker.abnormal_rows(entries)
-    tracker.write_tracker(abnormal, paths.ABNORMAL_STORE,
-                          tracker.ABNORMAL_FIELDS)
-    print("\n定版 %d／%d 集；%d 集清掉 pending；寫 %s（%d 逝）佮 %s（%d 逝）"
-          % (len(ready), len(entries), cleared,
-             os.path.basename(paths.TRACKER_STORE), len(rows),
-             os.path.basename(paths.ABNORMAL_STORE), len(abnormal)))
+    print("\n%d 集ê時間軸入庫（%d 集內容相仝，無重寫）"
+          % (written, len(ready) - written))
     for name in measured_reasons(entries):
         print("  ← %s ê理由是量測抑是人判ê，看一目" % name)
     print("next: python3 -m scripts.aiyalaeho.rebuild --verify")

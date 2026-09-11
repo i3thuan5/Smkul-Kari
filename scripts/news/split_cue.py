@@ -43,6 +43,7 @@ import os
 import sys
 
 from scripts.errors import PipelineError
+from scripts.news import episodes
 from scripts.news import paths
 
 
@@ -175,7 +176,7 @@ def vision_folders(name):
 
 def apply(stem, index, at, first, second):
     """Do the split across cues.json and the episode's vision TSVs."""
-    work = os.path.join(paths.WORK, stem + ".B.work")
+    work = os.path.join(paths.WORK, stem + ".work")
     path = os.path.join(work, "cues.json")
     with open(path, encoding="utf-8") as handle:
         book = json.load(handle)
@@ -195,7 +196,7 @@ def apply(stem, index, at, first, second):
                       ensure_ascii=False, indent=2, sort_keys=True)
 
     name = None
-    for entry in paths.load_inventory():
+    for entry in episodes.load():
         if entry["slug"] == stem:
             name = entry["srt_name"]
     if name is None:

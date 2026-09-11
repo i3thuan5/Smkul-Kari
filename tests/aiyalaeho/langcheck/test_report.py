@@ -57,9 +57,16 @@ OTHER = srt("""
 
 def episodes():
     return [
-        report.Episode("開會了_082_Amis_阿美", "阿美", "ami", EPISODE),
-        report.Episode("開會了_068_Amis_阿美", "阿美", "ami-x-skl", OTHER),
+        report.Episode("開會了_082_Amis_阿美", "82", "阿美", "Amis", "",
+                       "ami", EPISODE),
+        report.Episode("開會了_068_Amis_阿美", "68", "阿美", "Amis", "秀姑巒",
+                       "ami-x-skl", OTHER),
     ]
+
+
+def cell(row, header, name):
+    """一格：用**欄名**提，莫用位置——頭前加欄位就規組歪去。"""
+    return row[header.index(name)]
 
 
 def read(path):
@@ -74,16 +81,27 @@ class TestMarkTable(unittest.TestCase):
         report.write_marks(self.path, episodes(), LEX)
         self.table = read(self.path)
 
-    def test_the_ten_columns_in_order(self):
+    def at(self, row):
+        """這一逝ê取格仔函式，用**欄名**提。"""
+        return lambda name: cell(row, self.table[0], name)
+
+    def test_the_fifteen_columns_in_order(self):
+        """頭七欄佮其他五張表同名同序，任兩張都 join 會起來。
+
+        `本集族語` 併入 `族語別(中)`——仝一件代誌兩个名，開兩張表
+        對照ê時愛佇心內先翻一擺。
+        """
         self.assertEqual(self.table[0], [
-            "成果檔名", "本集族語", "字幕編號", "開始時間", "結束時間",
+            "成果檔名", "節目名稱", "集數", "族語別(英)", "族語別(中)",
+            "語言別", "語言別代號", "字幕編號", "開始時間", "結束時間",
             "這列的語言", "疑似語言", "疑似語言詞庫比對命中率",
             "族語列", "華語列"])
+        self.assertNotIn("本集族語", self.table[0])
 
     def test_rows_sort_by_name_then_number(self):
         keys = []
         for row in self.table[1:]:
-            keys.append((row[0], int(row[2])))
+            keys.append((row[0], int(cell(row, self.table[0], "字幕編號"))))
         self.assertEqual(keys, sorted(keys))
 
     def test_every_entry_is_in_the_table(self):
@@ -93,41 +111,50 @@ class TestMarkTable(unittest.TestCase):
     def test_the_ordinary_case_is_there_too(self):
         labels = set()
         for row in self.table[1:]:
-            labels.add(row[5])
+            labels.add(cell(row, self.table[0], "這列的語言"))
         self.assertIn("純族語", labels)
 
     def test_the_start_time_is_the_srt_stamp(self):
         for row in self.table[1:]:
-            if row[0].endswith("082_Amis_阿美") and row[2] == "1":
-                self.assertEqual(row[3], "00:00:06,220")
-                self.assertEqual(row[4], "00:00:09,560")
+            got = self.at(row)
+            if not row[0].endswith("082_Amis_阿美"):
+                continue
+            if got("字幕編號") == "1":
+                self.assertEqual(got("開始時間"), "00:00:06,220")
+                self.assertEqual(got("結束時間"), "00:00:09,560")
                 return
         self.fail("揣無彼逝")
 
     def test_the_formosan_row_is_copied_verbatim(self):
         for row in self.table[1:]:
-            if row[2] == "2":
-                self.assertEqual(row[8],
+            got = self.at(row)
+            if got("字幕編號") == "2":
+                self.assertEqual(got("族語列"),
                                  "Patatiko ho kita i kakialawan a 節目")
                 return
         self.fail("揣無彼逝")
 
     def test_certain_labels_leave_the_guess_columns_empty(self):
         for row in self.table[1:]:
-            if row[5] != "無法確定":
-                self.assertEqual(row[6], "", row[5])
-                self.assertEqual(row[7], "", row[5])
+            got = self.at(row)
+            label = got("這列的語言")
+            if label != "無法確定":
+                self.assertEqual(got("疑似語言"), "", label)
+                self.assertEqual(got("疑似語言詞庫比對命中率"), "", label)
 
     def test_the_mixed_label_carries_no_tribe_name(self):
         for row in self.table[1:]:
-            if "夾" in row[5]:
-                self.assertEqual(row[5], "族語夾雜華語")
+            label = self.at(row)("這列的語言")
+            if "夾" in label:
+                self.assertEqual(label, "族語夾雜華語")
 
     def test_an_unsure_row_names_the_suspect_and_its_rate(self):
         for row in self.table[1:]:
-            if row[5] == "無法確定":
-                self.assertEqual(row[6], "布農")
-                self.assertTrue(row[7].endswith("%"), row[7])
+            got = self.at(row)
+            if got("這列的語言") == "無法確定":
+                self.assertEqual(got("疑似語言"), "布農")
+                rate = got("疑似語言詞庫比對命中率")
+                self.assertTrue(rate.endswith("%"), rate)
                 return
         self.fail("無半逝無法確定")
 
@@ -143,10 +170,12 @@ class TestDistributionTable(unittest.TestCase):
         report.write_distribution(self.path, episodes(), LEX)
         self.table = read(self.path)
 
-    def test_the_columns_in_order(self):
+    def test_the_twelve_columns_in_order(self):
         self.assertEqual(self.table[0], [
-            "成果檔名", "本集族語", "字幕條數", "純族語",
+            "成果檔名", "節目名稱", "集數", "族語別(英)", "族語別(中)",
+            "語言別", "語言別代號", "字幕條數", "純族語",
             "族語夾雜華語", "華語", "無法確定"])
+        self.assertNotIn("本集族語", self.table[0])
 
     def test_every_episode_gets_a_row(self):
         names = []
@@ -157,16 +186,16 @@ class TestDistributionTable(unittest.TestCase):
 
     def test_the_four_counts_add_up_to_the_entry_count(self):
         for row in self.table[1:]:
-            total = int(row[2])
+            total = int(cell(row, self.table[0], "字幕條數"))
             counted = 0
-            for cell in row[3:7]:
-                counted += int(cell)
+            for name in ("純族語", "族語夾雜華語", "華語", "無法確定"):
+                counted += int(cell(row, self.table[0], name))
             self.assertEqual(counted, total, row[0])
 
     def test_the_entry_count_matches_the_srt(self):
         for row in self.table[1:]:
             if row[0].endswith("082_Amis_阿美"):
-                self.assertEqual(int(row[2]), 4)
+                self.assertEqual(int(cell(row, self.table[0], "字幕條數")), 4)
                 return
         self.fail("揣無彼逝")
 
@@ -183,11 +212,11 @@ class TestLoadingFromTheStore(unittest.TestCase):
         with open(self.table, "w", encoding="utf-8-sig",
                   newline="") as handle:
             writer = csv.writer(handle, lineterminator="\n")
-            writer.writerow(["節目名稱", "集數", "族語別(英)", "族語別(中)",
-                             "語言別", "語言代號", "影片檔案位置",
-                             "影片長度", "成果檔名"])
-            writer.writerow(["開會了", "82", "Amis", "阿美", "", "ami",
-                             "x.mp4", "00:48:00", "開會了_082_Amis_阿美"])
+            writer.writerow(["成果檔名", "節目名稱", "集數", "族語別(英)",
+                             "族語別(中)", "語言別", "語言別代號",
+                             "原始影片檔案位置", "備註"])
+            writer.writerow(["開會了_082_Amis_阿美", "開會了", "82", "Amis",
+                             "阿美", "", "ami", "x.mp4", ""])
 
     def write_srt(self, name, text):
         with open(os.path.join(self.srt_dir, name + ".srt"), "w",
@@ -200,6 +229,8 @@ class TestLoadingFromTheStore(unittest.TestCase):
         self.assertEqual(len(got), 1)
         self.assertEqual(got[0].srt_name, "開會了_082_Amis_阿美")
         self.assertEqual(got[0].tribe, "阿美")
+        self.assertEqual(got[0].english, "Amis")
+        self.assertEqual(got[0].number, "82")
         self.assertEqual(got[0].code, "ami")
         self.assertIn("族語：", got[0].text)
 

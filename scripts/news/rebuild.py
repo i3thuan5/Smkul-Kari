@@ -28,13 +28,12 @@ import shutil
 import sys
 import tempfile
 
+from scripts import datadirs
 from scripts.news import coaxial
+from scripts.news import episodes
 from scripts.news import make_srt
 from scripts.news import paths
-from scripts.news import tracker
 from scripts.errors import PipelineError
-
-SMKUL = "smkul.csv"
 
 
 def _tsv_lines(path):
@@ -64,15 +63,48 @@ def episode_transcripts(srt_name):
     return resolved
 
 
+def stage_names():
+    """[(階段, {成果檔名…})…]，頂懸ê排頭前。
+
+    三个階段逐集各自入庫（見 srt-data-store「各階段做完就各自入庫」），
+    所以「有幾集」是問資料夾，毋是問任何一欄宣告。月份彼層對每一个
+    成果檔名家己推得出來，所以遮直接掃。
+    """
+    found = []
+    for stage, base, ext in (("1-cues", paths.KARI_CUES, ".json"),
+                             ("2-vision", paths.KARI_VISION, ""),
+                             ("3-srt", paths.SRT_DIR, ".srt")):
+        names = set()
+        pattern = os.path.join(base, "*", "*" + ext)
+        for path in glob.glob(pattern):
+            name = os.path.basename(path)
+            if ext:
+                if not name.endswith(ext):
+                    continue
+                name = name[:-len(ext)]
+            names.add(name)
+        found.append((stage, names))
+    return found
+
+
+def delivered_names():
+    """交付ê成果檔名——`3-srt/` 內底實在有ê彼幾份。"""
+    for stage, names in stage_names():
+        if stage == "3-srt":
+            return names
+    return set()
+
+
 def check_inputs(entries):
+    """交付ê集數重建袂出來ê所在。
+
+    「交付ê」是問 `3-srt/` 有佗幾份，毋是問任何一欄宣告——階段目錄
+    逐个各自入庫，某一集做到佗一步，答案佇彼跡。表有 969 逝、階段
+    目錄才 75 集，彼是猶未做，毋是缺件。
+    """
     problems = []
     for entry in entries:
-        # Two ways an episode legitimately has nothing to rebuild: its source
-        # was too incomplete to ever subtitle, or it is registered and still
-        # being worked on. Both are declarations made in the inventory, so an
-        # episode carrying neither is a claim that it was delivered -- and
-        # that claim is what the rest of this function checks.
-        if entry["truncated"] or tracker.is_pending(entry):
+        if entry["pending"]:
             continue
         name = entry["srt_name"]
         if not os.path.exists(paths.stage_path(paths.KARI_CUES, name,
@@ -102,14 +134,14 @@ def rebuild_one(entry, tmp):
 
     out = os.path.join(tmp, "srt", name + ".srt")
     qc = make_srt.run(work, out)
-    return tracker.vision_status(qc["srt_lines"])
+    return "Claude Vision OCR 已產生 %d 行字幕" % qc["srt_lines"]
 
 
 def _mismatches(tmp, entries):
     """Deliverables whose rebuilt bytes differ from the shipped ones."""
     mismatched = []
     for entry in entries:
-        if entry["truncated"] or tracker.is_pending(entry):
+        if entry["pending"]:
             continue
         name = entry["srt_name"] + ".srt"
         built = open(os.path.join(tmp, "srt", name), "rb").read()
@@ -117,10 +149,6 @@ def _mismatches(tmp, entries):
                                         ".srt"), "rb").read()
         if built != shipped:
             mismatched.append(name)
-    built = open(os.path.join(tmp, "srt", SMKUL), "rb").read()
-    shipped = open(paths.TRACKER_STORE, "rb").read()
-    if built != shipped:
-        mismatched.append(SMKUL)
     return mismatched
 
 
@@ -149,7 +177,7 @@ def speech_problems(entries):
     """
     names = []
     for entry in entries:
-        if entry["truncated"] or tracker.is_pending(entry):
+        if entry["pending"]:
             continue
         names.append(entry["srt_name"])
     return coaxial.problems(names, speech_stages())
@@ -158,7 +186,7 @@ def speech_problems(entries):
 def _delivered_count(entries):
     count = 0
     for entry in entries:
-        if not entry["truncated"] and not tracker.is_pending(entry):
+        if not entry["pending"]:
             count += 1
     return count
 
@@ -169,7 +197,17 @@ def main():
                     help="byte-compare the rebuild against news/1-ocr/3-srt/")
     args = ap.parse_args()
 
-    entries = paths.load_inventory()
+    entries = episodes.load()
+
+    # 階段之間ê包含關係先驗：`3-srt` 有一份、`1-cues` 無彼集ê時間軸，
+    # 彼份交付物重建袂出來。頂懸行頭前是正常ê（分階段入庫），下跤
+    # 超過頂懸才是錯。
+    containment = datadirs.stage_problems(stage_names())
+    if containment:
+        for line in containment:
+            print("STAGE:", line)
+        raise PipelineError("%d 項階段對袂起來" % len(containment))
+
     problems = check_inputs(entries)
     if problems:
         for line in problems:
@@ -179,19 +217,11 @@ def main():
     tmp = tempfile.mkdtemp(prefix="rebuild-")
     os.makedirs(os.path.join(tmp, "srt"), exist_ok=True)
 
-    def status_of(entry):
-        if entry["truncated"]:
-            status = tracker.skipped_status(entry["truncated"])
-        else:
-            status = rebuild_one(entry, tmp)
-        print("%-46s %s" % (entry["srt_name"], status))
-        return status
-
     for entry in entries:
-        if tracker.is_pending(entry):
-            print("%-46s %s" % (entry["srt_name"], "略過：本批尚未完成"))
-    rows = tracker.tracker_rows(entries, status_of)
-    tracker.write_tracker(rows, os.path.join(tmp, "srt", SMKUL))
+        if entry["pending"]:
+            continue
+        status = rebuild_one(entry, tmp)
+        print("%-46s %s" % (entry["srt_name"], status))
 
     if not args.verify:
         print("\nrebuilt into", tmp)
@@ -214,7 +244,7 @@ def main():
         print("\n重建ê結果留佇", tmp)
         raise PipelineError("%d 項佮交付ê無仝" % len(mismatched))
     shutil.rmtree(tmp)
-    print("\nOK: %d SRTs + smkul.csv rebuilt byte-identical from Kari-SRT"
+    print("\nOK: %d SRTs rebuilt byte-identical from Kari-SRT"
           % _delivered_count(entries))
 
 

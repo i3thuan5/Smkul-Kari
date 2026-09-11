@@ -15,177 +15,85 @@ from scripts.transcode import archive_batch
 from scripts.errors import PipelineError
 
 
-class TestVideoRemote(unittest.TestCase):
-    def test_remote_path_from_smkul_row(self):
-        rows = [{"播出日期": "2021-02-06", "播出時段": "晚間",
-                 "影片檔案位置":
-                 "ilrdf-corpus/族語新聞/110.1-110.10/7月/"
-                 "21NL004_37晚間族語新聞.mp4"}]
-        got = archive_batch.video_remote(
-            "20210206_037_晚間_Paiwan_排灣", rows)
-        self.assertEqual(
-            got, "/docker/ilrdf-corpus/族語新聞/110.1-110.10/7月/"
-                 "21NL004_37晚間族語新聞.mp4")
-
-    def test_missing_row_fails_loud(self):
-        with self.assertRaises(PipelineError):
-            archive_batch.video_remote("20210301_060_午間_Cou_鄒", [])
-
-    def test_a_pending_episode_resolves_from_the_inventory(self):
-        """猶咧做ê彼集，smkul.csv 內底猶未有，毋過封存愛佇彼陣做。
-
-        交付版ê `smkul.csv` 刁工無列 pending ê集數（見 news/README），
-        毋過母帶是 `fetch_sftp.sh` 抓落來、切完 cue 就留咧等封存ê——
-        彼个時陣這集**一定**是 pending。若干焦看 smkul.csv，逐集ê流程
-        就會佇遮斷去，而且錯誤講「no video in smkul.csv」，看無是按怎。
-        Inventory 是登記簿，pending 佮已交付攏有，所以退去問伊。
-        """
-        inventory = [{"srt_name": "20210215_046_晚間_Amis_阿美",
-                      "pending": True,
-                      "video": "ilrdf-corpus/族語新聞/110.1-110.10/"
-                               "2月原始mxf檔/21NL004_46晚間族語新聞.mxf"}]
-        got = archive_batch.video_remote(
-            "20210215_046_晚間_Amis_阿美", [], inventory=inventory)
-        self.assertEqual(
-            got, "/docker/ilrdf-corpus/族語新聞/110.1-110.10/"
-                 "2月原始mxf檔/21NL004_46晚間族語新聞.mxf")
-
-    def test_the_inventory_shorthand_is_expanded_too(self):
-        # inventory 早期彼幾筆記ê嘛是 "ilrdf-corpus/2月/" 簡寫
-        inventory = [{"srt_name": "20210215_046_午間_Atayal_泰雅",
-                      "video": "ilrdf-corpus/2月/21NL003_46午間族語新聞.mxf"}]
-        got = archive_batch.video_remote(
-            "20210215_046_午間_Atayal_泰雅", [], inventory=inventory)
-        self.assertEqual(
-            got, "/docker/ilrdf-corpus/族語新聞/110.1-110.10/"
-                 "2月原始mxf檔/21NL003_46午間族語新聞.mxf")
-
-    def test_smkul_wins_when_both_know_the_episode(self):
-        # 交付版是正本；inventory 干焦是 pending 彼站ê退路。
-        rows = [{"播出日期": "2021-02-06", "播出時段": "晚間",
-                 "影片檔案位置": "ilrdf-corpus/7月/對ê.mp4"}]
-        inventory = [{"srt_name": "20210206_037_晚間_Paiwan_排灣",
-                      "video": "ilrdf-corpus/7月/毋著ê.mp4"}]
-        got = archive_batch.video_remote(
-            "20210206_037_晚間_Paiwan_排灣", rows, inventory=inventory)
-        self.assertTrue(got.endswith("對ê.mp4"))
-
-    def test_neither_source_knows_it_still_fails_loud(self):
-        with self.assertRaises(PipelineError):
-            archive_batch.video_remote("20210301_060_午間_Cou_鄒", [],
-                                       inventory=[])
-
-    def test_semicolon_cell_picks_the_matching_slot(self):
-        rows = [{"播出日期": "2021-02-06", "播出時段": "晚間",
-                 "影片檔案位置":
-                 "ilrdf-corpus/7月/21NL004_37午間族語新聞.mp4;"
-                 "ilrdf-corpus/7月/21NL004_37晚間族語新聞.mp4"}]
-        got = archive_batch.video_remote(
-            "20210206_037_晚間_Paiwan_排灣", rows)
-        self.assertEqual(
-            got, "/docker/ilrdf-corpus/7月/21NL004_37晚間族語新聞.mp4")
-
-    def test_feb_mxf_shorthand_expands_to_the_real_sftp_directory(self):
-        # smkul.csv 對 2 月 mxf 批次記的是舊本機掛載遺留下來的簡寫
-        # "ilrdf-corpus/2月/<檔名>"；SFTP 上真正的路徑多一層
-        # "族語新聞/110.1-110.10/2月原始mxf檔/"（見 fetch_sftp.sh 的
-        # 同一個註記），簡寫路徑在 SFTP 上找不到檔案。
-        rows = [{"播出日期": "2021-02-01", "播出時段": "晚間",
-                 "影片檔案位置":
-                 "ilrdf-corpus/2月/20NL004_32晚間族語新聞.mxf"}]
-        got = archive_batch.video_remote(
-            "20210201_032_晚間_Amis_阿美", rows)
-        self.assertEqual(
-            got, "/docker/ilrdf-corpus/族語新聞/110.1-110.10/"
-                 "2月原始mxf檔/20NL004_32晚間族語新聞.mxf")
-
-
 class TestMasterRemote(unittest.TestCase):
-    """封存愛問**目錄**，毋是問 smkul.csv。
+    """封存提ê是**候選清單**內底ê母帶，毋是交付紀錄彼支。
 
-    兩份資料咧回答無仝ê問題：
-
-    - `smkul.csv` ê「影片檔案位置」記ê是**這支 SRT 是對佗一个檔做ê**，
-      是交付紀錄，一集干焦一條，定版了就袂振動。
-    - 目錄（`ilrdf-corpus.csv`）ê彼欄是**候選清單**，一集會使列幾若條，
-      `sources.pick()` 照「mxf 母帶優先」ê規則揀。
+    節目目錄佮交付表合做一張了後，`原始影片檔案位置` 是候選清單——
+    一集會使列幾若條，`sources.pick()` 照「mxf 母帶優先」揀。
 
     2 月頭一批 13 集是佇 `sources.py` 這套規則寫出來進前就交付ê，當時
-    揀著 `7月/` 彼份 mp4。in ê母帶佇伺服器頂猶原佇咧，欲補封存ê時，
-    問 smkul.csv 只會提著彼个 mp4，`is_master()` 就kā規 13 集攏跳過。
-    所以封存這爿愛家己問目錄。
+    用ê是 `7月/` 彼份 mp4。in ê母帶佇伺服器頂猶原佇咧；欲補封存ê時，
+    若提「這支 SRT 對佗位來」彼个答案，提著ê是 mp4、`is_master()` 講
+    毋是，規 13 集就恬恬去予跳過——所以這爿愛家己套揀檔ê規則。
     """
 
-    CAT = [{"srt_name": "20210206_037_晚間_Paiwan_排灣",
-            "播出日期": "2021-02-06", "播出時段": "晚間",
-            "影片檔案位置":
-            "ilrdf-corpus/族語新聞/110.1-110.10/2月原始mxf檔/"
-            "21NL004_37午間族語新聞.mxf;"
-            "ilrdf-corpus/族語新聞/110.1-110.10/2月原始mxf檔/"
-            "21NL004_37晚間族語新聞.mxf;"
-            "ilrdf-corpus/族語新聞/110.1-110.10/7月/"
-            "21NL004_37午間族語新聞.mp4;"
-            "ilrdf-corpus/族語新聞/110.1-110.10/7月/"
-            "21NL004_37晚間族語新聞.mp4"}]
+    ENTRIES = [{"srt_name": "20210206_037_晚間_Paiwan_排灣",
+                "節目名稱": "晚間族語新聞",
+                "播出日期": "2021-02-06",
+                "原始影片檔案位置":
+                "ilrdf-corpus/族語新聞/110.1-110.10/2月原始mxf檔/"
+                "21NL004_37午間族語新聞.mxf;"
+                "ilrdf-corpus/族語新聞/110.1-110.10/2月原始mxf檔/"
+                "21NL004_37晚間族語新聞.mxf;"
+                "ilrdf-corpus/族語新聞/110.1-110.10/7月/"
+                "21NL004_37午間族語新聞.mp4;"
+                "ilrdf-corpus/族語新聞/110.1-110.10/7月/"
+                "21NL004_37晚間族語新聞.mp4"}]
 
-    # 交付紀錄講ê是 mp4 -- 這條愛保留，毋是欲改ê
-    SMKUL = [{"播出日期": "2021-02-06", "播出時段": "晚間",
-              "影片檔案位置":
-              "ilrdf-corpus/族語新聞/110.1-110.10/7月/"
-              "21NL004_37晚間族語新聞.mp4"}]
-
-    def test_it_finds_the_master_even_when_smkul_says_mp4(self):
+    def test_the_master_wins_over_the_transcode(self):
         got = archive_batch.master_remote(
-            "20210206_037_晚間_Paiwan_排灣", self.CAT, self.SMKUL, [])
+            "20210206_037_晚間_Paiwan_排灣", self.ENTRIES)
         self.assertTrue(got.endswith("21NL004_37晚間族語新聞.mxf"), got)
         self.assertTrue(archive_batch.is_master(got))
 
     def test_the_slot_still_decides_which_master(self):
         # 仝一逝內底午間ê母帶排頭前，毋通提著彼支
         got = archive_batch.master_remote(
-            "20210206_037_晚間_Paiwan_排灣", self.CAT, self.SMKUL, [])
+            "20210206_037_晚間_Paiwan_排灣", self.ENTRIES)
         self.assertNotIn("午間", got)
 
-    def test_no_master_in_the_catalogue_stays_an_mp4(self):
-        # 目錄若干焦有 mp4，就是 mp4；`is_master()` 後壁會kā伊跳過
-        cat = [{"srt_name": "20210206_037_晚間_Paiwan_排灣",
-                "播出日期": "2021-02-06", "播出時段": "晚間",
-                "影片檔案位置":
-                "ilrdf-corpus/族語新聞/110.1-110.10/7月/"
-                "21NL004_37晚間族語新聞.mp4"}]
+    def test_only_an_mp4_stays_an_mp4(self):
+        # 干焦有 mp4 就是 mp4；`is_master()` 後壁會kā伊跳過
+        entries = [{"srt_name": "20210206_037_晚間_Paiwan_排灣",
+                    "節目名稱": "晚間族語新聞",
+                    "播出日期": "2021-02-06",
+                    "原始影片檔案位置":
+                    "ilrdf-corpus/族語新聞/110.1-110.10/7月/"
+                    "21NL004_37晚間族語新聞.mp4"}]
         got = archive_batch.master_remote(
-            "20210206_037_晚間_Paiwan_排灣", cat, self.SMKUL, [])
+            "20210206_037_晚間_Paiwan_排灣", entries)
         self.assertFalse(archive_batch.is_master(got))
 
-    def test_an_episode_the_catalogue_does_not_know_falls_back(self):
+    def test_an_undecidable_candidate_list_still_gives_a_path(self):
+        """揀袂出來ê時嘛愛提著一條路——封存毋是交付，寧可提著轉檔。"""
+        entries = [{"srt_name": "20210213_044_晚間_Paiwan_排灣",
+                    "節目名稱": "晚間族語新聞",
+                    "播出日期": "2021-02-13",
+                    "video":
+                    "ilrdf-corpus/a/21NL003_44晚間族語新聞.mp4;"
+                    "ilrdf-corpus/b/21NL004_44晚間族語新聞.mp4",
+                    "原始影片檔案位置":
+                    "ilrdf-corpus/a/21NL003_44晚間族語新聞.mp4;"
+                    "ilrdf-corpus/b/21NL004_44晚間族語新聞.mp4"}]
         got = archive_batch.master_remote(
-            "20210206_037_晚間_Paiwan_排灣", [], self.SMKUL, [])
-        self.assertTrue(got.endswith("21NL004_37晚間族語新聞.mp4"), got)
+            "20210213_044_晚間_Paiwan_排灣", entries)
+        self.assertTrue(got.endswith(".mp4"), got)
 
-    def test_it_falls_all_the_way_to_the_inventory(self):
-        inventory = [{"srt_name": "20210215_046_晚間_Amis_阿美",
-                      "pending": True,
-                      "video": "ilrdf-corpus/族語新聞/110.1-110.10/"
-                               "2月原始mxf檔/21NL004_46晚間族語新聞.mxf"}]
+    def test_the_feb_shorthand_is_expanded(self):
+        entries = [{"srt_name": "20210201_032_晚間_Amis_阿美",
+                    "節目名稱": "晚間族語新聞",
+                    "播出日期": "2021-02-01",
+                    "原始影片檔案位置":
+                    "ilrdf-corpus/2月/20NL004_32晚間族語新聞.mxf"}]
         got = archive_batch.master_remote(
-            "20210215_046_晚間_Amis_阿美", [], [], inventory)
-        self.assertTrue(got.endswith("21NL004_46晚間族語新聞.mxf"), got)
-
-    def test_the_feb_shorthand_is_expanded_from_the_catalogue_too(self):
-        cat = [{"srt_name": "20210201_032_晚間_Amis_阿美",
-                "播出日期": "2021-02-01", "播出時段": "晚間",
-                "影片檔案位置":
-                "ilrdf-corpus/2月/20NL004_32晚間族語新聞.mxf"}]
-        got = archive_batch.master_remote(
-            "20210201_032_晚間_Amis_阿美", cat, [], [])
+            "20210201_032_晚間_Amis_阿美", entries)
         self.assertEqual(
             got, "/docker/ilrdf-corpus/族語新聞/110.1-110.10/"
                  "2月原始mxf檔/20NL004_32晚間族語新聞.mxf")
 
-    def test_nothing_anywhere_still_fails_loud(self):
+    def test_an_episode_the_table_does_not_know_fails_loud(self):
         with self.assertRaises(PipelineError):
-            archive_batch.master_remote("20210301_060_午間_Cou_鄒",
-                                        [], [], [])
+            archive_batch.master_remote("20210301_060_午間_Cou_鄒", [])
 
 
 class TestStageName(unittest.TestCase):
@@ -293,73 +201,46 @@ class TestNeedsUpload(unittest.TestCase):
 
 
 class TestMasterEpisodes(unittest.TestCase):
-    """「賰的 mxf 攏轉做 mkv」彼條清單，對**目錄**提，毋是對 smkul.csv。
+    """「賰的 mxf 攏轉做 mkv」彼條清單。
 
-    smkul.csv 干焦列已經交付的集數，母帶封存佮 OCR 做到佗位無關係——
-    影片佇伺服器頂懸，猶未讀字幕的集數嘛封存會得。
+    節目目錄涵蓋全部集數，母帶封存佮 OCR 做到佗位無關係——影片佇伺服
+    器頂懸，猶未讀字幕ê集數嘛封存會得。
     """
 
-    HEAD = ("節目名稱,年度,集數,播出日期,播出時段,族語別(英),族語別(中),"
-            "有無影片,影片檔案位置,音檔位置(mp3),音檔位置(wav),文稿位置,備註")
     MXF = ("ilrdf-corpus/族語新聞/110.1-110.10/2月原始mxf檔/"
            "20NL003_32午間族語新聞.mxf")
     MP4 = ("ilrdf-corpus/族語新聞/110.1-110.10/7月/"
            "21NL003_41午間族語新聞.mp4")
 
-    def _catalogue(self, rows):
-        handle = tempfile.NamedTemporaryFile(
-            "w", suffix=".csv", delete=False, encoding="utf-8-sig")
-        handle.write(self.HEAD + "\n")
-        for row in rows:
-            handle.write(row + "\n")
-        handle.close()
-        self.addCleanup(os.unlink, handle.name)
-        from scripts.news import resolve_slug
-        return resolve_slug.load(handle.name)
-
-    def _row(self, episode, date, slot, en, zh, path):
-        return ",".join(["%s族語新聞" % slot, "2021", episode, date, slot,
-                         en, zh, "是", path, "", "", "", ""])
+    def _entry(self, name, episode, date, english, chinese, path):
+        return {"srt_name": name, "節目名稱": "午間族語新聞",
+                "年度": date[:4], "集數": episode, "播出日期": date,
+                "族語別(英)": english, "族語別(中)": chinese,
+                "原始影片檔案位置": path}
 
     def test_only_master_sourced_episodes_are_listed(self):
-        cat = self._catalogue([
-            self._row("32", "2021-02-01", "午間", "Atayal", "泰雅", self.MXF),
-            self._row("41", "2021-02-10", "午間", "Cou", "鄒", self.MP4)])
-        got = archive_batch.master_episodes(cat)
+        entries = [
+            self._entry("20210201_032_午間_Atayal_泰雅", "32", "2021-02-01",
+                        "Atayal", "泰雅", self.MXF),
+            self._entry("20210210_041_午間_Cou_鄒", "41", "2021-02-10",
+                        "Cou", "鄒", self.MP4)]
+        got = archive_batch.master_episodes(entries)
         self.assertEqual(len(got), 1)
         self.assertEqual(got[0][0], "20210201_032_午間_Atayal_泰雅")
         self.assertTrue(got[0][1].endswith(".mxf"))
 
     def test_the_remote_path_is_absolute_on_the_server(self):
-        cat = self._catalogue([
-            self._row("32", "2021-02-01", "午間", "Atayal", "泰雅", self.MXF)])
-        self.assertTrue(archive_batch.master_episodes(cat)[0][1]
-                        .startswith("/docker/ilrdf-corpus/"))
-
-    def test_broadcast_order(self):
-        other = self.MXF.replace("20NL003_32午間", "20NL003_33午間")
-        cat = self._catalogue([
-            self._row("33", "2021-02-02", "午間", "Kavalan", "噶瑪蘭", other),
-            self._row("32", "2021-02-01", "午間", "Atayal", "泰雅", self.MXF)])
-        names = []
-        for name, _remote in archive_batch.master_episodes(cat):
-            names.append(name)
-        self.assertEqual(names, sorted(names))
+        entries = [self._entry("20210201_032_午間_Atayal_泰雅", "32",
+                               "2021-02-01", "Atayal", "泰雅", self.MXF)]
+        got = archive_batch.master_episodes(entries)
+        self.assertTrue(got[0][1].startswith("/docker/ilrdf-corpus/"))
 
     def test_the_list_is_pairs_of_name_and_remote(self):
-        # `--list` 就是印這份清單，人看過才決定欲毋欲開始
-        cat = self._catalogue([
-            self._row("32", "2021-02-01", "午間", "Atayal", "泰雅", self.MXF)])
-        name, remote = archive_batch.master_episodes(cat)[0]
-        self.assertEqual(name, "20210201_032_午間_Atayal_泰雅")
-        self.assertTrue(remote.endswith("20NL003_32午間族語新聞.mxf"))
-
-    def test_rows_without_a_broadcast_date_are_ignored(self):
-        # 《開會了》彼 46 逝無播出日期，命名袂出來
-        cat = self._catalogue([
-            ",".join(["開會了", "", "1", "", "", "", "", "是",
-                      self.MXF, "", "", "", ""])])
-        self.assertEqual(archive_batch.master_episodes(cat), [])
+        entries = [self._entry("20210201_032_午間_Atayal_泰雅", "32",
+                               "2021-02-01", "Atayal", "泰雅", self.MXF)]
+        for name, remote in archive_batch.master_episodes(entries):
+            self.assertTrue(name.startswith("2021"))
+            self.assertTrue(remote.endswith(".mxf"))
 
 
 class TestDurationMatches(unittest.TestCase):

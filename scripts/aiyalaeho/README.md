@@ -15,12 +15,12 @@
 | 檔 | 做什麼 |
 |---|---|
 | `paths.py` | 語料路徑的單一出處（`stage_path()` 是階段目錄唯一出口，逐集檔案不分層；`check_srt_name` 認 `開會了_<集數3碼>_…`；`--var` 供 shell 取值） |
-| `catalogue.py` | 檔名就是這一集：解析集數／族語別／語言別／語言代號，登記成 pending 條目。**不讀** `ilrdf-corpus.csv` |
+| `catalogue.py` | 檔名就是這一集：解析集數／族語別／語言別／語言別代號，整批寫兩張節目目錄表 |
 | `verify_band.py` | 切 cue 前逐集驗版型：量帶的顏色與字幕列的位置 |
 | `ingest.py` | 視覺辨識 TSV 的驗證匯入（cue↔sheet 歸屬、空白列補尾端 tab、只吃 `b*.tsv`） |
 | `make_srt.py` | 單集組裝：每條兩行「族語：／華語：」，走共用組裝鏈 |
 | `make_all.py` | 整批組裝＋進度表工作版 |
-| `tracker.py` | `smkul.csv` 的九欄與單列組法，三方共用 |
+| `episodes.py` | 兩張 smkul 表讀出來的逐集條目；`pending`／`abnormal` 都是推導的（`inventory.json` 拿掉了）|
 | `publish.py` | 整批把關→遷時間軸→清 pending→定版 `smkul.csv` |
 | `rebuild.py` | 只用 store 離線重建全部交付 SRT，逐 byte 驗證 |
 | `presets.json` | 版型：`aiyalaeho-bilingual`（黃底雙列帶） |
@@ -28,7 +28,7 @@
 
 news 有而這裡**沒有**的四支，各有理由：`fetch_sftp.sh`（素材已在本機，
 少數幾支手動 `scripts/news/sftp.sh get` 就好）、`plan_month.py`（沒有月份
-批次，登記併進 `catalogue.py`）、`gap_sheets.py`（沒有 `.work`／`.B.work`
+批次，登記併進 `catalogue.py`）、`gap_sheets.py`（沒有 `.work`
 之分，`cues --sheets` 首輪就是完整的）、`batches.py`（`ocr.cli pending`
 已列未讀的 sheet）。
 
@@ -137,11 +137,12 @@ python3 -m scripts.aiyalaeho.catalogue --annotate '開會了_083_Rukai_魯凱=�
 | 表 | 內容 | 欄 |
 |---|---|---|
 | `Kari-SRT/aiyalaeho/smkul.csv` | 有交付字幕ê集數 | 九欄 |
-| `Kari-SRT/aiyalaeho/smkul-字幕版型異常.csv` | 無交付ê | 十欄＝九欄加「理由」 |
+| `Kari-SRT/aiyalaeho/smkul-字幕版型異常.csv` | 無交付雙語ê | **仝款九欄** |
 
-兩張表ê**逝數相加＝`inventory.json` ê筆數**，`srt_name` 兩爿袂重複。異常表
-ê「影片長度」是對 inventory ê秒數格式化來ê——異常集無時間軸，推導袂出來，
-所以 `catalogue` 登記／補註ê時就先共影片容器ê時長讀落來記。
+兩張表ê**逝數相加＝全部有影片ê集數**，`成果檔名` 兩爿袂重複。欄位完全
+相仝，所以「這一逝佇佗一个檔」是唯一ê分別——異常表逐逝ê `備註` 愛非空，
+講出伊按怎袂使做雙語交付（`無字幕`／`僅華語字幕`／`版型不符：…`／
+`人工判定：…`）。彼是彼張表唯一ê自我宣告，`rebuild --verify` 有咧驗。
 
 ### 報告按怎看
 
@@ -181,7 +182,7 @@ python3 -m scripts.aiyalaeho.catalogue --annotate '開會了_083_Rukai_魯凱=�
   版型，語言卡是布農）。
 - **分類ê正本是兩張表，莫記佇這份文件**：交付幾集看
   `Kari-SRT/aiyalaeho/smkul.csv`、異常幾集佮理由看
-  `smkul-字幕版型異常.csv`，兩爿逝數相加＝`inventory.json` ê筆數。批次咧
+  `smkul-字幕版型異常.csv`，兩爿逝數相加＝全部有影片ê集數。批次咧
   行ê時這幾个數字逐工咧走，寫死佇文件就一定會過期。
 
   **083 本底交過 694 行**，2026-09-05 撤轉來：伊ê華語列 1,174 條讀了
@@ -200,12 +201,12 @@ python3 -m scripts.aiyalaeho.catalogue --annotate '開會了_083_Rukai_魯凱=�
   族語 98.8%／華語 98.5%、Opus 5 96.9%／99.5%、Fable 5 100%／98.5%；
   `^ ' " :` 三个模型攏 229/229。
 
-**目錄（`ilrdf-corpus.csv`）對開會了是落後ê，所以無讀伊。** 46 列
+**外部編目資料對開會了是落後ê，所以無讀伊。** 46 列
 （79–124）ê年度／日期／時段／族語別攏空，43 列標「無影片」毋過伺服器
 有 mp4，068 佮 164 連列都無。xlsx 正本ê「開會了」分頁干焦有序列／節目
 名稱／集數／備註。**開會了是予資料夾檔名清單驅動ê**（`catalogue.py`）。
 
-**播出日期查無，所以 srt_name 無日期。** 揣過ê所在：`ilrdf-corpus.csv`
+**播出日期查無，所以 srt_name 無日期。** 揣過ê所在：外部編目資料
 佮 xlsx 正本、mp4 metadata（8/4 彼批 libx264 重轉 `Lavc60.31.102`，
 `creation_time` 洗掉矣）、原視新聞網系列頁（逐集有發佈日期，毋過「第N集」
 是網站家己ê列表序，對袂轉播出集數）、原文會 VOD（無這个節目）、維基

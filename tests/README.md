@@ -8,6 +8,8 @@
 
 ```
 tests/
+├── languages/    族語別佮語言別ê代號對照表（對照表佇該目錄ê README）
+├── catalogue/    節目目錄ê共同欄位佮不變量（仝款）
 ├── ocr/          test_mask  test_region  test_segmenter  test_sheets
 │                 test_import_tsv  test_ocr_prep  test_presets  test_auto_options
 ├── srtlib/       test_srt  test_merge_repeats  test_pad_edges  test_chain
@@ -26,7 +28,9 @@ tests/
 
 ```bash
 .tox/unittest/bin/python -m unittest discover -s tests/<組> -t .
-# 組：ocr（影像側引擎）srtlib（共用組裝）asrmt（語音側引擎）
+# 組：languages（代號對照表）catalogue（目錄不變量，兩組攏兩爿公家）
+#     ocr（影像側引擎）
+#     srtlib（共用組裝）asrmt（語音側引擎）
 #     news／aiyalaeho（兩个語料ê編排）tools（量測工具）
 #     e2e（端對端，另走 tox -e e2etest）
 ```
@@ -111,6 +115,8 @@ tests/
 | aiyalaeho-sourcing | 版型異常集分流，理由三路來源（檔名ê字幕狀態字樣／量測／人工判定）；`--annotate` 干焦填空ê理由佮影片長度、既有理由袂予蓋掉、無事做回「未改」 | `aiyalaeho/test_catalogue.py` |
 | cue-timing | 0.5 秒留白、間距不足佇中點相接、袂出負值袂超片長、留白無寫轉去時間軸 | `aiyalaeho/test_make_srt.py` |
 | subtitle-text-source | 每條恆兩行帶標籤「族語：／華語：」；某列空白猶原出標籤行；兩列攏空無出；合併比兩行合成ê字串 | `aiyalaeho/test_make_srt.py` |
+| episode-catalogue | 族語別佮語言別ê代號對照表（16 種族語別攏查有代號、太魯閣 `trv-x-truku` 毋是 `trv`、德路固是賽德克ê變體、查無退族語級、代號倒轉查名、`und` 是標準答案）——13 逝ê對照表佇 `languages/README.md` | `languages/test_languages.py` |
+| episode-catalogue | 節目目錄ê共同欄位佮不變量（播出時段對節目名稱推、集數補三碼、成果檔名佮識別欄互推、重複、列序、素材位置非空、語言欄值域、孤兒檔）——11 逝ê對照表佇 `catalogue/README.md` | `catalogue/test_catalogue_checks.py` |
 | aiyalaeho-language-check | 逐條語言判定ê規組（字元分類、辭典蒸餾、詞庫比對、方言別正音、兩張 CSV）——27 逝ê對照表佇 `aiyalaeho/langcheck/README.md` | `aiyalaeho/langcheck/*.py` |
 | subtitle-text-source | 兩逝一 cue ê TSV：列名毋著／cue 無佇 sheet 頂懸／仝一 cue 兩批攏有——規批拒收 | `aiyalaeho/test_ingest.py` |
 | srt-data-store | store 版面（`aiyalaeho/1-ocr/{1-cues,2-vision,3-srt}`、不分層）；inventory 欄位宣告 | `aiyalaeho/test_paths.py` |
