@@ -114,10 +114,25 @@ class TestPlan(unittest.TestCase):
                                                 (144, 216), (216, 289)])
 
     def test_a_tail_at_the_floor_stands_on_its_own(self):
-        """拄仔好 `MIN_TAIL` 張ê尾**無**倂——地板是「以下」才倂。"""
-        self.assertEqual(prompt.plan(290, 72), [(0, 72), (72, 144),
+        """拄仔好 `MIN_TAIL` 張ê尾**無**倂——地板是「以下」才倂。
+
+        地板對 2 起做 8 了後（2026-09-11），這條ê數字愛綴leh換：
+        296 ＝ 72×4＋8，尾拄仔好 8 張。
+        """
+        self.assertEqual(prompt.plan(296, 72), [(0, 72), (72, 144),
                                                 (144, 216), (216, 288),
-                                                (288, 290)])
+                                                (288, 296)])
+
+    def test_a_tail_between_the_old_floor_and_the_new_one_is_folded(self):
+        """地板對 2 起做 8：尾 4 張本底家己徛，這馬愛倂入去。
+
+        `MIN_TAIL` 是模組常數，這條就是咧釘伊實際ê值——若有人kā地板
+        改轉去 2，這條會紅。一个讀者ê固定開銷實測是 $1.43（依 18 輪
+        transcript 精算），派一个讀者去讀 4 張（開會了約 56 條）ê時，
+        彼 $1.43 攤落去就是每 cue $0.026，比倂入前一批貴四倍。
+        """
+        self.assertEqual(prompt.plan(292, 72), [(0, 72), (72, 144),
+                                                (144, 216), (216, 292)])
 
     def test_tail_long_enough_stays_on_its_own(self):
         self.assertEqual(prompt.plan(120, 72), [(0, 72), (72, 120)])
@@ -305,70 +320,87 @@ if __name__ == "__main__":
 
 
 class TestBatchSizeDefaults(unittest.TestCase):
-    """一批 4 張，尾批地板綴leh落。
+    """一批 24 張，尾批地板 8。
 
-    **代先愛知ê是：這改毋是「省錢」，是kā批次搝倒轉來原本ê大細。**
-    組合圖ê打包改了後（`LONG_EDGE` 壓 2000、逐張各自算闊），新聞
-    一張對 4 條 cue 變做 ~25 條。`SIZE` 若無綴leh改：
+    **這組數字翻過兩擺，兩擺攏是量出來ê，紲落來寫ê是兩擺ê理路。**
 
-        24 張 × 4 條（舊打包）  =  96 條／批   ← 本底就是按呢
-        24 張 × 25 條（新打包） = 600 條／批   ← 無改就變按呢
-         4 張 × 25 條（新打包） = 100 條／批   ← 改了
-
-    600 條是量著會噴ê彼點（196）ê三倍。**打包彼改恬恬kā批次弄大
-    六倍**，這改是kā伊搝倒轉去 ~100 條——用 cue 算，佮本底ê 96 條
-    差不多仝。省ê是仝款ê工課用 4 張圖送，毋是 24 張。
-
-    這組數字是量出來ê，毋是揀ê。一擺讀者ê對話會kā到今為止規段
-    閣送一擺，所以一批ê開銷大約綴長度ê平方走。組合圖改做逐張
-    裝 ~25 條 cue（`LONG_EDGE` 壓 2000）了後，用實讀量三个點
-    （逐點攏是 Opus、真正讀、費用照 `message.id` 歸併）：
+    **頭一擺（2026-09-10，24 → 4）**：組合圖ê打包改了後（`LONG_EDGE`
+    壓 2000、逐張各自算闊），新聞一張對 4 條 cue 變做 ~25 條。`SIZE`
+    若無綴leh改，24 張 × 25 條 ＝ 600 條／批，是本底 96 條ê六倍。彼
+    時量ê三个點（逐點攏是 Opus、真正讀、費用照 `message.id` 歸併）：
 
         cue 數   張數   回覆數   尖峰 context   每 cue
            56     4      28       66,121      $0.0236
            98     7      34       86,042      $0.0196
           196    14     102      145,474      $0.0327
 
-    **56–98 這一段是平ê，到 196 明顯翹起來。** 關鍵毋是圖有偌大，
-    是**回覆數**：196 條愛 102 則，98 條干焦 34 則——批次細到某一
-    个程度，讀者就無閣入去「逐條懷疑、逐條覆核」彼个模式，cache
-    讀對 9.56M 落到 2.02M。往下猶原有底：56 彼點總開銷 $1.32 對
-    98 彼點 $1.92，才差 1.45 倍，cue 數 soah 差 1.75 倍——逐个
-    讀者起手彼份固定開銷（~19k token）咧kā伊搝倒轉去。
+    56–98 平、196 翹起來，所以搝轉去 4 張（~100 條）。**彼時是著ê。**
 
-    所以目標是**一批 60–100 條 cue**。新聞逐張 ~25 條，就是 4 張。
+    **第二擺（2026-09-11，4 → 24）**：`brief.md` 加一條「開圖愛佇仝
+    一則訊息內底同時發 3–4 个 Read」了後，頭前彼條曲線就無效矣——
+    彼時貴ê是**回覆數**，一則讀一張ê時回覆數綴張數超線性大；平行讀
+    了後回覆數變做差不多是定數（14 張 12 則、28 張 18 則），成本
+    變做近倍線性。仝一批圖、仝一份判準，干焦改讀法：
 
-    `MIN_TAIL` 愛綴 `SIZE` 落，若無這改就無意義：地板若懸過批次
-    大小，逐个無夠一批ê尾攏hőng倂入去。2 張 ~50 條，猶原徛會住
-    （56 彼點量著 $0.0236）；1 張 ~25 條就無值得閣派一个讀者。
+        14 張／196 條：一則一張 102 則回覆 $6.40；平行讀 12 則 $1.87
 
-    **《開會了》莫用這个數字。** 彼爿逐張 ~14 條，仝款ê 60–100 條
-    是 5–7 張，而且彼爿ê族語列有撇號ê字形問題（`'` hőng寫做 `"`），
-    愛先kā判準補齊才通改批次。彼爿走ê是別一份 brief。
+    平行讀了後重量ê三个點：
+
+        cue 數   張數   回覆數   尖峰 context   每 cue
+          196    14      12      115,106      $0.0095
+          392    28      18      157,721      $0.0059   ← 上俗
+          560    40      26      183,672      $0.0067
+
+    **底部對 98 條徙到 392 條。** 而且 560 彼點翹起來ê原因掠著矣：
+    transcript ê `diagnostics.cache_miss_reason` 講是 `messages_changed`
+    ——**快取hőng作廢、規段 context 用 $6.25/M 重寫**，彼輪重寫
+    166,380 token（＝$1.04，佔彼批 $3.75 ê四分之一）。175k 彼幾輪
+    失效 0 擺，184k 彼輪失效 3 擺。**所以上限是「快取懸崖」，毋是
+    視窗**：18 輪 transcript 內底壓縮 0 擺、圖hőng提掉 0 擺。
+
+    24 張ê尖峰實測（照檔名順序切）是 121k／130k／143k，離懸崖猶有
+    三十外 k。整集：開會了 111（977 條）18 批 $27.93 → 3 批 $6.48。
+
+    `MIN_TAIL` 愛綴 `SIZE` 走：8 張（新聞約 200 條）徛會住，4 張
+    （~100 條）攤彼份 $1.43 ê起手費就貴四倍，倂入去較俗。
+
+    **《開會了》莫用這个數字。** 彼爿一張 ~14 條，24 張ê尖峰實測是
+    175k，拄仔好貼佇懸崖頂懸；而且彼爿ê族語列有撇號ê字形問題
+    （`'` hőng寫做 `"`，三个讀者內底一个會犯）。彼爿走ê是別一份 brief。
     """
 
-    def test_the_default_batch_is_four_sheets(self):
-        self.assertEqual(prompt.SIZE, 4)
+    NEWS_PER_SHEET = 25       # 新聞一張約幾條 cue（壓 2000 了後）
+    NEWS_SHEET_TOKENS = 1900  # 新聞一張約幾个視覺 token（實測中位 1,890）
+    BASE = 69184              # 固定底（提示、工具、累積ê推理文字）
+    PER_ROW = 17              # 逐逝 TSV 佇 context 內底ê重量
+    CLIFF = 175000            # 快取開始失效彼條線
+
+    def test_the_default_batch_is_twenty_four_sheets(self):
+        self.assertEqual(prompt.SIZE, 24)
 
     def test_the_tail_floor_scales_with_it(self):
-        self.assertEqual(prompt.MIN_TAIL, 2)
+        self.assertEqual(prompt.MIN_TAIL, 8)
         self.assertLess(prompt.MIN_TAIL, prompt.SIZE)
 
-    def test_a_batch_lands_in_the_measured_band(self):
-        """4 張逐張 ~25 條 = ~100 條，就是量著上俗彼點（98）。"""
-        self.assertLessEqual(prompt.SIZE * 25, 100)
-        self.assertGreaterEqual(prompt.SIZE * 25, 60)
+    def test_a_news_batch_stays_under_the_cache_cliff(self):
+        """真正ê上限是快取失效，毋是 cue 數。
 
-    def test_a_two_sheet_tail_stands_on_its_own(self):
-        """2 張 ~50 條猶原徛會住，莫倂入去kā前一批弄到 150 條。"""
-        spans = prompt.plan(6)
-        self.assertEqual(spans, [(0, 4), (4, 6)])
+        懸過彼條線ê症頭是**恬恬加錢**：無錯誤、無警告，干焦 cache
+        寫入翻倍。184k 彼輪重寫 166,380 token。
+        """
+        rows = prompt.SIZE * self.NEWS_PER_SHEET
+        peak = (self.BASE + prompt.SIZE * self.NEWS_SHEET_TOKENS
+                + rows * self.PER_ROW)
+        self.assertLess(peak, self.CLIFF)
 
-    def test_a_one_sheet_tail_is_folded(self):
-        """1 張 ~25 條無值得閣派一个讀者（起手就 ~19k token）。"""
-        spans = prompt.plan(5)
-        self.assertEqual(spans, [(0, 5)])
+    def test_an_eight_sheet_tail_stands_on_its_own(self):
+        """8 張（新聞約 200 條）徛會住，莫倂入去。"""
+        self.assertEqual(prompt.plan(32), [(0, 24), (24, 32)])
 
-    def test_fifty_one_sheets_is_thirteen_batches(self):
-        """058晨 壓 2000 了後ê實際張數。"""
-        self.assertEqual(len(prompt.plan(51)), 13)
+    def test_a_four_sheet_tail_is_folded(self):
+        """4 張（~100 條）攤彼份 $1.43 起手費貴四倍，倂入去較俗。"""
+        self.assertEqual(prompt.plan(28), [(0, 28)])
+
+    def test_fifty_one_sheets_is_three_batches(self):
+        """058晨 壓 2000 了後ê實際張數：51 張，24＋24＋3，尾 3 張倂入。"""
+        self.assertEqual(prompt.plan(51), [(0, 24), (24, 51)])

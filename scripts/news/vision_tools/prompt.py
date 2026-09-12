@@ -16,8 +16,25 @@ import sys
 from scripts.errors import PipelineError
 from scripts.news import paths
 
-SIZE = 4
-MIN_TAIL = 2
+# 一批幾張、尾巴短到偌濟就倂入前一批。**這兩个數字是量出來ê，毋是
+# 揀ê**：平行讀（一則訊息同時發 3–4 个 Read）落地了後，逐批ê成本是
+# `$1.43 ＋ $0.00224 × 該批 cue 數`——頭前彼个 $1.43 是**每派一个讀者
+# 就愛付一擺ê起手費**（提示、工具定義、判準），佮批ê大細無關。所以
+# 批越細，攤落去越貴：
+#
+#     SIZE  4 張：開會了 111（977 條）18 批 $27.93、每 cue $0.0286
+#     SIZE 24 張：仝彼集         3 批 $ 6.48、每 cue $0.0066
+#
+# 24 張ê尖峰累積 context 實測是 121k–143k（三批），離「快取開始失效」
+# 彼條線（175–184k，實測 184k 彼輪重寫 166,380 token）猶有偌濟。40 張
+# 彼輪尖峰 184k、失效 3 擺，每 cue ê費用就反轉起去矣——**所以 24 是
+# 頂懸，毋是「越大越好」**。
+#
+# 換模型、換 harness、抑是組合圖ê打包規則改（一張裝幾條 cue 變矣）ê
+# 時，這兩个數字愛重量。量法：`usage` 依回覆ê `message.id` 歸併，逐
+# 行加總會高估約 2.5 倍。（2026-09-11 量ê，18 輪實讀、3,367 條 cue。）
+SIZE = 24
+MIN_TAIL = 8
 BRIEF = os.path.join(os.path.dirname(__file__), "brief.md")
 # `or`, not a `get` default: an exported-but-empty CLAUDE_SCRATCH counts
 # as set, and `os.path.join("", name)` then hands the reader a
