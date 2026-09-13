@@ -4,7 +4,7 @@
 
 ## 範圍
 
-圖條 `{work}/sheets/` 內底ê **`sheet_{lo}.png`–`sheet_{hi}.png`**（{sheets} 張，{per}），對應 **cue {clo}..{chi}**。
+圖條 `{work}/sheets/` 內底ê **`{first}`–`{last}`**（{sheets} 張，{per}），對應 **cue {clo}..{chi}**。
 
 ## 產出
 
@@ -91,7 +91,7 @@
   若是按呢，**莫家己補字**（彼段ê cue 邊界是掠毋著區域切ê，
   補入去會湠佇毋著ê時間），照常留空，佇報告內底講清楚：
   佗幾條、大約佗一段時間、看著ê字是啥。
-- 圖條看無清楚才去掠原生 strip（`{work}/strips/`）放大，抑是抽原生格（影片 `{video}`，cue ê時間佇 `{work}/cues.json` ê `cues` 陣列內底（逐條有 `index`／`start`／`end`）；抽格ê寫法是 `-nostdin -ss <start> -copyts -i <影片> -to <end>`——**`-ss` 愛囥 `-i` 頭前，收尾愛用 `-to` 配絕對秒數，莫用 `-t`**，因為 `-copyts` 保留原始時間戳，`-t` 會去佮 0 比，抽無物件）。**莫逐格攏抽**——圖條看有ê就直接寫。
+- 圖條看無清楚才去掠原生 strip（`{work}/strips/`）放大，抑是抽原生格（影片 `{video}`，cue ê時間佇 `{cues_json}` ê `cues` 陣列內底（逐條有 `index`／`start`／`end`）；抽格ê寫法是 `-nostdin -ss <start> -copyts -i <影片> -to <end>`——**`-ss` 愛囥 `-i` 頭前，收尾愛用 `-to` 配絕對秒數，莫用 `-t`**，因為 `-copyts` 保留原始時間戳，`-t` 會去佮 0 比，抽無物件）。**莫逐格攏抽**——圖條看有ê就直接寫。
 
 ## 回報
 

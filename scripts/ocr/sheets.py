@@ -42,7 +42,7 @@ NEAR_GAP = 30
 MIN_STRONG_COLUMNS = 8
 
 
-def _ink_columns(mask, pad=6):
+def _ink_columns(mask, pad=6, anchor=None):
     """(x0, x1) around the columns the subtitle occupies, or None.
 
     Two jobs pull against each other here. Ink that is not the subtitle has
@@ -68,6 +68,26 @@ def _ink_columns(mask, pad=6):
     Columns further left than `MAX_TILE` from the right edge are dropped
     before either question is asked, so that the strip can never make a
     page too wide to be delivered at full size; see that constant.
+
+    `anchor` is the x a right-anchored subtitle's right edge is known to
+    reach, and it comes from the preset because it is a fact about one
+    programme, not about subtitles. On 族語新聞 the line is flush right
+    (27 episodes: the ink's right edge sits at 1735-1737 against a
+    standard deviation of 460-470 for the left edge). There, choosing by
+    ink alone loses whole lines: an anchor desk's white top, a
+    full-screen card, a field of dry grass all sit mid-frame and carry
+    more ink than the line does, so they win the run and the line falls
+    outside the crop -- 168 of 5,798 cues over six episodes (2.9%), and
+    nothing reports it. When an anchor is given, the run whose right edge
+    reaches it is **added** to the chosen run rather than replacing it:
+    the window can only grow, so nothing that was visible before can be
+    lost. Measured over those 5,798 cues: 0 dropped lines, 0 windows
+    narrower than before, 4% more visual tokens.
+
+    Left as None it does nothing at all, which is what 開會了 needs --
+    that programme's line is centred (111's cue 228 occupies 799..1295)
+    and the ink at 1710 is the line above bleeding in, which must still
+    be dropped.
     """
     # The far left goes before anything else is decided, not after. Trim
     # the answer instead and a bright left edge can win the run and take
@@ -97,15 +117,38 @@ def _ink_columns(mask, pad=6):
             weight = int(cols[first:last + 1].sum())
             if best is None or weight > best[0]:
                 best = (weight, first, last)
-        lo, hi = best[1], best[2]
-        while True:
-            near = lit[(lit >= lo - NEAR_GAP) & (lit <= hi + NEAR_GAP)]
-            grown_lo, grown_hi = int(near.min()), int(near.max())
-            if grown_lo == lo and grown_hi == hi:
-                break
-            lo, hi = grown_lo, grown_hi
+        lo, hi = _grow(lit, best[1], best[2])
+        if anchor is not None:
+            # `runs` is in the trimmed frame and `anchor` is absolute, so
+            # the threshold has to come back by `dropped`. Comparing them
+            # raw picks the wrong run, which is the failure this exists
+            # to stop.
+            reach = anchor - dropped
+            far = None
+            for first, last in runs:
+                if last >= reach:
+                    far = (first, last)
+            if far is not None:
+                far_lo, far_hi = _grow(lit, far[0], far[1])
+                lo, hi = min(lo, far_lo), max(hi, far_hi)
     return (dropped + max(lo - pad, 0),
             dropped + min(hi + pad + 1, mask.shape[1]))
+
+
+def _grow(lit, lo, hi):
+    """Widen [lo, hi] outwards while the next lit column is within reach.
+
+    Strong ink says which run is the subtitle; any ink says where it
+    ends. Pulled out of `_ink_columns` because the anchored run has to be
+    grown the same way before the two are merged -- growing only one of
+    them clipped the strokes off whichever end came from the other.
+    """
+    while True:
+        near = lit[(lit >= lo - NEAR_GAP) & (lit <= hi + NEAR_GAP)]
+        grown_lo, grown_hi = int(near.min()), int(near.max())
+        if grown_lo == lo and grown_hi == hi:
+            return lo, hi
+        lo, hi = grown_lo, grown_hi
 
 
 def slot_crop(mask, slots):
@@ -158,7 +201,8 @@ def undecided_share(undecided, decided, blank=0):
     return float(undecided) / total
 
 
-def _cue_blocks(workdir, manifest, spec, row_slots=None, compare_cols=None):
+def _cue_blocks(workdir, manifest, spec, row_slots=None,
+                compare_cols=None, right_anchor=None):
     """(blocks, undecided, decided, blank) -- one block per cue with a strip.
 
     Columns are cropped as they always were, to wherever there is ink. Rows
@@ -169,6 +213,10 @@ def _cue_blocks(workdir, manifest, spec, row_slots=None, compare_cols=None):
     are perfectly clear -- 186 of 1,188 on one episode, against 79 when
     measured inside the window.
     """
+    # 版面ê事實對 preset 來，毋是對 manifest 來——`cues.json` 內底彼
+    # 份 mask 是切 cue 彼時寫ê，無 `compare_cols` 嘛無 `right_anchor`。
+    # 呼叫ê人有提就用伊ê，無才退轉去問 spec。
+    anchor = spec.right_anchor if right_anchor is None else right_anchor
     blocks = []
     undecided = decided = blank = 0
     for cue in manifest["cues"]:
@@ -179,7 +227,7 @@ def _cue_blocks(workdir, manifest, spec, row_slots=None, compare_cols=None):
                 continue
             img = Image.open(os.path.join(workdir, rel)).convert("RGB")
             mask = cuelib.text_mask(np.asarray(img), spec)
-            box = _ink_columns(mask)
+            box = _ink_columns(mask, anchor=anchor)
             narrow = mask
             if compare_cols:
                 narrow = mask[:, int(compare_cols[0]):int(compare_cols[1])]
@@ -319,7 +367,8 @@ def _by_width(blocks, gap):
     return order
 
 
-def build_sheets(workdir, manifest, row_slots=None, compare_cols=None):
+def build_sheets(workdir, manifest, row_slots=None,
+                 compare_cols=None, right_anchor=None):
     """Tile cue strips into a few big images for a vision model to read.
 
     Reading 800 separate crops costs 800 round trips; reading 40 sheets costs
@@ -340,7 +389,7 @@ def build_sheets(workdir, manifest, row_slots=None, compare_cols=None):
 
     index_map = {}
     blocks, undecided, decided, blank = _cue_blocks(
-        workdir, manifest, spec, row_slots, compare_cols)
+        workdir, manifest, spec, row_slots, compare_cols, right_anchor)
     if row_slots:
         print("row slots: %d cropped, %d could not be told (%.1f%%), "
               "%d blank" % (decided, undecided,

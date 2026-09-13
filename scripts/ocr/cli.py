@@ -324,7 +324,8 @@ def stage_cues(args):
         slots = (preset or {}).get("sheet", {}).get("row_slots")
         made = contact.build_sheets(workdir, manifest,
                                     row_slots=slots,
-                                    compare_cols=spec.compare_cols)
+                                    compare_cols=spec.compare_cols,
+                                    right_anchor=spec.right_anchor)
         print("wrote %d contact sheet(s) to %s"
               % (made, os.path.join(workdir, "sheets")))
     return 0

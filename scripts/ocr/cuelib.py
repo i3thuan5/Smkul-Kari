@@ -179,7 +179,8 @@ class MaskSpec(object):
     def __init__(self, white_min=185, max_spread=45, dark_max=95,
                  outline=True, outline_size=9, thin=False, thin_size=7,
                  band_probe=None, band_rows=None, scale=1,
-                 compare_cols=None, compare_rows=None):
+                 compare_cols=None, compare_rows=None,
+                 right_anchor=None):
         self.white_min = white_min
         self.max_spread = max_spread
         self.dark_max = dark_max
@@ -191,6 +192,11 @@ class MaskSpec(object):
         # backdrop and never glyph. When the backdrop stops being there, the
         # subtitle is not on screen at all -- see band_present().
         self.band_probe = band_probe
+        # 這款字幕ê右緣一定搆會著ê彼个 x，抑是 None。族語新聞ê字幕
+        # 是置右ê（27 集量ê墨水右緣中位數 1735–1737，左緣ê標準差是
+        # 460–470），開會了ê是置中ê，所以這是節目ê性質，愛佇 preset
+        # 宣告，袂使寫死佇裁切彼爿。用佇 `sheets._ink_columns`。
+        self.right_anchor = right_anchor
         # (lo, hi) rows within the region that the coloured band actually
         # covers, or None for "all of it". Rows outside take no part in
         # deciding where a cue starts and ends.
@@ -251,7 +257,9 @@ class MaskSpec(object):
             thin=self.thin, thin_size=_odd_size(self.thin_size // step),
             band_rows=_halve_span(self.band_rows, step),
             compare_cols=_halve_span(self.compare_cols, step),
-            compare_rows=_halve_span(self.compare_rows, step))
+            compare_rows=_halve_span(self.compare_rows, step),
+            right_anchor=(None if self.right_anchor is None
+                          else self.right_anchor // step))
         if self.band_probe:
             probe = dict(self.band_probe)
             probe["x"] = int(probe.get("x", 0)) // step
@@ -264,7 +272,7 @@ class MaskSpec(object):
         spec = cls()
         for key in ("white_min", "max_spread", "dark_max", "outline",
                     "outline_size", "thin", "thin_size", "band_probe",
-                    "band_rows"):
+                    "band_rows", "right_anchor"):
             if key in data:
                 setattr(spec, key, data[key])
         return spec

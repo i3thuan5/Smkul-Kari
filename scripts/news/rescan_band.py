@@ -311,9 +311,9 @@ def rebuild_sheets(work, book):
     folder = os.path.join(work, "sheets")
     if os.path.isdir(folder):
         shutil.rmtree(folder)
-    slots, cols = gap_sheets.news_sheet_layout()
+    slots, cols, anchor = gap_sheets.news_sheet_layout()
     made = sheets.build_sheets(work, book, row_slots=slots,
-                               compare_cols=cols)
+                               compare_cols=cols, right_anchor=anchor)
     with open(os.path.join(work, "transcripts.json"), "w",
               encoding="utf-8") as handle:
         json.dump({}, handle, ensure_ascii=False, indent=2,

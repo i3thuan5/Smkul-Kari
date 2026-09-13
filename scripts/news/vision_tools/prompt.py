@@ -14,6 +14,7 @@ import json
 import os
 import sys
 from scripts.errors import PipelineError
+from scripts.news import episodes
 from scripts.news import paths
 
 # 一批幾張、尾巴短到偌濟就倂入前一批。**這兩个數字是量出來ê，毋是
@@ -43,16 +44,17 @@ SCRATCH = os.environ.get("CLAUDE_SCRATCH") or "/tmp/vision-scratch"
 
 
 def episode(slug):
-    """srt_name for a slug, off the inventory."""
-    with open(os.path.join(paths.KARI, "news", "inventory.json"),
-              encoding="utf-8") as handle:
-        inv = json.load(handle)
-    items = inv["episodes"] if isinstance(inv, dict) and "episodes" in inv \
-        else inv
-    for entry in (items.values() if isinstance(items, dict) else items):
+    """srt_name for a slug, off the 節目目錄.
+
+    本底讀ê是 `Kari-SRT/news/inventory.json`。彼份檔佇 b787084 提掉矣
+    （逐一欄對 `smkul.csv` 推導會出來），`batches.py` 綴leh改用
+    `episodes.load()`，這爿無改著：2026-09-12 beh派 2021-01 ê讀者，
+    這搭 FileNotFoundError，規个視覺辨識派袂出去。兩爿愛讀仝一份正本。
+    """
+    for entry in episodes.load():
         if entry["slug"] == slug:
             return entry["srt_name"]
-    raise PipelineError("inventory 內底揣無 slug：%s" % slug)
+    raise PipelineError("節目目錄內底揣無 slug：%s" % slug)
 
 
 def plan(total, size=SIZE, min_tail=MIN_TAIL):
@@ -189,8 +191,18 @@ def _brief(slug, pick, tsvname, asked=None):
         per = "上濟 %d 條 cue，尾張較少" % max(counts)
     fill = {"name": name, "work": work, "sheets": len(names), "per": per,
             "scratch": scratch,
-            "lo": names[0].split("_")[1].split(".")[0],
-            "hi": names[-1].split("_")[1].split(".")[0],
+            # 檔名家己，毋是對伊剖出來ê編號：打包規則（e81f1f1）了後
+            # ê名是「圖條闊度」做ê `t00015200.png`，無底線通剖，
+            # `split("_")[1]` 當場 IndexError。名寫規个上穩當——讀者
+            # beh對 `{work}/sheets/` 揣ê就是這个字串。
+            "first": names[0],
+            "last": names[-1],
+            # 時間軸ê路徑愛問 `paths`，莫寫做 `<work>/cues.json`：
+            # 切做 `1-cues/`（粗切）佮 `2-refined/`（精修）了後，平ê
+            # 彼份無矣，讀者beh抽原生格核對就開無檔——恬恬失敗，無
+            # 一个所在會報錯。`cue_keyed` 傳ê是「這个 work dir 實在
+            # 有ê彼份」，精修過ê贏粗切ê。
+            "cues_json": paths.cue_keyed(work, name)["timeline"],
             "clo": min(cues), "chi": max(cues), "cues": len(cues),
             "tsvname": tsvname,
             "video": "kithann/out/mkv/%s.mkv" % name,

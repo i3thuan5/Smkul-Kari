@@ -3,6 +3,7 @@
 提示是產ê毋是手寫ê，所以「範圍算毋著」無人會發現——TSV 寫出來
 逝數對、欄數對，干焦內容囥毋著位。遮ê測試是彼枝把關。
 """
+import csv
 import json
 import os
 import re
@@ -10,6 +11,7 @@ import tempfile
 import unittest
 from unittest import mock
 
+from scripts import catalogue_checks as checks
 from scripts.errors import PipelineError
 from scripts.news.vision_tools import prompt
 
@@ -195,6 +197,82 @@ class TestScratch(VisionPromptCase):
         self.assertEqual(left, [], "brief.md 有無換ê鍵：%s" % left)
 
 
+class TestSheetNames(VisionPromptCase):
+    """圖條檔名是 `t00015200.png` 這款，無底線通好剖。
+
+    本底 `_brief` 用 `names[0].split("_")[1]` 提編號，去hőng e81f1f1
+    改過ê打包規則咬著：新ê名是「圖條闊度」做ê `t00015200.png`，剖
+    出來只有一逝，`[1]` 就 IndexError——2026-09-12 beh派 2021-01
+    ê讀者ê時規支倒去。提示內底講ê愛是**檔名家己**，毋是編號。
+    """
+
+    def work_named(self, names, per=4):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        book = {}
+        for i, name in enumerate(names):
+            cues = []
+            for k in range(per):
+                cues.append(i * per + k + 1)
+            book[name] = cues
+        with open(os.path.join(tmp.name, "sheets.json"), "w",
+                  encoding="utf-8") as handle:
+            json.dump(book, handle)
+        return tmp.name
+
+    def brief_named(self, names, which, **kw):
+        work = self.work_named(names)
+        with mock.patch.object(prompt, "episode", return_value=self.NAME), \
+                mock.patch.object(prompt, "workdir", return_value=work):
+            return prompt.brief("2021_055_2021-02-24_午間_Cou_鄒", which, **kw)
+
+    NAMES = ["t00015200.png", "t00022200.png", "t00023600.png"]
+
+    def test_a_name_without_an_underscore_does_not_crash(self):
+        text = self.brief_named(self.NAMES, 1, size=8)
+        self.assertIn("t00015200.png", text)
+
+    def test_the_first_and_last_sheet_are_named_in_full(self):
+        text = self.brief_named(self.NAMES, 1, size=8)
+        self.assertIn("`t00015200.png`–`t00023600.png`", text)
+
+    def test_the_timeline_named_is_the_one_that_exists(self):
+        """時間軸ê路徑愛指著實在有ê彼份，毋是 `<work>/cues.json`。
+
+        時間軸分做 `1-cues/`（粗切）佮 `2-refined/`（精修）了後，
+        平ê `<work>/cues.json` 就無矣。提示猶原按呢寫，讀者beh抽
+        原生格核對ê時開無彼份檔——**恬恬失敗**：伊會當家己臆一
+        个時間，抑是規氣放棄核對。
+        """
+        work = self.work_named(self.NAMES)
+        os.makedirs(os.path.join(work, "1-cues"))
+        with open(os.path.join(work, "1-cues", "cues.json"), "w",
+                  encoding="utf-8") as handle:
+            json.dump({"cues": []}, handle)
+        with mock.patch.object(prompt, "episode", return_value=self.NAME), \
+                mock.patch.object(prompt, "workdir", return_value=work):
+            text = prompt.brief("2021_055_2021-02-24_午間_Cou_鄒", 1, size=8)
+        self.assertIn("1-cues/cues.json", text)
+        self.assertNotIn("%s/cues.json" % work, text)
+
+    def test_a_refined_timeline_wins_over_the_coarse_one(self):
+        work = self.work_named(self.NAMES)
+        for stage in ("1-cues", "2-refined"):
+            os.makedirs(os.path.join(work, stage))
+            with open(os.path.join(work, stage, "cues.json"), "w",
+                      encoding="utf-8") as handle:
+                json.dump({"cues": []}, handle)
+        with mock.patch.object(prompt, "episode", return_value=self.NAME), \
+                mock.patch.object(prompt, "workdir", return_value=work):
+            text = prompt.brief("2021_055_2021-02-24_午間_Cou_鄒", 1, size=8)
+        self.assertIn("2-refined/cues.json", text)
+
+    def test_no_placeholder_is_left_behind_either(self):
+        text = self.brief_named(self.NAMES, 1, size=8)
+        left = re.findall(r"\{[a-z_]+\}", text)
+        self.assertEqual(left, [], "brief.md 有無換ê鍵：%s" % left)
+
+
 class TestTsvName(VisionPromptCase):
     def test_default_name_follows_the_batch_number(self):
         text = self.brief(232, 3, size=72)
@@ -302,15 +380,59 @@ class TestPerSheet(VisionPromptCase):
 
 
 class TestEpisodeLookup(unittest.TestCase):
-    def test_slug_not_in_inventory_is_an_error(self):
-        inv = {"episodes": [{"slug": "別集", "srt_name": "別名"}]}
+    """`episode()` 對節目目錄（`smkul.csv`）讀，毋是對 `inventory.json`。
+
+    `inventory.json` 佇 b787084 提掉矣（逐一欄對節目目錄推導會出來），
+    `batches.py` 綴leh改用 `episodes.load()`，這爿無改著——2026-09-12
+    beh派 2021-01 ê讀者ê時，`prompt.py` 當場 FileNotFoundError，規个
+    視覺辨識派袂出去。這組測試是彼枝把關：只要閣有人去讀彼份無存在
+    ê檔，遮就紅。
+    """
+
+    ROW = {"成果檔名": "20210210_041_午間_Cou_鄒",
+           "節目名稱": "午間族語新聞", "年度": "2021", "集數": "41",
+           "播出日期": "2021-02-10", "族語別(英)": "Cou",
+           "族語別(中)": "鄒", "語言別": "", "語言別代號": "tsu",
+           "原始影片檔案位置":
+               "ilrdf-corpus/族語新聞/21NL003_41午間族語新聞.mp4",
+           "備註": ""}
+    SLUG = "2021_041_2021-02-10_午間_Cou_鄒"
+
+    def _table(self, rows):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        os.makedirs(os.path.join(tmp.name, "news"))
-        with open(os.path.join(tmp.name, "news", "inventory.json"), "w",
-                  encoding="utf-8") as handle:
-            json.dump(inv, handle)
-        with mock.patch.object(prompt.paths, "KARI", tmp.name):
+        path = os.path.join(tmp.name, "smkul.csv")
+        head = list(checks.head(checks.NEWS_KEYS)) + [
+            "原始影片檔案位置", "備註"]
+        with open(path, "w", encoding="utf-8-sig", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=head)
+            writer.writeheader()
+            for row in rows:
+                writer.writerow(row)
+        return path
+
+    def test_name_comes_from_the_catalogue(self):
+        path = self._table([self.ROW])
+        with mock.patch.object(prompt.paths, "TRACKER_STORE", path):
+            got = prompt.episode(self.SLUG)
+        self.assertEqual(got, self.ROW["成果檔名"])
+
+    def test_no_inventory_json_is_read(self):
+        """目錄下底無 `inventory.json` 嘛愛做會出來。
+
+        本底 `episode()` 開 `<KARI>/news/inventory.json`，檔無矣就
+        FileNotFoundError——彼毋是「揣無這集」，是規支工具倒去。
+        """
+        path = self._table([self.ROW])
+        with mock.patch.object(prompt.paths, "TRACKER_STORE", path), \
+                mock.patch.object(prompt.paths, "KARI",
+                                  os.path.dirname(path)):
+            got = prompt.episode(self.SLUG)
+        self.assertEqual(got, self.ROW["成果檔名"])
+
+    def test_slug_not_in_inventory_is_an_error(self):
+        path = self._table([self.ROW])
+        with mock.patch.object(prompt.paths, "TRACKER_STORE", path):
             with self.assertRaises(PipelineError):
                 prompt.episode("揣無這集")
 

@@ -7,6 +7,7 @@ import unittest
 import numpy as np
 from PIL import Image
 
+from scripts.news import gap_sheets
 from scripts.ocr import cuelib
 from scripts.ocr import sheets
 from scripts.ocr import stripname
@@ -231,6 +232,81 @@ class TestCueBlocksCropping(unittest.TestCase):
         self.assertGreaterEqual(tile.width, 240)
 
 
+class TestAnchorComesFromThePreset(unittest.TestCase):
+    """`right_anchor` 是 preset 宣告ê，`_cue_blocks` 愛kā伊紮落去。
+
+    寫佇 `_ink_columns` 猶未算好——若無人kā傳過去，實際做組合圖ê時
+    照舊咧掉字，測試soah是青ê。這組掠ê就是彼段線路。
+    """
+
+    def _mask(self, data):
+        return cuelib.MaskSpec.from_dict(data)
+
+    def test_from_dict_reads_it(self):
+        self.assertEqual(self._mask({"right_anchor": 1650}).right_anchor,
+                         1650)
+
+    def test_a_preset_that_says_nothing_has_none(self):
+        self.assertIsNone(self._mask({}).right_anchor)
+
+    def test_half_resolution_halves_it(self):
+        """`scale` 2 ê時座標攏減半，anchor 綴leh減。
+
+        無減ê話，半解析ê遮罩內底 1650 已經超過規條 strip ê闊度，逐
+        段攏搆袂著，這條規則就恬恬失效。
+        """
+        got = self._mask({"right_anchor": 1650}).scaled(2)
+        self.assertEqual(got.right_anchor, 825)
+
+    def test_news_presets_declare_it_and_aiyalaeho_does_not(self):
+        """置右是族語新聞ê性質，毋是逐个節目ê。"""
+        with open("scripts/news/presets.json", encoding="utf-8") as handle:
+            news = json.load(handle)
+        for name, preset in news.items():
+            self.assertIn("right_anchor", preset["mask"], name)
+        with open("scripts/aiyalaeho/presets.json", encoding="utf-8") as fh:
+            other = json.load(fh)
+        for name, preset in other.items():
+            self.assertNotIn("right_anchor", preset["mask"], name)
+
+    def test_the_manifest_on_disk_does_not_carry_it(self):
+        """組合圖ê版面事實對 preset 來，毋是對 `cues.json` 來。
+
+        已經切好ê work dir 內底，`cues.json` ê `mask` 是切 cue 彼時
+        寫ê，內底無 `compare_cols` 嘛無 `right_anchor`——`gap_sheets`
+        本底就是家己去讀 preset kā in 傳落去ê。若干焦靠 manifest，
+        重做組合圖ê時這條規則會恬恬無作用，圖照舊掉字。
+        """
+        slots, cols, anchor = gap_sheets.news_sheet_layout()
+        self.assertEqual(anchor, 1650)
+        self.assertEqual(cols, [1250, 1790])
+        self.assertIsNotNone(slots)
+
+    def test_cue_blocks_takes_it_as_an_argument(self):
+        """規條線路：preset → `build_sheets` → `_cue_blocks` → 裁切。"""
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        os.makedirs(os.path.join(tmp.name, "strips"))
+        frame = np.full((122, 1920, 3), 20, dtype=np.uint8)
+        frame[40:60, 598:1400] = 255          # 中央ê乾草，墨上濟
+        frame[40:60, 1620:1760] = 255         # 置右ê字幕
+        Image.fromarray(frame).save(os.path.join(tmp.name, "strips", "a.png"))
+        manifest = {
+            "lines": [{"name": "han", "y": 0, "h": 122}],
+            "mask": {},
+            "cues": [{"index": 1, "start": 3.0, "end": 5.0,
+                      "images": {"han": os.path.join("strips", "a.png")}}],
+        }
+        plain = sheets._cue_blocks(
+            tmp.name, manifest, self._mask({}))[0][0][2][0]
+        anchored = sheets._cue_blocks(
+            tmp.name, manifest, self._mask({}),
+            right_anchor=1650)[0][0][2][0]
+        self.assertLess(plain.width, 1000)
+        self.assertGreater(anchored.width, plain.width)
+        self.assertGreater(anchored.width, 1100)
+
+
 class TestInkColumns(unittest.TestCase):
     """Which columns of a strip the tile keeps.
 
@@ -335,6 +411,65 @@ class TestInkColumns(unittest.TestCase):
         """
         mask = self._strip([(0, 100, 80), (1400, 1700, 20)])
         self.assertEqual(sheets._ink_columns(mask), (1394, 1706))
+
+    def test_a_right_anchored_line_beaten_by_the_background_is_kept(self):
+        """006晚 cue 627「是的」：墨上濟彼段是一片乾草，字幕佇上倚右。
+
+        新聞ê字幕是**置右**ê（27 集量ê墨水右緣中位數 1735–1737）。主
+        播桌ê白檯面、全螢幕圖卡、乾草這款物件khiā佇畫面中央，墨比字幕
+        濟，就kā裁切窗贏去，字幕規條落佇窗外——讀者看著ê是空白，**無
+        一个所在會報錯**。六集 5,798 條內底按呢ê有 168 條（2.9%）。
+
+        補救ê法是「墨上濟彼段ê左界，到上倚右彼段ê右界」，兩爿攏包入
+        去：窗**擴大**，毋是換掉，所以本底看會著ê物件一件都袂失去。
+        """
+        mask = self._strip([(598, 1400, 20), (1620, 1760, 20)])
+        self.assertEqual(sheets._ink_columns(mask), (592, 1406))
+        self.assertEqual(sheets._ink_columns(mask, anchor=1650), (592, 1766))
+
+    def test_the_widened_window_always_holds_the_old_one(self):
+        """擴大，毋是換掉——這是這條改法唯一ê安全保證。
+
+        別種改法（一律取上倚右、抑是出事才換）是kā窗**換**去，換了若
+        毋著就比本底較歹。這條ê窗必定包含無 anchor 時ê窗，所以結構上
+        袂使變較歹。六集 5,798 條實測：0 條變較細。
+        """
+        for blocks in ([(598, 1400, 20), (1620, 1760, 20)],
+                       [(100, 300, 20), (1200, 1700, 20)],
+                       [(0, 100, 80), (1400, 1700, 20)]):
+            mask = self._strip(blocks)
+            plain = sheets._ink_columns(mask)
+            wide = sheets._ink_columns(mask, anchor=1650)
+            self.assertLessEqual(wide[0], plain[0], blocks)
+            self.assertGreaterEqual(wide[1], plain[1], blocks)
+
+    def test_without_an_anchor_the_bleed_is_still_dropped(self):
+        """開會了無宣告 anchor，行為愛一模一樣。
+
+        開會了ê字幕是置中ê（111 cue 228 是 799..1295），1710 彼塊是
+        頂一列滲落來ê墨，本底就愛掞掉。置右是**族語新聞ê性質**，毋是
+        逐个節目ê，所以這條規則綴 preset 走：無宣告就照舊。
+        """
+        mask = self._strip([(799, 1295, 18), (1710, 1725, 18)])
+        self.assertEqual(sheets._ink_columns(mask), (793, 1301))
+        self.assertEqual(sheets._ink_columns(mask, anchor=None), (793, 1301))
+
+    def test_an_anchor_no_run_reaches_changes_nothing(self):
+        """字幕真正khiā佇中央（無到 anchor）ê時，莫硬去牽。"""
+        mask = self._strip([(700, 1200, 20)])
+        self.assertEqual(sheets._ink_columns(mask, anchor=1650),
+                         sheets._ink_columns(mask))
+
+    def test_the_anchor_never_reaches_past_the_dropped_left_edge(self):
+        """Anchor 是絕對座標，比較ê時愛记得左爿已經先剪過矣。
+
+        `MAX_TILE` 彼刀是佇揀段進前落ê（`dropped` 56 px），所以段ê
+        座標是相對ê，anchor 是絕對ê。無換算就會揀著毋著段。
+        """
+        mask = self._strip([(0, 100, 80), (1700, 1760, 20)])
+        box = sheets._ink_columns(mask, anchor=1650)
+        self.assertEqual(box[1], 1766)
+        self.assertLessEqual(box[1] - box[0], sheets.MAX_TILE)
 
     def test_a_strip_that_already_fits_is_not_touched(self):
         mask = self._strip([(700, 1200, 20)])

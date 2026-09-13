@@ -35,13 +35,14 @@ NEWS_PRESET = "titv-news"
 
 
 def news_sheet_layout(preset_name=NEWS_PRESET):
-    """(row_slots, compare_cols) declared by the news layout."""
+    """(row_slots, compare_cols, right_anchor) declared by the news layout."""
     with open(paths.ENGINE_PRESETS, encoding="utf-8") as handle:
         presets = json.load(handle)
     preset = presets.get(preset_name) or {}
     mask = preset.get("mask", {}) or {}
     return (preset.get("sheet", {}).get("row_slots"),
-            mask.get("compare_cols"))
+            mask.get("compare_cols"),
+            mask.get("right_anchor"))
 
 
 def already_read(dst):
@@ -78,9 +79,9 @@ def prepare(slug):
     with open(paths.cues_to_read(work), encoding="utf-8") as handle:
         manifest = json.load(handle)
 
-    slots, cols = news_sheet_layout()
+    slots, cols, anchor = news_sheet_layout()
     made = sheets.build_sheets(work, manifest, row_slots=slots,
-                               compare_cols=cols)
+                               compare_cols=cols, right_anchor=anchor)
 
     for name in ("transcripts.json", "verified.json"):
         with open(os.path.join(work, name), "w", encoding="utf-8") as handle:
