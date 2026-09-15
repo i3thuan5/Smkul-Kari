@@ -40,7 +40,7 @@ tests/
 | spec | scenario | 測試檔 |
 |---|---|---|
 | cue-timing | 精修取樣密度／邊界取中點／偏移超限即擋下／缺輸入明確失敗 | `news/test_refine.py`（純邏輯）＋ `ocr/test_segmenter.py`（切分） |
-| cue-timing | 批次切 cue 前驗證字幕帶（紅帶低位通過／侵入擋下） | `news/test_verify_band.py` |
+| cue-timing | 批次切 cue 前驗證字幕帶（紅帶低位通過／侵入擋下）；背景報紙字把欄剖面右緣拉到 1863、字幕本身停在 1760 的一集不可擋下（刪掉右緣檢查前，9 集全被這樣擋錯）；對白高原落在帶外照樣擋 | `news/test_verify_band.py` |
 | cue-timing | 切 cue ê遮罩會使裁到帶頂：無指定就佮逐畫素仝款、指定了帶外逐列攏空；`--band-rows` 用絕對列傳入，寫入 manifest ê是 region 內ê偏移 | `ocr/test_cuelib_band_rows.py`、`ocr/test_band_rows_option.py` |
 | subtitle-text-source | 指定 preset 每個入口都生效／名稱錯誤中止 | `ocr/test_presets.py`、`ocr/test_auto_options.py` |
 | subtitle-text-source | 只有經人校讀的視覺辨識可供字 | `ocr/test_import_tsv.py`（verified 記帳）、`news/test_vision_complete.py` |
@@ -102,6 +102,7 @@ tests/
 | episode-sourcing | 完整性不自動判定（`truncated`／`partial` 是人工註記）；影片長度只記錄 | `news/test_tracker_row.py` |
 | episode-sourcing | 一個月可跨資料夾／同資料夾別的月份不選入／登記先於下載／重跑不重複登記 | `news/test_plan_month.py` |
 | episode-sourcing | 抓檔清單來自 inventory 的 pending 條目，不是遠端 ls | `news/test_plan_month.py` |
+| episode-sourcing | 抓檔清單（`--todo`）要先照規則挑檔，不可把整格候選「a.mp4;b.mp4」原樣交給下載（修之前 59 集這樣被跳過；規則 4 也跟著失效，2021-03 有 3 對集數各自用同一支影片切了）；挑不出來的不上清單 | `news/test_plan_month.py` |
 
 ## 《開會了》編排（tests/aiyalaeho/ ↔ scripts/aiyalaeho/）
 

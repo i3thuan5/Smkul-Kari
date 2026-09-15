@@ -148,16 +148,26 @@ def todo(month, entries, already_cut=already_cut):
 
     Paths come back corpus-root-relative, the form the server takes under its
     own root and the form `resolve_slug` normalises to.
+
+    The path is the one `sources.resolve` chose, the same as `plan` reports
+    -- `原始影片檔案位置` is a candidate list, and handing the raw cell to
+    `fetch_sftp.sh` asked the server for "a.mp4;b.mp4" (59 episodes skipped
+    that way before this was fixed). An episode the rules cannot decide is
+    left off; `plan` is what names it.
     """
-    out = []
+    rows = []
     for entry in entries:
-        if not entry["播出日期"].startswith(month):
+        if entry["播出日期"].startswith(month):
+            rows.append(entry)
+    out = []
+    for entry, (video, _problem) in zip(rows, sources.resolve(rows)):
+        if not video:
             continue
         if not entry.get("pending"):
             continue
         if already_cut(entry):
             continue
-        out.append((entry["slug"], resolve_slug.normalise(entry["video"])))
+        out.append((entry["slug"], resolve_slug.normalise(video)))
     return out
 
 

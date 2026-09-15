@@ -16,6 +16,8 @@ import sys
 from scripts.errors import PipelineError
 from scripts.news import episodes
 from scripts.news import paths
+from scripts.news import resolve_slug
+from scripts.news import sources
 
 # 一批幾張、尾巴短到偌濟就倂入前一批。**這兩个數字是量出來ê，毋是
 # 揀ê**：平行讀（一則訊息同時發 3–4 个 Read）落地了後，逐批ê成本是
@@ -37,6 +39,11 @@ from scripts.news import paths
 SIZE = 24
 MIN_TAIL = 8
 BRIEF = os.path.join(os.path.dirname(__file__), "brief.md")
+# 讀者抽原生格ê影片。mp4 來源ê集數無封存 mkv，愛對 SFTP 抓 mp4 落來，
+# 抓來囥 READ_STAGE。使用者裁定 2026-09-15：沒有 mkv 就看 mp4。
+MKV_DIR = "kithann/out/mkv"
+READ_STAGE = "kithann/out/stage-read"
+REMOTE_ROOT = "/docker/ilrdf-corpus"
 # `or`, not a `get` default: an exported-but-empty CLAUDE_SCRATCH counts
 # as set, and `os.path.join("", name)` then hands the reader a
 # relative path that lands wherever it happens to be standing.
@@ -55,6 +62,32 @@ def episode(slug):
         if entry["slug"] == slug:
             return entry["srt_name"]
     raise PipelineError("節目目錄內底揣無 slug：%s" % slug)
+
+
+def remote_of(name):
+    """這集ê來源影片，照 `sources` ê規則揀ê彼條（語料根目錄相對路徑）。"""
+    for entry in episodes.load():
+        if entry["srt_name"] == name:
+            path, problem = sources.pick(entry)
+            if not path:
+                raise PipelineError("%s 揀無來源影片：%s" % (name, problem))
+            return resolve_slug.normalise(path)
+    raise PipelineError("節目目錄內底揣無：%s" % name)
+
+
+def video_source(name):
+    """(讀者用ê影片路徑, 抓檔ê講法)。有 mkv 就用 mkv，講法是空ê。"""
+    mkv = os.path.join(MKV_DIR, name + ".mkv")
+    if os.path.exists(mkv):
+        return mkv, ""
+    remote = remote_of(name)
+    local = os.path.join(READ_STAGE, os.path.basename(remote))
+    fetch = ('——這集無封存 mkv，愛先抓 mp4：`mkdir -p %s && [ -f "%s" ] || '
+             '{ bash scripts/news/sftp.sh get "%s/%s" "%s.part.$$" && '
+             'mv "%s.part.$$" "%s"; }`（檔案已經佇咧就免閣抓，仝一集另外'
+             '一批ê讀者可能抓好矣）'
+             % (READ_STAGE, local, REMOTE_ROOT, remote, local, local, local))
+    return local, fetch
 
 
 def plan(total, size=SIZE, min_tail=MIN_TAIL):
@@ -189,6 +222,7 @@ def _brief(slug, pick, tsvname, asked=None):
         per = "逐張 %d 條 cue" % counts.pop()
     else:
         per = "上濟 %d 條 cue，尾張較少" % max(counts)
+    video, fetch = video_source(name)
     fill = {"name": name, "work": work, "sheets": len(names), "per": per,
             "scratch": scratch,
             # 檔名家己，毋是對伊剖出來ê編號：打包規則（e81f1f1）了後
@@ -205,7 +239,8 @@ def _brief(slug, pick, tsvname, asked=None):
             "cues_json": paths.cue_keyed(work, name)["timeline"],
             "clo": min(cues), "chi": max(cues), "cues": len(cues),
             "tsvname": tsvname,
-            "video": "kithann/out/mkv/%s.mkv" % name,
+            "video": video,
+            "fetch": fetch,
             "tsv": os.path.join(paths.KARI_VISION,
                                 paths.month_of(name), name, tsvname)}
     for key, value in fill.items():

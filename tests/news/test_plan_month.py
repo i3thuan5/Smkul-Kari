@@ -138,6 +138,73 @@ class TestItWritesNothing(Fixture):
                          self._names(self._plan()))
 
 
+JAN22 = "ilrdf-corpus/族語新聞/111.1-111.5/1月/"
+FEB22 = "ilrdf-corpus/族語新聞/111.1-111.5/2月/"
+MAY21 = "ilrdf-corpus/族語新聞/110.1-110.10/5月/"
+
+
+class TestTodoFetchesOneChosenFile(unittest.TestCase):
+    """`--todo` 是 `fetch_sftp.sh` 真正拿去下載的清單，要先照規則挑檔。
+
+    `原始影片檔案位置` 是候選清單，122 列用分號接了好幾條。報表
+    （`plan`）有照 `sources.resolve` 挑，`todo` 卻直接把整格原樣交出去，
+    `fetch_sftp.sh` 拿「a.mp4;b.mp4」去伺服器找，當然找不到。2026-09-14
+    量到還沒切的集數裡有 59 集這樣被跳過：2022-01 一整批同檔名同時在
+    「1月」「2月」、2022-04 同時在「4月」「5月」，另有 090午間鄒、
+    122晨間拉阿魯哇這種午間／晨間兩個檔名擺在一起的。
+    """
+
+    ROWS = [
+        # 規則 3：同一個檔名在兩個資料夾，是同一支檔
+        row("1", "2022-01-01", "晨間", "Thau", "邵", "ssf",
+            [JAN22 + "22NL005_001晨間族語新聞.mp4",
+             FEB22 + "22NL005_001晨間族語新聞.mp4"]),
+        # 挑不出來：同時段、不同檔名
+        row("2", "2022-01-02", "晨間", "Hla'alua", "拉阿魯哇", "sxr",
+            [JAN22 + "22NL005_002晨間族語新聞.mp4",
+             JAN22 + "22NL004_002晨間族語新聞.mp4"]),
+        # 規則 2：檔名上的時段字對得上的那一條
+        row("122", "2021-05-02", "晨間", "Hla'alua", "拉阿魯哇", "sxr",
+            [MAY21 + "21NL005_122午間族語新聞.mp4",
+             MAY21 + "21NL005_122晨間族語新聞.mp4"]),
+    ]
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.table = os.path.join(tmp.name, "smkul.csv")
+        with open(self.table, "w", encoding="utf-8-sig",
+                  newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=HEAD)
+            writer.writeheader()
+            for one in self.ROWS:
+                writer.writerow(one)
+
+    def _todo(self, month):
+        entries = episodes.load(self.table, srt_dir=set())
+        found = {}
+        for slug, video in plan_month.todo(month, entries,
+                                           already_cut=lambda entry: False):
+            found[slug] = video
+        return found
+
+    def test_one_file_name_in_two_folders_fetches_one_path(self):
+        found = self._todo("2022-01")
+        video = found["2022_001_2022-01-01_晨間_Thau_邵"]
+        self.assertNotIn(";", video)
+        self.assertTrue(video.endswith("111.1-111.5/1月/22NL005_001晨間族語新聞.mp4"))
+
+    def test_the_file_named_for_the_slot_is_the_one_fetched(self):
+        found = self._todo("2021-05")
+        video = found["2021_122_2021-05-02_晨間_Hla'alua_拉阿魯哇"]
+        self.assertNotIn(";", video)
+        self.assertTrue(video.endswith("5月/21NL005_122晨間族語新聞.mp4"))
+
+    def test_an_undecidable_episode_is_not_on_the_fetch_list(self):
+        found = self._todo("2022-01")
+        self.assertNotIn("2022_002_2022-01-02_晨間_Hla'alua_拉阿魯哇", found)
+
+
 class TestAlreadyCut(unittest.TestCase):
     """「這集敢做好矣」——work dir 抑是 Kari-SRT 有精修過ê時間軸。"""
 

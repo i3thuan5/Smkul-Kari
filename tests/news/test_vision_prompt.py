@@ -37,6 +37,14 @@ class VisionPromptCase(unittest.TestCase):
     """逐个 case 家己一个 work dir，內底囥合成ê sheets.json。"""
 
     NAME = "20210224_055_午間_Cou_鄒"
+    REMOTE = "族語新聞/110.1-110.10/2月/21NL003_55午間族語新聞.mp4"
+
+    def setUp(self):
+        # 來源路徑本底愛讀節目目錄；測試離線，換做固定值
+        patcher = mock.patch.object(prompt, "remote_of",
+                                    return_value=self.REMOTE)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def work(self, count, per=4):
         tmp = tempfile.TemporaryDirectory()
@@ -526,3 +534,31 @@ class TestBatchSizeDefaults(unittest.TestCase):
     def test_fifty_one_sheets_is_three_batches(self):
         """058晨 壓 2000 了後ê實際張數：51 張，24＋24＋3，尾 3 張倂入。"""
         self.assertEqual(prompt.plan(51), [(0, 24), (24, 51)])
+
+
+class TestNativeFrameSource(VisionPromptCase):
+    """讀者抽原生格ê影片：有封存 mkv 用 mkv，無就愛講按怎抓 mp4。
+
+    mp4 來源ê集數無封存 mkv。1 月 81 批ê讀者攏去 `kithann/out/mkv/`
+    揣，揣無就退轉去看 strips，無一个抽會著原生格——025午 規段字幕
+    落佇帶跤、歌詞頂逝予帶裁去，攏需要原生格才讀會完整。使用者裁定
+    2026-09-15：沒有 mkv 就看 mp4。
+    """
+
+    def test_without_an_archive_the_reader_is_told_how_to_fetch_the_mp4(self):
+        with mock.patch.object(prompt, "MKV_DIR", "/nonexistent-mkv"):
+            text = self.brief(40, 1, size=24)
+        self.assertIn("sftp.sh get", text)
+        self.assertIn(self.REMOTE, text)
+        self.assertIn(os.path.join(prompt.READ_STAGE,
+                                   "21NL003_55午間族語新聞.mp4"), text)
+
+    def test_with_an_archive_the_mkv_is_used_and_nothing_is_fetched(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        mkv = os.path.join(tmp.name, self.NAME + ".mkv")
+        open(mkv, "wb").close()
+        with mock.patch.object(prompt, "MKV_DIR", tmp.name):
+            text = self.brief(40, 1, size=24)
+        self.assertIn(mkv, text)
+        self.assertNotIn("sftp.sh get", text)
