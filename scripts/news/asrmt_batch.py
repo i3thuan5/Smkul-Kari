@@ -84,8 +84,7 @@ def _run_episode(entry):
     if not os.path.exists(audio):
         local, remote = asrmt_run.audio_source(entry)
         if not local:
-            local = os.path.join(paths.STAGE,
-                                 os.path.basename(entry["file"]))
+            local = paths.staged_path(name, entry["file"])
             _fetch(remote, local)
         asrmt_run.extract_audio(local, audio)
     asrmt_run.step_words(name, entry["族語別(英)"])

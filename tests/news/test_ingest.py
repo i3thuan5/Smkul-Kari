@@ -69,15 +69,20 @@ class TestNormalise(unittest.TestCase):
         self.assertIn("xx\than\t乙", rows)
 
 
+# 月份層從 slug 的播出日期來，所以不能再用 "ep" 這種假名字——它會在
+# 算月份時就被擋下，測試看起來「有拋錯」卻不是在測原本那件事
+SLUG = "2021_060_2021-03-01_晚間_Amis_阿美"
+
+
 class TestBatchRejection(unittest.TestCase):
     """A TSV naming a cue that was on no sheet must sink the whole batch."""
 
     def _run(self, sheet_cues, tsv_body):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        work = os.path.join(tmp.name, "ep.work")
-        os.makedirs(work)
-        with open(os.path.join(work, "sheets.json"), "w",
+        work = paths.work_dir(SLUG, tmp.name)
+        os.makedirs(os.path.dirname(paths.sheets_index(work)))
+        with open(paths.sheets_index(work), "w",
                   encoding="utf-8") as handle:
             json.dump({"sheet_001.png": sheet_cues}, handle)
         tsvdir = os.path.join(tmp.name, "tsv")
@@ -85,7 +90,7 @@ class TestBatchRejection(unittest.TestCase):
         with open(os.path.join(tsvdir, "b01.tsv"), "w",
                   encoding="utf-8") as handle:
             handle.write(tsv_body)
-        argv = ["ingest", "ep", tsvdir]
+        argv = ["ingest", SLUG, tsvdir]
         with mock.patch.object(ingest, "WORK", tmp.name):
             with mock.patch("sys.argv", argv):
                 ingest.main()
@@ -118,9 +123,9 @@ class TestOnlyBatchFiles(unittest.TestCase):
     def _dir(self, *files):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        work = os.path.join(tmp.name, "ep.work")
-        os.makedirs(work)
-        with open(os.path.join(work, "sheets.json"), "w",
+        work = paths.work_dir(SLUG, tmp.name)
+        os.makedirs(os.path.dirname(paths.sheets_index(work)))
+        with open(paths.sheets_index(work), "w",
                   encoding="utf-8") as handle:
             json.dump({"sheet_001.png": [1, 2]}, handle)
         cues = []
@@ -131,7 +136,8 @@ class TestOnlyBatchFiles(unittest.TestCase):
                   encoding="utf-8") as handle:
             json.dump({"cues": cues,
                        "lines": [{"name": "han"}]}, handle)
-        with open(os.path.join(work, "transcripts.json"), "w",
+        os.makedirs(os.path.dirname(paths.transcripts_file(work)))
+        with open(paths.transcripts_file(work), "w",
                   encoding="utf-8") as handle:
             json.dump({"1": {"han": ""}, "2": {"han": ""}}, handle)
         tsvdir = os.path.join(tmp.name, "tsv")
@@ -146,14 +152,14 @@ class TestOnlyBatchFiles(unittest.TestCase):
         root, tsvdir = self._dir(("b01.tsv", "1\than\t甲\n2\than\t乙\n"),
                                  ("sample.tsv", "1\than\t舊ê甲\n"))
         with mock.patch.object(ingest, "WORK", root):
-            with mock.patch("sys.argv", ["ingest", "ep", tsvdir]):
+            with mock.patch("sys.argv", ["ingest", SLUG, tsvdir]):
                 ingest.main()          # 莫掔錯
 
     def test_batch_files_are_still_audited(self):
         root, tsvdir = self._dir(("b01.tsv", "1\than\t甲\n"),
                                  ("b02.tsv", "1\than\t重耽\n"))
         with mock.patch.object(ingest, "WORK", root):
-            with mock.patch("sys.argv", ["ingest", "ep", tsvdir]):
+            with mock.patch("sys.argv", ["ingest", SLUG, tsvdir]):
                 with self.assertRaises(PipelineError):
                     ingest.main()
 

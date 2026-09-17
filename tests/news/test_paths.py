@@ -276,13 +276,14 @@ class TestStageLayout(unittest.TestCase):
         self.assertEqual(paths.coarse_cues(self.work),
                          os.path.join(self.work, "1-cues", "cues.json"))
 
-    def test_the_refined_one_is_stage_two(self):
+    def test_the_refined_one_is_stage_three(self):
+        # 2-strips 夾在中間：圖條是切 cue 那一趟寫的，比精修早
         self.assertEqual(paths.refined_cues(self.work),
-                         os.path.join(self.work, "2-refined", "cues.json"))
+                         os.path.join(self.work, "3-refined", "cues.json"))
 
     def test_reading_prefers_the_refined_one(self):
         self._write("1-cues/cues.json")
-        self._write("2-refined/cues.json")
+        self._write("3-refined/cues.json")
         self.assertEqual(paths.cues_to_read(self.work),
                          paths.refined_cues(self.work))
 
@@ -314,7 +315,7 @@ class TestStageLayout(unittest.TestCase):
         # 「敢精修過矣」是問彼个檔案佇無，毋是去剖粗切彼份內底ê旗標
         self._write("1-cues/cues.json")
         self.assertFalse(paths.is_refined(self.work))
-        self._write("2-refined/cues.json")
+        self._write("3-refined/cues.json")
         self.assertTrue(paths.is_refined(self.work))
 
     def test_a_flag_inside_the_coarse_file_does_not_count(self):
@@ -345,35 +346,125 @@ class TestHasCues(unittest.TestCase):
     時間就對袂起來矣。所以這句判斷愛干焦一份，佇遮。
     """
 
+    EP = "2021_060_2021-03-01_晚間_Amis_阿美"
+    OTHER = "2021_061_2021-03-02_晚間_Amis_阿美"
+
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.work = tmp.name
 
-    def _cut(self, suffix, stage="1-cues"):
-        folder = os.path.join(self.work, "ep" + suffix, stage)
+    def _cut(self, stage="1-cues"):
+        folder = os.path.join(paths.work_dir(self.EP, self.work), stage)
         os.makedirs(folder)
         with open(os.path.join(folder, "cues.json"), "w") as handle:
             handle.write("{}")
 
     def test_nothing_on_disk_means_not_cut(self):
-        self.assertFalse(paths.has_cues("ep", work=self.work))
+        self.assertFalse(paths.has_cues(self.EP, work=self.work))
 
     def test_the_plain_work_dir_counts(self):
-        self._cut(".work")
-        self.assertTrue(paths.has_cues("ep", work=self.work))
+        self._cut()
+        self.assertTrue(paths.has_cues(self.EP, work=self.work))
 
-    def test_the_vision_work_dir_counts_on_its_own(self):
-        self._cut(".work")
-        self.assertTrue(paths.has_cues("ep", work=self.work))
+    def test_a_refined_only_work_dir_counts(self):
+        self._cut("3-refined")
+        self.assertTrue(paths.has_cues(self.EP, work=self.work))
 
     def test_an_empty_work_dir_is_not_cut(self):
-        os.makedirs(os.path.join(self.work, "ep.work"))
-        self.assertFalse(paths.has_cues("ep", work=self.work))
+        os.makedirs(paths.work_dir(self.EP, self.work))
+        self.assertFalse(paths.has_cues(self.EP, work=self.work))
 
     def test_another_episodes_cues_do_not_count(self):
-        self._cut(".work")
-        self.assertFalse(paths.has_cues("other", work=self.work))
+        self._cut()
+        self.assertFalse(paths.has_cues(self.OTHER, work=self.work))
+
+
+class TestWorkLayout(unittest.TestCase):
+    """工作區照「語料 → 月份 → 集」分層（2026-09 重整）。
+
+    舊的 `kithann/out/mxf/` 平鋪四百多個 work dir，名字還是早期來源格式
+    （裡面早就沒有 mxf）；log、mkv、暫存、語音側也各自散在 `out/` 底下。
+    """
+
+    NEWS = os.path.join("kithann", "out", "news")
+
+    def _rel(self, path):
+        return os.path.relpath(path, paths.ROOT)
+
+    def test_everything_news_lives_under_out_news(self):
+        self.assertEqual(self._rel(paths.WORK),
+                         os.path.join(self.NEWS, "1-ocr"))
+        self.assertEqual(self._rel(paths.ASRMT_WORK),
+                         os.path.join(self.NEWS, "2-asr"))
+        self.assertEqual(self._rel(paths.LOGS),
+                         os.path.join(self.NEWS, "logs"))
+        self.assertEqual(self._rel(paths.MKV_ARCHIVE),
+                         os.path.join(self.NEWS, "mkv"))
+        self.assertEqual(self._rel(paths.STAGE),
+                         os.path.join(self.NEWS, "stage"))
+
+    def test_no_folder_is_named_after_a_format_it_does_not_hold(self):
+        for value in (paths.WORK, paths.LOGS):
+            self.assertNotIn("mxf", value)
+
+    def test_a_work_dir_sits_in_its_month(self):
+        slug = "2021_060_2021-03-01_晚間_Amis_阿美"
+        self.assertEqual(paths.work_dir(slug),
+                         os.path.join(paths.WORK, "2021-03", slug + ".work"))
+
+    def test_a_work_dir_is_never_directly_under_1_ocr(self):
+        slug = "2021_060_2021-03-01_晚間_Amis_阿美"
+        self.assertNotEqual(os.path.dirname(paths.work_dir(slug)),
+                            paths.WORK)
+
+    def test_the_month_is_the_broadcast_date_not_the_year_field(self):
+        # 年度欄是 2021，播出日期已經是 2022-01：要落在 2022-01/
+        december = "2021_365_2021-12-31_晚間_Amis_阿美"
+        january = "2021_368_2022-01-03_晚間_Amis_阿美"
+        self.assertEqual(paths.month_of_slug(december), "2021-12")
+        self.assertEqual(paths.month_of_slug(january), "2022-01")
+        self.assertNotEqual(os.path.dirname(paths.work_dir(december)),
+                            os.path.dirname(paths.work_dir(january)))
+
+    def test_a_slug_without_a_broadcast_date_is_refused(self):
+        for bad in ("ep", "2021_060_晚間_Amis_阿美",
+                    "2021_060_2021-13-01_晚間_Amis_阿美"):
+            with self.assertRaises(PipelineError):
+                paths.month_of_slug(bad)
+
+    def test_the_archive_copy_sits_in_its_month(self):
+        name = "20210201_032_午間_Atayal_泰雅"
+        self.assertEqual(paths.mkv_path(name),
+                         os.path.join(paths.MKV_ARCHIVE, "2021-02",
+                                      name + ".mkv"))
+
+    def test_speech_side_work_sits_in_its_month(self):
+        name = "20210201_032_午間_Atayal_泰雅"
+        self.assertEqual(paths.asrmt_dir(name),
+                         os.path.join(paths.ASRMT_WORK, "2021-02", name))
+
+    def test_logs_and_staging_have_a_month_folder(self):
+        self.assertEqual(paths.log_dir("2021-10"),
+                         os.path.join(paths.LOGS, "2021-10"))
+        self.assertEqual(paths.stage_dir("2021-10"),
+                         os.path.join(paths.STAGE, "2021-10"))
+        with self.assertRaises(PipelineError):
+            paths.log_dir("2021-1")
+
+    def test_a_staged_video_keeps_its_own_name_in_its_month(self):
+        name = "20210201_032_晚間_Amis_阿美"
+        self.assertEqual(
+            paths.staged_path(name, "族語新聞/2月/20NL004_32晚間族語新聞.mxf"),
+            os.path.join(paths.STAGE, "2021-02", "20NL004_32晚間族語新聞.mxf"))
+
+    def test_shell_callers_can_ask_for_a_work_dir(self):
+        slug = "2021_060_2021-03-01_晚間_Amis_阿美"
+        proc = subprocess.run(
+            [sys.executable, "-m", "scripts.news.paths", "--work-of", slug],
+            capture_output=True, text=True, cwd=paths.ROOT)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stdout.strip(), paths.work_dir(slug))
 
 
 if __name__ == "__main__":

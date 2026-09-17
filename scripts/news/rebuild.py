@@ -127,8 +127,9 @@ def rebuild_one(entry, tmp):
     timeline = paths.coarse_cues(work)
     os.makedirs(os.path.dirname(timeline), exist_ok=True)
     shutil.copy2(paths.stage_path(paths.KARI_CUES, name, ".json"), timeline)
-    with open(os.path.join(work, "transcripts.json"), "w",
-              encoding="utf-8") as handle:
+    transcripts = paths.transcripts_file(work)
+    os.makedirs(os.path.dirname(transcripts), exist_ok=True)
+    with open(transcripts, "w", encoding="utf-8") as handle:
         json.dump(episode_transcripts(name), handle, ensure_ascii=False,
                   indent=2, sort_keys=True)
 

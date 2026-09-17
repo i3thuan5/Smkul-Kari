@@ -1,13 +1,16 @@
 """batches: which sheets are offered, and where their TSVs are told to go."""
 import csv
+import io
 import json
 import os
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from unittest import mock
 
 from scripts import catalogue_checks as checks
 from scripts.news import batches
+from scripts.news import paths
 from scripts.news.vision_tools import prompt
 from scripts.errors import PipelineError
 
@@ -16,11 +19,13 @@ class TestPendingSheets(unittest.TestCase):
     def _work(self, sheets, verified):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        with open(os.path.join(tmp.name, "sheets.json"), "w",
+        os.makedirs(os.path.dirname(paths.sheets_index(tmp.name)))
+        with open(paths.sheets_index(tmp.name), "w",
                   encoding="utf-8") as handle:
             json.dump(sheets, handle)
         if verified is not None:
-            with open(os.path.join(tmp.name, "verified.json"), "w",
+            os.makedirs(os.path.dirname(paths.verified_file(tmp.name)))
+            with open(paths.verified_file(tmp.name), "w",
                       encoding="utf-8") as handle:
                 json.dump(verified, handle)
         return tmp.name
@@ -95,35 +100,94 @@ if __name__ == "__main__":
     unittest.main()
 
 
-class TestBatchBoundaries(unittest.TestCase):
-    """佗位切批，佮 `prompt` 敢切仝款。
+class TestOneListForBothTools(unittest.TestCase):
+    """`batches` 發 TSV 名、`prompt` 照彼个號碼寫判準——兩爿愛仝一份清單。
 
-    這兩支愛講仝款ê話：`batches` 發 TSV ê名（b01、b02…），`prompt`
-    照彼个號碼寫讀者提示。058晨 壓 2000 了後是 51 張，佇彼个張數，
-    遮本底ê `range(0, total, size)` 會生第三批 3 張，`prompt.plan`
-    soah kā彼 3 張倂入 b02——**仝一批 cue hőng派兩擺、掛兩个名**，
-    `ingest` 就kā規集擋落來（「cue X 佇兩个檔攏有」）。批次大小
-    對 24 改做 4 了後，尾批短ê情形變做常態，這條愛先鎖起來。
+    本底 `batches` 對「猶未核實ê圖」切、`prompt.brief()` 對「全部圖」
+    切，讀到一半了後兩爿ê第 N 批內容無仝（058晨 51 張彼擺，一爿 3 批、
+    一爿 2 批），而且攏對 b01 起算，會kā已經收入 Kari-SRT ê b01.tsv
+    蓋掉，無一个所在報錯。
     """
 
-    def test_a_short_tail_is_folded_the_same_way_prompt_folds_it(self):
-        self.assertEqual(batches.spans(51),
-                         prompt.plan(51, prompt.SIZE, prompt.MIN_TAIL))
+    SLUG = "2021_055_2021-02-24_午間_Cou_鄒"
+    NAME = "20210224_055_午間_Cou_鄒"
 
-    def test_no_sheet_count_disagrees_with_prompt(self):
-        for total in range(1, 200):
-            self.assertEqual(
-                batches.spans(total),
-                prompt.plan(total, prompt.SIZE, prompt.MIN_TAIL),
-                "%d 張切法無仝" % total)
+    def setUp(self):
+        from tests.news.test_vision_prompt import sheets_of, write_book
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = tmp.name
+        self.work = paths.work_dir(self.SLUG, os.path.join(tmp.name, "w"))
+        write_book(self.work, sheets_of(100))
+        self.vision = os.path.join(tmp.name, "vision")
+        for name, value in (("WORK", os.path.join(tmp.name, "w")),
+                            ("KARI_VISION", self.vision)):
+            patcher = mock.patch.object(paths, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        patcher = mock.patch.object(batches, "WORK",
+                                    os.path.join(tmp.name, "w"))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        patcher = mock.patch.object(batches, "srt_name_of",
+                                    return_value=self.NAME)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
-    def test_an_explicit_size_is_still_honoured(self):
-        self.assertEqual(batches.spans(10, 3),
-                         prompt.plan(10, 3, prompt.MIN_TAIL))
+    def verify(self, lo, hi):
+        path = paths.verified_file(self.work)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        marked = {}
+        for cue in range(lo, hi + 1):
+            marked[str(cue)] = {"han": True}
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(marked, handle)
 
-    def test_the_default_size_is_prompts_not_a_second_copy(self):
-        """遮**無**家己ê預設值。
+    def tsv(self, name, lo, hi):
+        folder = paths.stage_path(self.vision, self.NAME)
+        os.makedirs(folder, exist_ok=True)
+        with open(os.path.join(folder, name), "w", encoding="utf-8") as fh:
+            for cue in range(lo, hi + 1):
+                fh.write("%d\than\t字\n" % cue)
 
-        本底兩爿各有一个 24，改一爿袂記得改另外一爿就恬恬走精。
-        """
-        self.assertEqual(batches.spans(51), batches.spans(51, prompt.SIZE))
+    def listed(self):
+        buf = io.StringIO()
+        with redirect_stdout(buf), \
+                mock.patch("sys.argv", ["batches", self.SLUG]):
+            batches.main()
+        out = []
+        for line in buf.getvalue().splitlines():
+            if line.startswith("SHEETS "):
+                out.append([line.split()[1:]])
+            if line.startswith("TSV "):
+                out[-1].append(os.path.basename(line.split()[1]))
+        return out
+
+    def test_both_tools_hand_out_the_same_batches(self):
+        planned = prompt.batches_of(self.work)
+        got = self.listed()
+        self.assertEqual(len(got), len(planned))
+        for (names, tsv), batch in zip(got, planned):
+            self.assertEqual(names, batch)
+        self.assertEqual(got[0][1], "b01.tsv")
+
+    def test_a_half_read_episode_numbers_on_from_what_is_in(self):
+        self.verify(1, 200)
+        self.tsv("b01.tsv", 1, 100)
+        self.tsv("b02.tsv", 101, 200)
+        got = self.listed()
+        names = []
+        for _sheets, tsv in got:
+            names.append(tsv)
+        self.assertEqual(names[0], "b03.tsv")
+        self.assertNotIn("b01.tsv", names)
+        self.assertNotIn("b02.tsv", names)
+        planned = prompt.batches_of(self.work)
+        for (sheets, _tsv), batch in zip(got, planned):
+            self.assertEqual(sheets, batch)
+
+    def test_the_size_option_is_gone(self):
+        with mock.patch("sys.argv", ["batches", self.SLUG, "--size", "4"]):
+            with self.assertRaises(SystemExit):
+                with redirect_stderr(io.StringIO()):
+                    batches.main()

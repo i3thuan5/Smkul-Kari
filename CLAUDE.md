@@ -60,14 +60,14 @@
 
 | 不要再用 | **正式名稱** | 是什麼 |
 |---|---|---|
-| contact sheet | **Claude Vision 輸入組合圖** | 好幾條圖條上下疊成的一張大圖（高度預算 1.1 Mpx），存 `sheets/`，`sheets.json` 記哪幾條 cue 在哪一張 |
+| contact sheet | **Claude Vision 輸入組合圖** | 好幾條圖條上下疊成的一張大圖（高度預算 1.1 Mpx），存 work dir 的 `4-sheets/`，`sheets.json` 記哪幾條 cue 在哪一張 |
 | 讀者 | **Claude Vision** | 讀組合圖、把字打成 TSV 的那一端 |
 | 列位裁法、列位裁切 | **字幕上下位置判斷法** | 判斷這一條 cue 的字在偏上還是偏下，把另一位的留白裁掉 |
 | 右錨定視窗、比對視窗、右錨窗 | **置右字幕比對遮罩** | 切 cue 比對遮罩的時候只看的那一塊（新聞字幕靠右對齊，所以錨在右邊） |
 | 守門 | **把關** | CLAUDE.md 佮 `publish.py` 本底就按呢寫 |
 | store、倉庫 | **Kari-SRT** | 交付佮資料ê正本目錄。使用者裁定 2026-09-10。管ê是**講話佮新寫ê文件**；程式碼內底ê識別字（`NEWS_STORE`、`redump_store.py`、spec 名 `srt-data-store`…）無綴咧改 |
 
-沒有改名、照舊用的：**圖條**（一條 cue 在組合圖上佔的那一列，`strips/` 是它的原生檔）、**偏上／偏下**（見頂懸彼節）。
+沒有改名、照舊用的：**圖條**（一條 cue 在組合圖上佔的那一列，work dir 的 `2-strips/` 是它的原生檔）、**偏上／偏下**（見頂懸彼節）。
 
 ## 時間一律用 CST（UTC+8）
 
@@ -253,7 +253,9 @@ scenario 的來源優先序：**自己踩過的坑 ＞ 量測到的資料性質 
 - 每次程式修改完，要在本機執行 `tox -e rebuild`——對 Kari-SRT
   的資料離線重建全部交付 SRT、逐 byte 比對。這條**沒有進 CI**（Kari-SRT
   是私人 repo，CI 抓不到 submodule），所以本機這一步是唯一的把關。
-- 順便執行 `tox -e flake8` 和 `tox -e unittest`（單元測試）。
+- 順便執行 `tox -e flake8`、`tox -e unittest`（單元測試）和
+  `tox -e e2etest`（合成影片端對端，`tests-e2e/`；動到切 cue、精修、
+  解碼這幾段時一定要跑，約兩分鐘）。
 - 再核對目錄那欄 `srt_name`：
   `python3 -m scripts.news.name_catalogue --check`。那欄是**產生**的，
   不是手寫的——被人手改過、或命名規則動到，這一步會當場抓到（`exit 1`）。
@@ -263,7 +265,8 @@ scenario 的來源優先序：**自己踩過的坑 ＞ 量測到的資料性質 
 
   ```bash
   .tox/rebuild/bin/python -m scripts.news.rebuild --verify
-  .tox/unittest/bin/python -m unittest discover -s tests/<pkg> -t .
+  .tox/unittest/bin/python -m unittest discover -s tests -t .
+  .tox/e2etest/bin/python -m unittest discover -s tests-e2e -t tests-e2e
   .tox/flake8/bin/flake8 . --count
   python3 -m scripts.news.name_catalogue --check
   ```

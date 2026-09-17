@@ -33,7 +33,7 @@ def vision_complete(work):
     the whole batch -- open forever.
     """
     cues = datadirs.cues_to_read(work)
-    verified = os.path.join(work, "verified.json")
+    verified = datadirs.verified_file(work)
     if not (cues and os.path.exists(verified)):
         return False
     with open(cues, encoding="utf-8") as handle:

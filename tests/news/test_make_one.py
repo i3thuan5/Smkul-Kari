@@ -15,6 +15,7 @@ import unittest
 from unittest import mock
 
 from scripts.news import make_all
+from scripts.news import paths
 
 
 # Deliberately not a real episode. make_one writes the SRT itself, so a test
@@ -26,20 +27,24 @@ ENTRY = {"slug": "9999_001_1999-01-01_午間_Test_測試",
          "文稿位置": "", "truncated": ""}
 
 
+TRANSCRIPTS = os.path.join("5-transcripts", "transcripts.json")
+VERIFIED = os.path.join("5-transcripts", "verified.json")
+
+
 class TestMakeOne(unittest.TestCase):
     def _work(self, cues=True, tesseract=False, vision=False):
         """A WORK dir holding one episode in the requested state."""
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        work = os.path.join(tmp.name, ENTRY["slug"] + ".work")
+        work = paths.work_dir(ENTRY["slug"], tmp.name)
         os.makedirs(work)
         if cues:
             self._cues(work)
         if tesseract:
-            self._write(work, "transcripts.json", {"1": {"han": "ocr"}})
+            self._write(work, TRANSCRIPTS, {"1": {"han": "ocr"}})
         if vision:
             self._cues(work)
-            self._write(work, "verified.json", {"1": {"han": True}})
+            self._write(work, VERIFIED, {"1": {"han": True}})
         return tmp.name
 
     def _cues(self, work):
@@ -70,11 +75,11 @@ class TestMakeOne(unittest.TestCase):
         """
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        done = os.path.join(tmp.name, ENTRY["slug"] + ".work")
+        done = paths.work_dir(ENTRY["slug"], tmp.name)
         os.makedirs(done)
         self._cues(done)
-        self._write(done, "verified.json", {"1": {"han": True}})
-        self._write(done, "transcripts.json", {"1": {"han": "有字"}})
+        self._write(done, VERIFIED, {"1": {"han": True}})
+        self._write(done, TRANSCRIPTS, {"1": {"han": "有字"}})
         out = os.path.join(tmp.name, "srt")
         os.makedirs(out)
         with mock.patch.object(make_all, "WORK", tmp.name), \

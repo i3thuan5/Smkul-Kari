@@ -163,13 +163,14 @@ class TestPublishableSeesTheNewLayout(Fixture):
         return dict(ENTRY, slug=self.SLUG, truncated="")
 
     def _work_dir(self):
-        return os.path.join(self.root, self.SLUG + ".work")
+        return paths.work_dir(self.SLUG, self.root)
 
     def _ready(self, body):
         work = self._work_dir()
         self._timeline(paths.refined_cues(work), body)
         # vision_complete 讀ê物件，予伊講「讀煞矣」
-        with open(os.path.join(work, "transcripts.json"), "w",
+        os.makedirs(os.path.dirname(paths.transcripts_file(work)))
+        with open(paths.transcripts_file(work), "w",
                   encoding="utf-8") as handle:
             json.dump({"1": {"han": "有"}}, handle)
         return work

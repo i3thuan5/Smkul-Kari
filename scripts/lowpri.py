@@ -2,7 +2,7 @@
 """Drop a long-running job's priority so it does not take the machine over.
 
 A batch here runs for hours -- vosk decoding a whole episode, ffmpeg
-walking a 19 GB master, 25 fps frame classification over every cue
+walking a 19 GB master, native-rate frame classification over every cue
 boundary -- on a box somebody is also trying to work on.
 `scripts/transcode/encode_master.sh` already runs its ffmpeg under
 `nice -n 15 ionice -c 3` (使用者裁定 -- CPU 影響到其他工作); this is the

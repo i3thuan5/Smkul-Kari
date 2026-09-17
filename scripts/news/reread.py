@@ -39,11 +39,10 @@ holds 6 sentences. Duration (`blind_cues.LONG`) is what flags it; expect
 partial splits there and check the strips rather than trusting the count.
 
 The timeline is not touched. Segments are a reading aid: they say where to
-point the camera, and `refine_cues` does the 25 fps boundary work afterwards
-if the split is adopted.
+point the camera, and `refine_cues` does the native-rate boundary work
+afterwards if the split is adopted.
 """
 import argparse
-import glob
 import json
 import os
 import sys
@@ -52,8 +51,9 @@ import numpy as np
 
 from scripts import lowpri
 from scripts.errors import PipelineError
-from scripts.news import blind_cues, paths
+from scripts.news import blind_cues, episodes, paths
 from scripts.ocr import cuelib
+from scripts.ocr import decode
 
 # Seconds of frames folded into one cleaned mask. Long enough to outvote the
 # speckle, short enough that a sentence which is only on screen for a second
@@ -333,7 +333,7 @@ def masks_of(video, cue, region, spec, fps=FPS):
     """Every frame mask inside one cue, straight off the video."""
     out = []
     span = cue["end"] - cue["start"]
-    for _ts, rgb in cuelib.stream_region(video, region, fps=fps,
+    for _ts, rgb in decode.stream_region(video, region, fps=fps,
                                          start=cue["start"], duration=span):
         out.append(cuelib.text_mask(rgb, spec))
     if not out:
@@ -352,7 +352,7 @@ def plan(srt_name, video=None, floor=None, long=None):
     spec = cuelib.MaskSpec.from_dict(doc.get("mask", {}))
     region = tuple(doc.get("region", REGION))
     if video is None:
-        video = os.path.join(paths.KITHANN, "out", "mkv", srt_name + ".mkv")
+        video = paths.mkv_path(srt_name)
     if not os.path.exists(video):
         raise PipelineError("揣無影片：%s" % video)
     kwargs = {}
@@ -380,11 +380,13 @@ def _timeline(srt_name):
     path = os.path.join(paths.KARI, "news", "1-ocr", "1-cues",
                         paths.month_of(srt_name), srt_name + ".json")
     if not os.path.exists(path):
-        hits = sorted(glob.glob(os.path.join(
-            paths.KITHANN, "out", "mxf", "*.work", "cues.json")))
-        for hit in hits:
-            if srt_name.split("_")[1] in hit:
-                path = hit
+        # the flat `<work>/cues.json` this globbed for went with the stage
+        # split; ask the inventory for the work dir and its timeline
+        for entry in episodes.load():
+            if entry.get("srt_name") == srt_name:
+                found = paths.cues_to_read(paths.work_dir(entry["slug"]))
+                if found:
+                    path = found
                 break
     if not os.path.exists(path):
         raise PipelineError("揣無時間軸：%s" % srt_name)

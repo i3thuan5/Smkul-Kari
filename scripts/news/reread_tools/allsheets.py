@@ -7,7 +7,8 @@ import os
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from scripts.ocr import cuelib
-from scripts.news import blind_cues, reread
+from scripts.ocr import decode
+from scripts.news import blind_cues, paths, reread
 
 OUT = "kithann/out/reread"
 FONT = ImageFont.truetype(
@@ -20,7 +21,7 @@ def one(name):
     if os.path.exists(os.path.join(dest, "segments.tsv")):
         print("SKIP\t%s" % name, flush=True)
         return
-    vid = os.path.join("kithann/out/mkv", name + ".mkv")
+    vid = paths.mkv_path(name)
     if not os.path.exists(vid):
         print("NOVID\t%s" % name, flush=True)
         return
@@ -31,7 +32,7 @@ def one(name):
     strips, segs = [], []
     for cue in flagged:
         rgbs, masks = [], []
-        for _ts, rgb in cuelib.stream_region(vid, region, fps=reread.FPS,
+        for _ts, rgb in decode.stream_region(vid, region, fps=reread.FPS,
                                              start=cue["start"],
                                              duration=cue["end"]
                                              - cue["start"]):

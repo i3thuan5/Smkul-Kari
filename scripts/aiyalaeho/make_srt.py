@@ -40,7 +40,7 @@ LABELS = (("formosan", "族語："), ("han", "華語："))
 
 
 def load_transcripts(work):
-    path = os.path.join(work, "transcripts.json")
+    path = datadirs.transcripts_file(work)
     if not os.path.exists(path):
         return {}
     with open(path, encoding="utf-8") as handle:

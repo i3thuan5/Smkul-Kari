@@ -4,27 +4,27 @@ import unittest
 import numpy as np
 
 from scripts.ocr import band as detect
-from scripts.ocr import cuelib
+from scripts.ocr import decode
 
 
 class TestCropChain(unittest.TestCase):
     """Every crop must carry exact=1, or ffmpeg re-rounds it behind us."""
 
     def test_chain_orders_args_as_w_h_x_y(self):
-        self.assertEqual(cuelib.crop_chain((10, 20, 300, 40)),
+        self.assertEqual(decode.crop_chain((10, 20, 300, 40)),
                          "crop=300:40:10:20:exact=1")
 
     def test_extra_filters_are_appended(self):
-        self.assertEqual(cuelib.crop_chain((0, 0, 2, 2), "format=rgb24"),
+        self.assertEqual(decode.crop_chain((0, 0, 2, 2), "format=rgb24"),
                          "crop=2:2:0:0:exact=1,format=rgb24")
 
     def test_exact_flag_is_always_present(self):
         for box in ((0, 0, 1920, 138), (439, 845, 1044, 107)):
-            self.assertIn("exact=1", cuelib.crop_chain(box))
+            self.assertIn("exact=1", decode.crop_chain(box))
 
     def test_odd_dimensions_are_passed_through_verbatim(self):
         # exact=1 means we may ask for an odd box and get exactly it back
-        self.assertEqual(cuelib.crop_chain((1, 3, 1044, 107)),
+        self.assertEqual(decode.crop_chain((1, 3, 1044, 107)),
                          "crop=1044:107:1:3:exact=1")
 
 
@@ -32,31 +32,31 @@ class TestNormalizeRegion(unittest.TestCase):
     """Belt-and-braces beside exact=1, for older ffmpeg without the flag."""
 
     def test_odd_values_snap_down_to_even(self):
-        self.assertEqual(cuelib.normalize_region((439, 845, 1044, 107)),
+        self.assertEqual(decode.normalize_region((439, 845, 1044, 107)),
                          [438, 844, 1044, 106])
 
     def test_even_values_are_untouched(self):
-        self.assertEqual(cuelib.normalize_region((0, 876, 1920, 138)),
+        self.assertEqual(decode.normalize_region((0, 876, 1920, 138)),
                          [0, 876, 1920, 138])
 
     def test_clipped_to_frame(self):
-        got = cuelib.normalize_region((1900, 1000, 400, 400), 1920, 1080)
+        got = decode.normalize_region((1900, 1000, 400, 400), 1920, 1080)
         self.assertEqual(got, [1900, 1000, 20, 80])
 
     def test_never_returns_zero_extent(self):
-        got = cuelib.normalize_region((0, 0, 1, 1), 1920, 1080)
+        got = decode.normalize_region((0, 0, 1, 1), 1920, 1080)
         self.assertEqual(got[2] % 2, 0)
         self.assertEqual(got[3] % 2, 0)
         self.assertGreaterEqual(got[2], 2)
         self.assertGreaterEqual(got[3], 2)
 
     def test_negative_origin_is_clamped(self):
-        self.assertEqual(cuelib.normalize_region((-5, -3, 100, 100))[:2],
+        self.assertEqual(decode.normalize_region((-5, -3, 100, 100))[:2],
                          [0, 0])
 
     def test_all_outputs_are_even(self):
         for box in ((1, 3, 5, 7), (439, 845, 1044, 107), (11, 0, 3, 999)):
-            got = cuelib.normalize_region(box, 1920, 1080)
+            got = decode.normalize_region(box, 1920, 1080)
             for value in got:
                 self.assertEqual(value % 2, 0, "%s -> %s" % (box, got))
 

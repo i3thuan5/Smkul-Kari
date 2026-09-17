@@ -29,11 +29,14 @@ class TestVisionComplete(unittest.TestCase):
         marked = {}
         for index in verified:
             marked[str(index)] = {"han": True}
-        self._write(tmp.name, "verified.json", marked)
+        self._write(tmp.name, os.path.join("5-transcripts", "verified.json"),
+                    marked)
         return tmp.name
 
     def _write(self, work, name, value):
-        with open(os.path.join(work, name), "w", encoding="utf-8") as handle:
+        path = os.path.join(work, name)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as handle:
             json.dump(value, handle)
 
     def test_every_cue_read(self):

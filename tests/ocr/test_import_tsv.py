@@ -28,6 +28,10 @@ MANIFEST = {
 }
 
 
+TRANSCRIPTS = os.path.join("5-transcripts", "transcripts.json")
+VERIFIED = os.path.join("5-transcripts", "verified.json")
+
+
 class TestImportTsv(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -39,6 +43,7 @@ class TestImportTsv(unittest.TestCase):
 
     def _write(self, name, text):
         path = os.path.join(self.work, name)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as handle:
             handle.write(text)
         return path
@@ -56,29 +61,29 @@ class TestImportTsv(unittest.TestCase):
     def test_rows_land_on_their_own_cues(self):
         got = transcripts.import_tsv(self.work, self._tsv("1\t第一句\n3\t第三句\n"))
         self.assertEqual(got, (2, 2, 3))
-        self.assertEqual(self._read("transcripts.json"),
+        self.assertEqual(self._read(TRANSCRIPTS),
                          {"1": {"han": "第一句"}, "3": {"han": "第三句"}})
 
     def test_imported_rows_are_marked_human_verified(self):
         transcripts.import_tsv(self.work, self._tsv("1\t第一句\n"))
-        self.assertEqual(self._read("verified.json"), {"1": {"han": True}})
+        self.assertEqual(self._read(VERIFIED), {"1": {"han": True}})
 
     def test_a_blank_cue_is_recorded_as_blank(self):
         # A reader confirming "there is no subtitle here" is information, and
         # it is what stops the cue being read again on the next pass.
         transcripts.import_tsv(self.work, self._tsv("1\than\t\n"))
-        self.assertEqual(self._read("transcripts.json"), {"1": {"han": ""}})
-        self.assertEqual(self._read("verified.json"), {"1": {"han": True}})
+        self.assertEqual(self._read(TRANSCRIPTS), {"1": {"han": ""}})
+        self.assertEqual(self._read(VERIFIED), {"1": {"han": True}})
 
     def test_a_second_batch_merges(self):
         transcripts.import_tsv(self.work, self._tsv("1\t第一句\n"))
         transcripts.import_tsv(self.work, self._tsv("2\t第二句\n"))
-        self.assertEqual(sorted(self._read("transcripts.json")), ["1", "2"])
+        self.assertEqual(sorted(self._read(TRANSCRIPTS)), ["1", "2"])
 
     def test_replace_discards_what_was_there(self):
         transcripts.import_tsv(self.work, self._tsv("1\t第一句\n"))
         transcripts.import_tsv(self.work, self._tsv("2\t第二句\n"), replace=True)
-        self.assertEqual(sorted(self._read("transcripts.json")), ["2"])
+        self.assertEqual(sorted(self._read(TRANSCRIPTS)), ["2"])
 
     def test_a_cue_from_another_episode_is_refused(self):
         tsv = self._tsv("1\t第一句\n99\t漂走了\n")
@@ -91,8 +96,8 @@ class TestImportTsv(unittest.TestCase):
         tsv = self._tsv("1\t第一句\n99\t漂走了\n")
         with self.assertRaises(PipelineError):
             transcripts.import_tsv(self.work, tsv)
-        self.assertIsNone(self._read("transcripts.json"))
-        self.assertIsNone(self._read("verified.json"))
+        self.assertIsNone(self._read(TRANSCRIPTS))
+        self.assertIsNone(self._read(VERIFIED))
 
     def test_an_unknown_line_name_is_refused(self):
         tsv = self._tsv("1\tamis\tnot a line\n")

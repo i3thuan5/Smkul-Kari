@@ -10,7 +10,7 @@ import unittest
 
 import numpy as np
 
-from tests.e2e import fixture
+import fixture
 
 
 class TestRoundTrip(unittest.TestCase):
@@ -53,6 +53,34 @@ class TestRoundTrip(unittest.TestCase):
         video = os.path.join(self.tmpdir, "fixture_band-chinese.mp4")
         frames = fixture.check_odd_region(video)
         self.assertGreater(frames, 0)
+
+    def test_band_chinese_at_29_97(self):
+        # 語料全是 30000/1001：取樣格線永遠對不齊來源格
+        fps = 30000 / 1001
+        result = fixture.run_end_to_end(self.tmpdir, True,
+                                        fixture.GROUND_TRUTH_HAN, "chi_tra",
+                                        "band-chinese-2997",
+                                        rate="30000/1001")
+        self._assert_timing(result)
+        # sample_ts 是真實畫面時間，照它抽格抽得回判斷用的那一格
+        for cue in result["manifest"]["cues"]:
+            index = round(cue["sample_ts"] * fps)
+            self.assertAlmostEqual(cue["sample_ts"], index / fps, delta=0.001)
+        self.assertEqual(result["manifest"]["sampling"], "nearest-native")
+
+        refined = fixture.refine_pairs(result)
+        self.assertEqual(len(refined), 2 * len(fixture.GROUND_TRUTH_HAN) - 1)
+        moved = 0
+        for truth, got, reason in refined:
+            if got is None:
+                continue
+            moved += 1
+            self.assertLessEqual(abs(got - truth), 0.05,
+                                 "boundary %.3f refined to %.3f"
+                                 % (truth, got))
+        print("  refined %d/%d boundaries within 0.05s"
+              % (moved, len(refined)))
+        self.assertGreaterEqual(moved, len(refined) - 1)
 
 
 if __name__ == "__main__":

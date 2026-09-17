@@ -44,8 +44,12 @@ def write_srt(entries, path):
         handle.write("\n")
 
 
-def build_fixture(path, entries, band=False, duration=31):
-    """Burn `entries` into a synthetic 1080p clip with moving content."""
+def build_fixture(path, entries, band=False, duration=31, rate="30"):
+    """Burn `entries` into a synthetic 1080p clip with moving content.
+
+    `rate` is the source frame rate as ffmpeg spells it; the corpus is all
+    30000/1001, which never lines up with the 0.2 s sampling grid.
+    """
     srt_path = path + ".srt"
     write_srt(entries, srt_path)
 
@@ -65,7 +69,7 @@ def build_fixture(path, entries, band=False, duration=31):
     cmd = [
         "ffmpeg", "-v", "error", "-y",
         "-f", "lavfi",
-        "-i", "testsrc2=size=1920x1080:rate=30:duration=%d" % duration,
+        "-i", "testsrc2=size=1920x1080:rate=%s:duration=%d" % (rate, duration),
         "-vf", ",".join(chain),
         "-c:v", "libx264", "-preset", "ultrafast", "-crf", "20",
         "-pix_fmt", "yuv420p", path,
@@ -93,9 +97,9 @@ def match_cues(truth, found, tolerance):
     return pairs, unmatched, remaining
 
 
-def run_end_to_end(tmpdir, band, entries, lang, label, fps=5.0):
+def run_end_to_end(tmpdir, band, entries, lang, label, fps=5.0, rate="30"):
     video = os.path.join(tmpdir, "fixture_%s.mp4" % label)
-    build_fixture(video, entries, band=band)
+    build_fixture(video, entries, band=band, rate=rate)
 
     work = os.path.join(tmpdir, "work_%s" % label)
     os.makedirs(work, exist_ok=True)
@@ -104,7 +108,7 @@ def run_end_to_end(tmpdir, band, entries, lang, label, fps=5.0):
         autodetect=True, fps=fps,
         start=0.0, duration=None, min_ink=120, change=0.35, min_stable=2,
         min_duration=0.30, samples=60, lang=lang, sheets=False,
-        progress=False)
+        progress=False, threads=2)
     subs2srt.stage_cues(args)
 
     with open(datadirs.cues_to_read(work), encoding="utf-8") as handle:
@@ -150,7 +154,7 @@ def run_end_to_end(tmpdir, band, entries, lang, label, fps=5.0):
     srt_args = parser.parse_args(["srt", work, "-o", srt_out])
     subs2srt.stage_srt(srt_args)
 
-    with open(os.path.join(work, "transcripts.json"), encoding="utf-8") as fh:
+    with open(datadirs.transcripts_file(work), encoding="utf-8") as fh:
         texts = json.load(fh)
     line_name = manifest["lines"][0]["name"]
 
@@ -183,7 +187,48 @@ def run_end_to_end(tmpdir, band, entries, lang, label, fps=5.0):
         "start_errs": start_errs,
         "end_errs": end_errs,
         "srt_entries": len(reparsed),
+        "video": video,
+        "manifest": manifest,
+        "pairs": pairs,
     }
+
+
+def refine_pairs(result):
+    """Refine the matched cues' boundaries; [(truth, refined, reason)].
+
+    Runs the engine side of refinement (no preset, no store) on the
+    fixture's own timeline, so the check is the spec's: a refined boundary
+    lies within 0.05 s of where the text really appears or goes.
+    """
+    from scripts.ocr import cuelib
+    from scripts.ocr import decode
+    from scripts.ocr import refine
+    manifest = result["manifest"]
+    spec = cuelib.MaskSpec.from_dict(manifest.get("mask", {}))
+    region = manifest["region"]
+    min_ink = cuelib.effective_min_ink(
+        manifest["segmenter"]["min_ink"], spec, region)
+    change = manifest["segmenter"]["change"]
+    cues = manifest["cues"]
+    boundaries = refine.boundaries_of(cues)
+    duration = decode.probe_video(result["video"])["duration"]
+    found = refine.refine_all(result["video"], region, spec, min_ink,
+                              change, boundaries, duration, threads=2)
+    truth_start = {}
+    truth_end = {}
+    for (t_start, t_end, _), cue in result["pairs"]:
+        position = cues.index(cue)
+        truth_start[position] = t_start
+        truth_end[position] = t_end
+    out = []
+    for (positions, kind, _t0), (t, reason) in zip(boundaries, found):
+        if kind == "start":
+            truth = truth_start.get(positions[0])
+        else:
+            truth = truth_end.get(positions[0])
+        if truth is not None:
+            out.append((truth, t, reason))
+    return out
 
 
 def check_odd_region(video, fps=5.0):
@@ -194,12 +239,12 @@ def check_odd_region(video, fps=5.0):
     consuming w*h*3 bytes then slips a row per frame and every frame is a
     torn blend of two, which looks like plausible cue boundaries rather than
     a crash. crop_chain() asks for `exact=1`; if that ever stops being
-    applied, stream_region() raises here instead of corrupting quietly.
+    applied, decode.stream_region() raises here instead of corrupting quietly.
     """
     region = (101, 845, 1043, 107)
     seen = 0
-    from scripts.ocr import cuelib
-    for _, frame in cuelib.stream_region(video, region, fps, start=0.0,
+    from scripts.ocr import decode
+    for _, frame in decode.stream_region(video, region, fps, start=0.0,
                                          duration=6.0):
         if frame.shape != (107, 1043, 3):
             raise AssertionError("frame shape %s, wanted (107, 1043, 3)"

@@ -21,18 +21,23 @@ tests/
 ├── aiyalaeho/    《開會了》編排層測試（檔名解析、雙槽驗版型、雙列
 │   │             組裝、九欄進度表、0-cue 交付、離線重建）
 │   └── langcheck/  逐條語言判定（對照表佇該目錄ê README）
-└── e2e/          fixture.py  test_roundtrip（合成影片端對端，tox -e e2etest）
+└── …
+
+tests-e2e/        fixture.py  test_roundtrip  test_mxf2mkv_roundtrip
+                  （合成影片端對端，tox -e e2etest；放在 tests/ 外面，
+                  單元測試才能一次 discover 整個 tests/）
 ```
 
 分組與跑法：
 
 ```bash
-.tox/unittest/bin/python -m unittest discover -s tests/<組> -t .
+.tox/unittest/bin/python -m unittest discover -s tests -t .          # 全部單元測試
+.tox/unittest/bin/python -m unittest discover -s tests/<組> -t .     # 只跑一組
 # 組：languages（代號對照表）catalogue（目錄不變量，兩組攏兩爿公家）
 #     ocr（影像側引擎）
 #     srtlib（共用組裝）asrmt（語音側引擎）
 #     news／aiyalaeho（兩个語料ê編排）tools（量測工具）
-#     e2e（端對端，另走 tox -e e2etest）
+.tox/e2etest/bin/python -m unittest discover -s tests-e2e -t tests-e2e  # 端對端
 ```
 
 ## 影像側引擎（tests/ocr/ ↔ scripts/ocr/）
@@ -40,6 +45,12 @@ tests/
 | spec | scenario | 測試檔 |
 |---|---|---|
 | cue-timing | 精修取樣密度／邊界取中點／偏移超限即擋下／缺輸入明確失敗 | `news/test_refine.py`（純邏輯）＋ `ocr/test_segmenter.py`（切分） |
+| cue-timing | rawvideo 預設補重複格，畫面數與時間戳對不上（實驗踩過：832 對 166）要當場失敗；進度列與 showinfo 印在同一行時時間戳不可漏抓；select 之後有跳號，時間不可用「第幾格÷fps」推算；819 個視窗約 25 KB 的濾鏡走 `-filter_script`；ffmpeg 非零結束要指名影片、不可交出半套；輸入端 `-ss` 之後 pts 從 0 起算，要加回 start | `ocr/test_decode.py` |
+| cue-timing | 兩個邊界不到 0.48 秒、視窗重疊，中間的格要分給兩個邊界；一集約一萬兩千格，視窗關了就交出去、不可全留在記憶體；檔尾截短的視窗照樣交出 | `ocr/test_decode.py` |
+| cue-timing | 29.97 fps 固定每 6 格取一格，48 分鐘尾端累積偏 0.6 秒；時間記格點而非真實 pts，照 `sample_ts` 抽格會抽到隔壁格；25 fps 仍是每 0.2 秒一格；可變格率掉格時同一格不交兩次；格率 0/0 時估算用 29.97、時間仍取真實 pts | `ocr/test_sampling.py` |
+| cue-timing | 原生格率逐格餵狀態機，`min_stable=2` 只剩 0.067 秒，一句中間兩格雜訊就被切成兩條；每 0.2 秒取一格再餵，各種相位都不會 | `ocr/test_segmenter.py` |
+| cue-timing | `cues` 不可再走 `fps` 濾鏡（挑到的格比標記時間晚約 0.067 秒）；`--start` 重切一段時間仍是真實秒數；時間軸記 `sampling`，新舊切法分得出來 | `ocr/test_cues_native.py` |
+| cue-timing | 精修一集一支 ffmpeg；以原生格距（0.033 秒）判斷、不重取樣到 25；邊界在 0.1 秒、視窗被檔頭截短時沿用並記「取不到畫面」，與「無法分辨」分開計數；解碼中途失敗整集不寫、指名集數 | `news/test_refine.py` |
 | cue-timing | 批次切 cue 前驗證字幕帶（紅帶低位通過／侵入擋下）；背景報紙字把欄剖面右緣拉到 1863、字幕本身停在 1760 的一集不可擋下（刪掉右緣檢查前，9 集全被這樣擋錯）；對白高原落在帶外照樣擋 | `news/test_verify_band.py` |
 | cue-timing | 切 cue ê遮罩會使裁到帶頂：無指定就佮逐畫素仝款、指定了帶外逐列攏空；`--band-rows` 用絕對列傳入，寫入 manifest ê是 region 內ê偏移 | `ocr/test_cuelib_band_rows.py`、`ocr/test_band_rows_option.py` |
 | subtitle-text-source | 指定 preset 每個入口都生效／名稱錯誤中止 | `ocr/test_presets.py`、`ocr/test_auto_options.py` |
@@ -92,6 +103,12 @@ tests/
 | —（工作流防線） | 批次邊界兩支工具愛講仝款ê話：`batches` 發 TSV ê名（b01、b02…）、`prompt` 照彼个號碼寫提示，51 張ê時遮切三批、彼切兩批，**仝一批 cue hőng派兩擺、掛兩个名**，`ingest` 擋規集（「cue X 佇兩个檔攏有」）；批次對 24 張改做 4 張了後，尾批短ê情形變做常態 | `news/test_batches.py`、`news/test_vision_prompt.py` |
 | —（成本防線） | 批次大小綴組合圖打包走：一張對 4 條變 ~25 條，`SIZE` 若留咧 24 就是 600 條／批（量著會噴彼點 196 ê三倍），改 4 張才閣是 ~100 條；`brief.md` ê `{…}` 鍵無換掉會直接印佇讀者面頭前，袂報錯 | `news/test_vision_prompt.py` |
 | —（參數防線） | 名字不得帶路徑成分／路徑只准落在資料資料夾／sftp 路徑不得含引號換行 | `news/test_paths.py`、`news/test_sftp_cli.py` |
+| subtitle-text-source | 照張數切：同樣 24 張，一批全寬圖、一批全窄圖，兩批量差 1.44 倍；大圖多的集每批超過上限、小圖多的集多開批——批數要照總重量算；幾張大圖集中時分完仍超過上限就多開一批；張數少於批數時不得分出空批 | `news/test_vision_prompt.py` |
+| subtitle-text-source | 批裡大圖先讀貴約 10%（先進 context 的圖被後面每則重算）——批內要小到大；重量相同時順序要固定，否則兩支程式切出不同的批 | `news/test_vision_prompt.py` |
+| subtitle-text-source | 判準寫「第一張–最後一張」，但分出來的批在檔名上不連續，讀者會讀到別批的圖——要逐張列出 | `news/test_vision_prompt.py` |
+| subtitle-text-source | `batches` 對未核實的圖切、`brief()` 對全部圖切，第 N 批內容不同（058晨 51 張一邊 3 批一邊 2 批）；讀到一半再派，兩邊都從 `b01` 起算，蓋掉已收進 Kari-SRT 的 `b01.tsv`；讀者還在寫、尚未 ingest 的檔不得把編號往後推 | `news/test_batches.py`、`news/test_vision_prompt.py` |
+| subtitle-text-source | 視覺 token 從 PNG 檔頭拿：不是 PNG、檔頭截斷、第一塊不是 IHDR 要報錯，不可猜數字；切批跑在沒有 numpy／PIL 的系統 python3，這支只准用標準函式庫 | `ocr/test_sheetsize.py` |
+| cue-timing | 抓檔批次的並行集數與 ffmpeg 執行緒數預設 6／2（2 緒每核效率 0.98，預設 8–9 緒只有 0.67）；旗標勝過環境變數；0、負數、非數字要在開工前擋下（0 會讓等空位的迴圈永遠等不到）；同時跑的工作不超過上限、一集失敗不卡住整批 | `news/test_fetch_sftp_config.py` |
 
 ## 一集配一支檔（tests/news/ ↔ scripts/news/）
 
@@ -131,8 +148,8 @@ tests/
 
 **上字文稿平行語料**（`aiyalaeho-text-corpus`，`tests/aiyalaeho/text/` ↔ `scripts/aiyalaeho/text/`）：表放彼个子目錄家己ê `README.md`，無囥佇遮。
 
-## 端對端（tests/e2e/）
+## 端對端（tests-e2e/）
 
 | spec | scenario | 測試檔 |
 |---|---|---|
-| 全鏈 | 合成影片燒入已知 SRT → 跑真實 pipeline 抽回 → 逐 cue 比對時間與文字（時間數學唯一的外部對照；需 ffmpeg＋tesseract，`tox -e e2etest`） | `e2e/test_roundtrip.py`＋`e2e/fixture.py` |
+| 全鏈 | 合成影片燒入已知 SRT → 跑真實 pipeline 抽回 → 逐 cue 比對時間與文字（時間數學唯一的外部對照；需 ffmpeg＋tesseract，`tox -e e2etest`） | `tests-e2e/test_roundtrip.py`＋`tests-e2e/fixture.py` |

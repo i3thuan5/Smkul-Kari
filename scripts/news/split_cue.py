@@ -176,8 +176,12 @@ def vision_folders(name):
 
 def apply(stem, index, at, first, second):
     """Do the split across cues.json and the episode's vision TSVs."""
-    work = os.path.join(paths.WORK, stem + ".work")
-    path = os.path.join(work, "cues.json")
+    work = paths.work_dir(stem)
+    # the flat `<work>/cues.json` this used to name has not existed since
+    # the timeline was split into stages; edit the one readers use
+    path = paths.cues_to_read(work)
+    if path is None:
+        raise PipelineError("%s 無時間軸" % work)
     with open(path, encoding="utf-8") as handle:
         book = json.load(handle)
     book["cues"] = split(book["cues"], index, at)
@@ -187,7 +191,7 @@ def apply(stem, index, at, first, second):
         json.dump(book, handle, ensure_ascii=False, indent=2,
                   sort_keys=True)
 
-    sheets_path = os.path.join(work, "sheets.json")
+    sheets_path = paths.sheets_index(work)
     if os.path.exists(sheets_path):
         with open(sheets_path, encoding="utf-8") as handle:
             sheets = json.load(handle)

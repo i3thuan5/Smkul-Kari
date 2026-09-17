@@ -23,10 +23,6 @@ from scripts.errors import PipelineError
 
 WORK = paths.WORK
 
-# gap_sheets kā 校讀用ê contact sheet 园佇 <slug>.work，
-# 逐擺攏仝款；本來是 --suffix，毋過對來到今無人傳過別ê值。
-WORK_SUFFIX = ".work"
-
 
 def _cue_order(row):
     """Sort key: by cue number, keeping unnumbered rows at the end.
@@ -115,8 +111,8 @@ def main():
     slug = paths.check_name(args.slug, "slug")
     tsvdir = paths.check_under(args.tsvdir or _tsvdir_of(slug), "tsvdir")
 
-    work = os.path.join(WORK, slug + WORK_SUFFIX)
-    with open(os.path.join(work, "sheets.json"), encoding="utf-8") as handle:
+    work = paths.work_dir(slug, WORK)
+    with open(paths.sheets_index(work), encoding="utf-8") as handle:
         sheets = json.load(handle)
     on_sheets = set()
     for cues in sheets.values():

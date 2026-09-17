@@ -34,8 +34,9 @@ class Fixture(unittest.TestCase):
         with open(datadirs.coarse_cues(self.work), "w",
                   encoding="utf-8") as handle:
             json.dump(manifest, handle, ensure_ascii=False)
-        with open(os.path.join(self.work, "transcripts.json"), "w",
-                  encoding="utf-8") as handle:
+        path = datadirs.transcripts_file(self.work)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as handle:
             json.dump(texts, handle, ensure_ascii=False)
         return make_srt.run(self.work, self.out)
 

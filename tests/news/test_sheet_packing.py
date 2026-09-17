@@ -51,11 +51,12 @@ DELIVERY_LIMIT_PX = 2000  # 送圖彼端ê長邊上限，超過就縮細
 
 
 def block_height(preset):
-    """一條 cue 佔幾列：gap + Σ(列高 + 2)。"""
-    block = BLOCK_GAP
-    for line in preset["lines"]:
-        block += line["h"] + PER_TILE
-    return block
+    """一條 cue 佔幾列：問 `sheets` 自己，莫閣抄一份算法。
+
+    多列ê cue 照畫面間隔貼（相連ê兩列無留空隙），尾仔一條 2 px 分隔；
+    單列ê族語新聞仍是 gap + 列高 + 2。
+    """
+    return sheets.layout_height(preset["lines"], BLOCK_GAP)
 
 
 def widest_sheet(preset):

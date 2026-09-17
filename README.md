@@ -89,7 +89,7 @@ python3 -m scripts.transcode.archive_batch --all-masters --no-upload
 ```
 
 每一集：抓母帶 → 轉檔 → 驗時長 → 上傳 → 刪母帶。產出兩份，
-`kithann/out/mkv/` 與 SFTP `/home/news/mkv/<年-月>/`。
+`kithann/out/news/mkv/<年-月>/` 與 SFTP `/home/news/mkv/<年-月>/`。
 
 - **一集約 25 分鐘**（下載 4＋轉檔 20＋上傳 1），磁碟峰值是一支母帶
   （最大約 19.7 GB）加一支 mkv，做完就刪母帶。

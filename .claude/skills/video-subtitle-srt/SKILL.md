@@ -9,7 +9,7 @@ description: Use when asked to pull burned-in (hardcoded) subtitles out of a vid
 > `scripts/ocr/`（`cli.py`＋`cuelib.py`；SRT 格式與組裝鏈在共用的 `scripts/srtlib/`），從 repo 根目錄以
 > `python -m scripts.ocr.cli` 執行。corpus 專屬的編排、preset 與
 > 路徑設定在 `scripts/news/`（見其 `README.md`）。這份 SKILL.md 只是
-> 說明書；程式已全部遷出，測試在 `tests/`（單元）與 `tests/e2e/`（round trip）。
+> 說明書；程式已全部遷出，測試在 `tests/`（單元）與 `tests-e2e/`（round trip）。
 
 ## First: is it actually burned in?
 
@@ -46,7 +46,7 @@ W=out/myvideo.work
 # 0. confirm the band before spending 5 minutes on a decode
 $SUBS detect $V --preview /tmp/band.png   # eyeball, then add a preset
 
-# 1. one cues pass -> strips/ + sheets/ + sheets.json   (~5 min per 50 min)
+# 1. one cues pass -> 1-cues/ + 2-strips/ + 4-sheets/ (with sheets.json)
 $SUBS cues $V -o $W
 
 # 2. read the contact sheets with vision, batch by batch
@@ -93,8 +93,8 @@ second work dir at the same strips so the timings stay identical:
 
 ```bash
 mkdir -p out/myvideo.tess.work
-cp $W/cues.json $W/sheets.json out/myvideo.tess.work/
-ln -s ../myvideo.work/strips out/myvideo.tess.work/strips
+cp -r $W/1-cues $W/4-sheets out/myvideo.tess.work/
+ln -s ../myvideo.work/2-strips out/myvideo.tess.work/2-strips
 $SUBS ocr out/myvideo.tess.work --engine tesseract
 $SUBS srt out/myvideo.tess.work -o out/myvideo.tesseract.srt
 ```
@@ -284,7 +284,7 @@ Python; a venv keeps the OCR toolchain isolated from anything else on the box.
 ### 選用
 
 ```bash
-# 只有 tests/e2e 的合成影片需要（要在畫面上燒中文字幕）
+# 只有 tests-e2e 的合成影片需要（要在畫面上燒中文字幕）
 sudo apt-get install -y fonts-noto-cjk
 
 # 只有 ocr --engine claude-api 需要
@@ -294,7 +294,7 @@ sudo apt-get install -y fonts-noto-cjk
 ~/.venvs/subs2srt/bin/pip install flake8
 ```
 
-`tests/e2e/` 的端對端測試還依賴 ffmpeg 內建的 **libass**（`subtitles` 濾鏡）
+`tests-e2e/` 的端對端測試還依賴 ffmpeg 內建的 **libass**（`subtitles` 濾鏡）
 與 **libx264** 編碼器。Ubuntu 的 `ffmpeg` 套件兩者都有，用
 `ffmpeg -filters | grep subtitles` 與 `ffmpeg -encoders | grep libx264` 可確認。
 
@@ -582,13 +582,14 @@ the clock, not just the index, and re-read the sheets after re-running `cues`.
 
 ## Verifying changes
 
-`tests/e2e/test_roundtrip.py` is the guard. It burns a known SRT into a synthetic
+`tests-e2e/test_roundtrip.py` is the guard. It burns a known SRT into a synthetic
 1080p clip over moving content — once bare, once with a coloured band — runs
 the real pipeline, and diffs recovered cues against ground truth.
 
 ```bash
-~/.venvs/subs2srt/bin/python -m unittest discover -s tests -t . && :   # 全部（含 e2e）
-tox -e subtitle        # 單元測試；tox -e subtitle-e2e 跑合成影片 round trip
+~/.venvs/subs2srt/bin/python -m unittest discover -s tests -t .              # 全部單元測試
+~/.venvs/subs2srt/bin/python -m unittest discover -s tests-e2e -t tests-e2e  # e2e
+tox -e unittest        # 單元測試；tox -e e2etest 跑合成影片 round trip
 ```
 
 Current state: 51 unit tests, and both round trips recover 7/7 cues with no

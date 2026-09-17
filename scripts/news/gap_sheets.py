@@ -52,7 +52,7 @@ def already_read(dst):
     over a finished vision pass would throw that reading away. The reading is
     the expensive part of the whole pipeline -- guard it.
     """
-    path = os.path.join(dst, "verified.json")
+    path = paths.verified_file(dst)
     if not os.path.exists(path):
         return False
     with open(path, encoding="utf-8") as handle:
@@ -83,8 +83,9 @@ def prepare(slug):
     made = sheets.build_sheets(work, manifest, row_slots=slots,
                                compare_cols=cols, right_anchor=anchor)
 
-    for name in ("transcripts.json", "verified.json"):
-        with open(os.path.join(work, name), "w", encoding="utf-8") as handle:
+    for path in (paths.transcripts_file(work), paths.verified_file(work)):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as handle:
             json.dump({}, handle, ensure_ascii=False, indent=2,
                       sort_keys=True)
 
@@ -107,7 +108,7 @@ def main(argv=None):
         if not paths.cues_to_read(work):
             print("skip %s (not decoded)" % slug)
             continue
-        if os.path.exists(os.path.join(work, "sheets.json")) \
+        if os.path.exists(paths.sheets_index(work)) \
                 or already_read(work):
             print("skip %s (already prepared or read)" % slug)
             continue

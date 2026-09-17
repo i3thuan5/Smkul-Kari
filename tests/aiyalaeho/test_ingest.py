@@ -35,12 +35,13 @@ class Fixture(unittest.TestCase):
         }
         os.makedirs(os.path.join(self.work, "1-cues"), exist_ok=True)
         self._write_json(datadirs.coarse_cues(self.work), manifest)
-        self._write_json(os.path.join(self.work, "sheets.json"),
+        self._write_json(datadirs.sheets_index(self.work),
                          {"sheet_001.png": [1, 2], "sheet_002.png": [3, 4]})
-        self._write_json(os.path.join(self.work, "transcripts.json"), {})
-        self._write_json(os.path.join(self.work, "verified.json"), {})
+        self._write_json(datadirs.transcripts_file(self.work), {})
+        self._write_json(datadirs.verified_file(self.work), {})
 
     def _write_json(self, path, value):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as handle:
             json.dump(value, handle, ensure_ascii=False)
 

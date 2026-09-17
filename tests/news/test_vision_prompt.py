@@ -13,7 +13,9 @@ from unittest import mock
 
 from scripts import catalogue_checks as checks
 from scripts.errors import PipelineError
+from scripts.news import paths
 from scripts.news.vision_tools import prompt
+from tests.ocr.test_sheetsize import png_bytes
 
 
 def blank_reload():
@@ -33,10 +35,34 @@ def sheets_of(count, per=4):
     return out
 
 
+def write_book(work, book, sizes=None):
+    """sheets.json 佮逐張 PNG（切批愛讀檔頭算重量）。"""
+    index = paths.sheets_index(work)
+    os.makedirs(os.path.dirname(index), exist_ok=True)
+    with open(index, "w", encoding="utf-8") as handle:
+        json.dump(book, handle)
+    for name in book:
+        width, height = (sizes or {}).get(name, (1000, 800))
+        with open(os.path.join(os.path.dirname(index), name), "wb") as fh:
+            fh.write(png_bytes(width, height))
+
+
+def names_of(batches):
+    out = []
+    for batch in batches:
+        out.append(list(batch))
+    return out
+
+
 class VisionPromptCase(unittest.TestCase):
-    """逐个 case 家己一个 work dir，內底囥合成ê sheets.json。"""
+    """逐个 case 家己一个 work dir，內底囥合成ê sheets.json 佮圖。
+
+    一張 1000×800 ê圖是 36×29 ＝ 1,044 个視覺 token，4 條 cue 加
+    68，重量 1,112；一批扣掉起手 69,184 賰 50,816，裝會落 45 張。
+    """
 
     NAME = "20210224_055_午間_Cou_鄒"
+    SLUG = "2021_055_2021-02-24_午間_Cou_鄒"
     REMOTE = "族語新聞/110.1-110.10/2月/21NL003_55午間族語新聞.mp4"
 
     def setUp(self):
@@ -45,141 +71,211 @@ class VisionPromptCase(unittest.TestCase):
                                     return_value=self.REMOTE)
         patcher.start()
         self.addCleanup(patcher.stop)
-
-    def work(self, count, per=4):
+        # 編號看 Kari-SRT 既有ê TSV：測試莫去讀著真ê彼集
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        with open(os.path.join(tmp.name, "sheets.json"), "w",
-                  encoding="utf-8") as handle:
-            json.dump(sheets_of(count, per), handle)
+        self.vision = tmp.name
+        patcher = mock.patch.object(prompt.paths, "KARI_VISION", tmp.name)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def work(self, count, per=4, verified=None, sizes=None):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        write_book(tmp.name, sheets_of(count, per), sizes)
+        if verified is not None:
+            path = paths.verified_file(tmp.name)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump(verified, handle)
         return tmp.name
 
-    def brief(self, count, which, per=4, **kw):
-        work = self.work(count, per)
+    def brief_in(self, work, which, **kw):
         with mock.patch.object(prompt, "episode", return_value=self.NAME), \
                 mock.patch.object(prompt, "workdir", return_value=work):
-            return prompt.brief("2021_055_2021-02-24_午間_Cou_鄒", which, **kw)
+            return prompt.brief(self.SLUG, which, **kw)
+
+    def brief(self, count, which, per=4, **kw):
+        return self.brief_in(self.work(count, per), which, **kw)
+
+    def existing_tsv(self, name, cues):
+        folder = paths.stage_path(self.vision, self.NAME)
+        os.makedirs(folder, exist_ok=True)
+        with open(os.path.join(folder, name), "w", encoding="utf-8") as fh:
+            for cue in cues:
+                fh.write("%d\than\t字\n" % cue)
 
 
-class TestRange(VisionPromptCase):
-    def test_first_batch_takes_the_first_size_sheets(self):
-        text = self.brief(232, 1, size=72)
-        self.assertIn("`sheet_001.png`–`sheet_072.png`", text)
-        self.assertIn("cue 1..288", text)
+class TestBatchContents(VisionPromptCase):
+    """判準逐張列出這批愛讀ê圖——分出來ê批佇檔名頂懸無連紲。"""
 
-    def test_second_batch_starts_where_the_first_stopped(self):
-        text = self.brief(232, 2, size=72)
-        self.assertIn("`sheet_073.png`–`sheet_144.png`", text)
-        self.assertIn("cue 289..576", text)
+    def test_every_sheet_of_the_batch_is_named(self):
+        work = self.work(100)
+        batch = prompt.batches_of(work)[0]
+        text = self.brief_in(work, 1)
+        for name in batch:
+            self.assertIn("`%s`" % name, text)
 
-    def test_last_batch_stops_at_the_last_sheet(self):
-        """232 張是 72×3＋16。
+    def test_no_first_to_last_range_is_given(self):
+        # 照「第一張–最後一張」讀，會讀著別批ê圖
+        text = self.brief(100, 1)
+        self.assertNotIn("`–`", text)
+        self.assertIsNone(re.search(r"`sheet_\d+\.png`–`sheet_", text))
 
-        `MIN_TAIL` 對 24 降做 8 了後（2026-09-09，批次大小改 24 順紲改ê），
-        16 張ê尾批**無夠細**，家己徛做一批矣。`MIN_TAIL` 是模組常數毋是
-        參數，所以連 `size=72` 這款寫死ê案例嘛綴leh變——本底掠做「傳
-        size=72 ê測試袂振動」，是掠毋著。
-        """
-        text = self.brief(232, 3, size=72)
-        self.assertIn("`sheet_145.png`–`sheet_216.png`", text)
-        self.assertIn("cue 577..864", text)
+    def test_sheets_of_other_batches_are_not_named(self):
+        work = self.work(100)
+        plan = prompt.batches_of(work)
+        text = self.brief_in(work, 2)
+        for name in plan[0]:
+            self.assertNotIn("`%s`" % name, text)
 
-    def test_a_tail_shorter_than_the_floor_is_still_folded(self):
-        """尾批若真正細（`MIN_TAIL` 以下）猶原倂入前一批。
-
-        每一个讀者攏有固定開銷（~19k token），閣派一个讀者去讀彼幾
-        張並無較俗。地板對 8 落到 2（2026-09-09，批次改 4 張順紲改ê）
-        了後，這條ê尾巴愛跟leh縮：本底 220 張（尾 4 張）已經**倂
-        袂著**矣，愛用 217 張（尾 1 張）才閣試著這條路。`MIN_TAIL`
-        是模組常數毋是參數，所以連 `size=72` 這款寫死ê案例嘛綴leh變。
-        """
-        text = self.brief(217, 3, size=72)
-        self.assertIn("`sheet_145.png`–`sheet_217.png`", text)
+    def test_line_count_is_the_batchs_cues(self):
+        work = self.work(100)
+        count = len(prompt.batches_of(work)[0]) * 4
+        self.assertIn("%d 逝" % count, self.brief_in(work, 1))
 
     def test_batch_past_the_end_is_an_error(self):
         with self.assertRaises(PipelineError):
-            self.brief(232, 5, size=72)
+            self.brief(100, 9)
 
-    def test_line_count_is_cues_not_sheets(self):
-        """逐張 4 條ê時 72 張是 288 逝——講「72 逝」讀者就寫了了無夠。"""
-        text = self.brief(232, 1, size=72)
-        self.assertIn("288 逝", text)
-        self.assertNotIn("72 逝", text)
+    def test_verified_sheets_are_not_handed_out_again(self):
+        # 讀到一半：頭 50 張已經收入去，賰ê才愛讀
+        verified = {}
+        for cue in range(1, 201):
+            verified[str(cue)] = {"han": True}
+        work = self.work(100, verified=verified)
+        planned = []
+        for batch in prompt.batches_of(work):
+            planned += batch
+        wanted = []
+        for n in range(51, 101):
+            wanted.append("sheet_%03d.png" % n)
+        self.assertEqual(sorted(planned), wanted)
 
 
 class TestPlan(unittest.TestCase):
-    """尾批莫留細个：固定成本佮批ê大細無關，6 張ê尾批逐張開 4.2 倍。"""
+    """最長作業優先分配：批數照總重量，各批差不多重，批內小到大。"""
 
-    def test_exact_multiple_is_left_alone(self):
-        self.assertEqual(prompt.plan(216, 72), [(0, 72), (72, 144),
-                                                (144, 216)])
+    CAP = prompt.CEILING - prompt.BASE
 
-    def test_short_tail_is_folded_into_the_batch_before_it(self):
-        """289 = 72×4＋1，尾 1 張佇地板（2）以下，倂入去。
+    def weights(self, values):
+        out = []
+        for n, value in enumerate(values):
+            out.append(("s%03d.png" % n, value))
+        return out
 
-        本底遮寫 294（尾 6 張），彼是地板猶原是 8 ê時ê數字；地板落
-        到 2 了後 6 張家己徛做一批矣。
-        """
-        self.assertEqual(prompt.plan(289, 72), [(0, 72), (72, 144),
-                                                (144, 216), (216, 289)])
+    def loads(self, batches, table):
+        out = []
+        for batch in batches:
+            total = 0
+            for name in batch:
+                total += table[name]
+            out.append(total)
+        return out
 
-    def test_a_tail_at_the_floor_stands_on_its_own(self):
-        """拄仔好 `MIN_TAIL` 張ê尾**無**倂——地板是「以下」才倂。
+    def test_every_sheet_exactly_once_and_no_empty_batch(self):
+        values = []
+        for n in range(80):
+            values.append(3000 + (n * 37) % 900)
+        items = self.weights(values)
+        got = prompt.plan(items)
+        flat = []
+        for batch in got:
+            self.assertTrue(batch)
+            flat += batch
+        self.assertEqual(sorted(flat), sorted(dict(items)))
 
-        地板對 2 起做 8 了後（2026-09-11），這條ê數字愛綴leh換：
-        296 ＝ 72×4＋8，尾拄仔好 8 張。
-        """
-        self.assertEqual(prompt.plan(296, 72), [(0, 72), (72, 144),
-                                                (144, 216), (216, 288),
-                                                (288, 296)])
+    def test_batch_count_comes_from_the_total_weight(self):
+        # 照張數切：大圖多ê集每批超過上限、小圖多ê集濟開批
+        items = self.weights([2000] * 60)          # 120,000
+        self.assertEqual(len(prompt.plan(items)),
+                         -(-120000 // self.CAP))
+        items = self.weights([8000] * 20)          # 160,000
+        self.assertEqual(len(prompt.plan(items)),
+                         -(-160000 // self.CAP))
 
-    def test_a_tail_between_the_old_floor_and_the_new_one_is_folded(self):
-        """地板對 2 起做 8：尾 4 張本底家己徛，這馬愛倂入去。
+    def test_batches_weigh_about_the_same(self):
+        # 照檔名切ê時各批差 1.23–1.44 倍
+        values = []
+        for n in range(90):
+            values.append(800 + (n * n * 7919) % 4000)
+        items = self.weights(values)
+        got = prompt.plan(items)
+        loads = self.loads(got, dict(items))
+        self.assertGreater(len(got), 1)
+        self.assertLessEqual(max(loads) / min(loads), 1.1)
 
-        `MIN_TAIL` 是模組常數，這條就是咧釘伊實際ê值——若有人kā地板
-        改轉去 2，這條會紅。一个讀者ê固定開銷實測是 $1.43（依 18 輪
-        transcript 精算），派一个讀者去讀 4 張（開會了約 56 條）ê時，
-        彼 $1.43 攤落去就是每 cue $0.026，比倂入前一批貴四倍。
-        """
-        self.assertEqual(prompt.plan(292, 72), [(0, 72), (72, 144),
-                                                (144, 216), (216, 292)])
+    def test_small_sheets_are_read_first(self):
+        # 先入 context ê圖，後壁逐則回覆攏愛閣算一擺：大到小貴約 10%
+        items = self.weights([5000, 900, 3000, 1200, 4000, 700])
+        table = dict(items)
+        for batch in prompt.plan(items):
+            got = []
+            for name in batch:
+                got.append(table[name])
+            self.assertEqual(got, sorted(got))
 
-    def test_tail_long_enough_stays_on_its_own(self):
-        self.assertEqual(prompt.plan(120, 72), [(0, 72), (72, 120)])
+    def test_the_same_input_always_gives_the_same_batches(self):
+        # 重量相仝ê兩張順序無固定，兩支程式就對袂著
+        items = self.weights([1000] * 70)
+        once = prompt.plan(items)
+        again = prompt.plan(list(reversed(items)))
+        self.assertEqual(once, again)
+        for batch in once:
+            self.assertEqual(batch, sorted(batch))
 
-    def test_a_size_below_one_is_an_error_not_a_hang(self):
-        """`lo += size` 若無行進前，彼个迴圈永遠袂煞。
+    def test_clustered_big_sheets_get_an_extra_batch(self):
+        # 分完猶有一批超過上限，就加開一批重分
+        items = self.weights([30000, 30000, 30000, 100, 100])
+        got = prompt.plan(items)
+        table = dict(items)
+        for load in self.loads(got, table):
+            self.assertLessEqual(load, self.CAP)
+        self.assertEqual(len(got), 3)
 
-        `batches --size -1` 行會到遮：argparse 收負數收甲真歡喜，
-        `size or SIZE` 看 -1 是真ê就放伊過。**症頭是規支恬恬卡牢**，
-        無輸出、無錯誤，看起來親像咧做工。
-        """
-        for bad in (0, -1):
-            with self.assertRaises(PipelineError):
-                prompt.plan(10, bad)
+    def test_a_sheet_bigger_than_a_batch_still_goes_out_alone(self):
+        items = self.weights([self.CAP + 5000, 100])
+        got = prompt.plan(items)
+        self.assertEqual(len(got), 2)
+        self.assertIn(["s000.png"], got)
 
-    def test_shorter_than_one_batch_is_one_batch(self):
-        self.assertEqual(prompt.plan(20, 72), [(0, 20)])
+    def test_nothing_to_read_is_no_batch(self):
+        self.assertEqual(prompt.plan([]), [])
 
-    def test_fold_never_leaves_a_gap_or_an_overlap(self):
-        for total in range(1, 400):
-            spans = prompt.plan(total, 72)
-            self.assertEqual(spans[0][0], 0)
-            self.assertEqual(spans[-1][1], total)
-            for before, after in zip(spans, spans[1:]):
-                self.assertEqual(before[1], after[0])
+    def test_fewer_sheets_than_batches_makes_no_empty_batch(self):
+        items = self.weights([self.CAP * 3])
+        self.assertEqual(prompt.plan(items), [["s000.png"]])
+
+    def test_the_estimate_adds_the_fixed_part_once(self):
+        self.assertEqual(prompt.estimate([1000, 2000]),
+                         prompt.BASE + 3000)
+
+
+class TestWeights(VisionPromptCase):
+
+    def test_weight_is_visual_tokens_plus_rows(self):
+        # 1000×800 → 36×29 ＝ 1,044；4 條 cue × 17 ＝ 68
+        work = self.work(1)
+        self.assertEqual(prompt.sheet_weights(work, ["sheet_001.png"]),
+                         [("sheet_001.png", 1044 + 68)])
+
+    def test_a_wider_sheet_weighs_more(self):
+        work = self.work(2, sizes={"sheet_002.png": (1988, 1400)})
+        got = dict(prompt.sheet_weights(work, ["sheet_001.png",
+                                               "sheet_002.png"]))
+        self.assertGreater(got["sheet_002.png"], got["sheet_001.png"])
 
 
 class TestScratch(VisionPromptCase):
     """Scratchpad 是逐支 agent 公家ê，checkpoint ê路徑愛家己一份。"""
 
     def test_scratch_path_names_the_episode_and_the_batch(self):
-        text = self.brief(232, 2, size=72)
+        text = self.brief(100, 2)
         self.assertIn(self.NAME + "-b02", text)
 
     def test_two_batches_of_one_episode_do_not_share_it(self):
-        one = self.brief(232, 1, size=72)
-        two = self.brief(232, 2, size=72)
+        one = self.brief(100, 1)
+        two = self.brief(100, 2)
         self.assertNotIn(self.NAME + "-b01", two)
         self.assertNotIn(self.NAME + "-b02", one)
 
@@ -191,7 +287,7 @@ class TestScratch(VisionPromptCase):
         self.assertTrue(got.startswith("/"), got)
 
     def test_placeholder_is_filled_in(self):
-        self.assertNotIn("{scratch}", self.brief(232, 1, size=72))
+        self.assertNotIn("{scratch}", self.brief(100, 1))
 
     def test_no_placeholder_is_left_behind(self):
         """`brief.md` 內底逐个 `{…}` 攏愛hőng換掉，一个都莫賰。
@@ -200,7 +296,7 @@ class TestScratch(VisionPromptCase):
         ê一句死字。逐擺佇 brief.md 加新ê鍵，`_brief` ê `fill` 若無
         綴leh加就是按呢。所以莫干焦顧一个鍵，規包掠。
         """
-        text = self.brief(232, 1, size=72)
+        text = self.brief(100, 1)
         left = re.findall(r"\{[a-z_]+\}", text)
         self.assertEqual(left, [], "brief.md 有無換ê鍵：%s" % left)
 
@@ -223,9 +319,7 @@ class TestSheetNames(VisionPromptCase):
             for k in range(per):
                 cues.append(i * per + k + 1)
             book[name] = cues
-        with open(os.path.join(tmp.name, "sheets.json"), "w",
-                  encoding="utf-8") as handle:
-            json.dump(book, handle)
+        write_book(tmp.name, book)
         return tmp.name
 
     def brief_named(self, names, which, **kw):
@@ -237,17 +331,18 @@ class TestSheetNames(VisionPromptCase):
     NAMES = ["t00015200.png", "t00022200.png", "t00023600.png"]
 
     def test_a_name_without_an_underscore_does_not_crash(self):
-        text = self.brief_named(self.NAMES, 1, size=8)
+        text = self.brief_named(self.NAMES, 1)
         self.assertIn("t00015200.png", text)
 
-    def test_the_first_and_last_sheet_are_named_in_full(self):
-        text = self.brief_named(self.NAMES, 1, size=8)
-        self.assertIn("`t00015200.png`–`t00023600.png`", text)
+    def test_every_sheet_is_named_in_full(self):
+        text = self.brief_named(self.NAMES, 1)
+        for name in self.NAMES:
+            self.assertIn("`%s`" % name, text)
 
     def test_the_timeline_named_is_the_one_that_exists(self):
         """時間軸ê路徑愛指著實在有ê彼份，毋是 `<work>/cues.json`。
 
-        時間軸分做 `1-cues/`（粗切）佮 `2-refined/`（精修）了後，
+        時間軸分做 `1-cues/`（粗切）佮 `3-refined/`（精修）了後，
         平ê `<work>/cues.json` 就無矣。提示猶原按呢寫，讀者beh抽
         原生格核對ê時開無彼份檔——**恬恬失敗**：伊會當家己臆一
         个時間，抑是規氣放棄核對。
@@ -259,43 +354,60 @@ class TestSheetNames(VisionPromptCase):
             json.dump({"cues": []}, handle)
         with mock.patch.object(prompt, "episode", return_value=self.NAME), \
                 mock.patch.object(prompt, "workdir", return_value=work):
-            text = prompt.brief("2021_055_2021-02-24_午間_Cou_鄒", 1, size=8)
+            text = prompt.brief(self.SLUG, 1)
         self.assertIn("1-cues/cues.json", text)
         self.assertNotIn("%s/cues.json" % work, text)
 
     def test_a_refined_timeline_wins_over_the_coarse_one(self):
         work = self.work_named(self.NAMES)
-        for stage in ("1-cues", "2-refined"):
+        for stage in ("1-cues", "3-refined"):
             os.makedirs(os.path.join(work, stage))
             with open(os.path.join(work, stage, "cues.json"), "w",
                       encoding="utf-8") as handle:
                 json.dump({"cues": []}, handle)
         with mock.patch.object(prompt, "episode", return_value=self.NAME), \
                 mock.patch.object(prompt, "workdir", return_value=work):
-            text = prompt.brief("2021_055_2021-02-24_午間_Cou_鄒", 1, size=8)
-        self.assertIn("2-refined/cues.json", text)
+            text = prompt.brief(self.SLUG, 1)
+        self.assertIn("3-refined/cues.json", text)
 
     def test_no_placeholder_is_left_behind_either(self):
-        text = self.brief_named(self.NAMES, 1, size=8)
+        text = self.brief_named(self.NAMES, 1)
         left = re.findall(r"\{[a-z_]+\}", text)
         self.assertEqual(left, [], "brief.md 有無換ê鍵：%s" % left)
 
 
 class TestTsvName(VisionPromptCase):
     def test_default_name_follows_the_batch_number(self):
-        text = self.brief(232, 3, size=72)
+        text = self.brief(100, 3)
         self.assertIn("b03.tsv", text)
 
+    def test_numbering_continues_after_what_is_already_in(self):
+        # 讀到一半閣派，兩爿攏對 b01 起算，會kā已經收入去ê b01 蓋掉
+        verified = {}
+        for cue in range(1, 201):
+            verified[str(cue)] = {"han": True}
+        self.existing_tsv("b01.tsv", range(1, 101))
+        self.existing_tsv("b02.tsv", range(101, 201))
+        work = self.work(100, verified=verified)
+        text = self.brief_in(work, 1)
+        self.assertIn("b03.tsv", text)
+        self.assertNotIn("b01.tsv", text)
+
+    def test_a_tsv_still_being_written_does_not_shift_the_numbers(self):
+        # 讀者寫到一半、猶未 ingest ê檔，就是這批本身，莫算做「已經收」
+        self.existing_tsv("b01.tsv", range(1, 30))
+        text = self.brief(100, 2)
+        self.assertIn("b02.tsv", text)
+
     def test_override_is_used_instead(self):
-        """一集若換過批次大小，照 `which` 算ê名會佮已經寫好ê撞號。"""
-        text = self.brief(232, 1, size=72, tsv="b07.tsv")
+        text = self.brief(100, 1, tsv="b07.tsv")
         self.assertIn("b07.tsv", text)
         self.assertNotIn("b01.tsv", text)
 
     def test_override_does_not_swallow_the_episode_name(self):
         """本底這个參數號做 `name`，去hőng `name = episode(slug)` 蓋去，
         TSV 就變做集數名。"""
-        text = self.brief(232, 1, size=72, tsv="b07.tsv")
+        text = self.brief(100, 1, tsv="b07.tsv")
         self.assertIn(self.NAME, text)
         self.assertIn(os.path.join(self.NAME, "b07.tsv"), text)
 
@@ -313,12 +425,18 @@ class TestCueRange(VisionPromptCase):
     def test_only_the_sheets_holding_those_cues(self):
         # 逐張 4 條：cue 9–16 是 sheet_003、sheet_004
         text = self.brief_for(20, 9, 16)
-        self.assertIn("`sheet_003.png`–`sheet_004.png`", text)
+        self.assertIn("`sheet_003.png`", text)
+        self.assertIn("`sheet_004.png`", text)
+        self.assertNotIn("`sheet_002.png`", text)
+        self.assertNotIn("`sheet_005.png`", text)
 
     def test_a_partial_sheet_is_still_included(self):
         """Cue 10 佇 sheet_003 中央——彼張愛入來，讀者才看會著。"""
         text = self.brief_for(20, 10, 15)
-        self.assertIn("`sheet_003.png`–`sheet_004.png`", text)
+        self.assertIn("`sheet_003.png`", text)
+        self.assertIn("`sheet_004.png`", text)
+        self.assertNotIn("`sheet_002.png`", text)
+        self.assertNotIn("`sheet_005.png`", text)
 
     def test_the_cue_range_reported_is_the_one_asked_for(self):
         """圖條罩 9..16，毋過欲讀ê是 10..15——講ê愛是後者。
@@ -363,27 +481,27 @@ class TestPerSheet(VisionPromptCase):
     """
 
     def test_three_per_sheet_is_said_as_three(self):
-        text = self.brief(24, 1, per=3, size=8)
+        text = self.brief(24, 1, per=3)
         self.assertIn("逐張 3 條", text)
         self.assertNotIn("逐張 4 條", text)
 
     def test_four_per_sheet_is_still_four(self):
-        text = self.brief(24, 1, per=4, size=8)
+        text = self.brief(24, 1, per=4)
         self.assertIn("逐張 4 條", text)
 
     def test_a_ragged_last_sheet_is_said_as_at_most(self):
         """尾張較少ê時，講「上濟幾條」較誠實。"""
         work = self.work(3, 4)
         import json
-        with open(os.path.join(work, "sheets.json"), encoding="utf-8") as fh:
+        with open(paths.sheets_index(work), encoding="utf-8") as fh:
             data = json.load(fh)
         data["sheet_003.png"] = [9, 10]
-        with open(os.path.join(work, "sheets.json"), "w",
+        with open(paths.sheets_index(work), "w",
                   encoding="utf-8") as fh:
             json.dump(data, fh)
         with mock.patch.object(prompt, "episode", return_value=self.NAME), \
                 mock.patch.object(prompt, "workdir", return_value=work):
-            text = prompt.brief("2021_055_2021-02-24_午間_Cou_鄒", 1, size=8)
+            text = prompt.brief(self.SLUG, 1)
         self.assertIn("上濟 4 條", text)
 
 
@@ -449,91 +567,33 @@ if __name__ == "__main__":
     unittest.main()
 
 
-class TestBatchSizeDefaults(unittest.TestCase):
-    """一批 24 張，尾批地板 8。
+class TestCeiling(unittest.TestCase):
+    """每批上限 120,000，是量出來ê，毋是揀ê。
 
-    **這組數字翻過兩擺，兩擺攏是量出來ê，紲落來寫ê是兩擺ê理路。**
+    2026-09-11，18 輪實讀、3,367 條 cue（usage 照回覆ê `message.id`
+    歸併）：尖峰累積 context ≈ 69,184 ＋ 視覺 token ＋ 逐逝數 × 17，
+    對平行讀ê六輪誤差 −2.1%～+32.7%。快取失效ê線佇 175k–184k
+    （≤175k 失效 0 擺；184k 彼輪失效 3 擺、重寫 166,380 token）。
+    上限訂 120,000，估算最壞 +32.7% 嘛才 ~160k，離彼條線猶有空。
 
-    **頭一擺（2026-09-10，24 → 4）**：組合圖ê打包改了後（`LONG_EDGE`
-    壓 2000、逐張各自算闊），新聞一張對 4 條 cue 變做 ~25 條。`SIZE`
-    若無綴leh改，24 張 × 25 條 ＝ 600 條／批，是本底 96 條ê六倍。彼
-    時量ê三个點（逐點攏是 Opus、真正讀、費用照 `message.id` 歸併）：
-
-        cue 數   張數   回覆數   尖峰 context   每 cue
-           56     4      28       66,121      $0.0236
-           98     7      34       86,042      $0.0196
-          196    14     102      145,474      $0.0327
-
-    56–98 平、196 翹起來，所以搝轉去 4 張（~100 條）。**彼時是著ê。**
-
-    **第二擺（2026-09-11，4 → 24）**：`brief.md` 加一條「開圖愛佇仝
-    一則訊息內底同時發 3–4 个 Read」了後，頭前彼條曲線就無效矣——
-    彼時貴ê是**回覆數**，一則讀一張ê時回覆數綴張數超線性大；平行讀
-    了後回覆數變做差不多是定數（14 張 12 則、28 張 18 則），成本
-    變做近倍線性。仝一批圖、仝一份判準，干焦改讀法：
-
-        14 張／196 條：一則一張 102 則回覆 $6.40；平行讀 12 則 $1.87
-
-    平行讀了後重量ê三个點：
-
-        cue 數   張數   回覆數   尖峰 context   每 cue
-          196    14      12      115,106      $0.0095
-          392    28      18      157,721      $0.0059   ← 上俗
-          560    40      26      183,672      $0.0067
-
-    **底部對 98 條徙到 392 條。** 而且 560 彼點翹起來ê原因掠著矣：
-    transcript ê `diagnostics.cache_miss_reason` 講是 `messages_changed`
-    ——**快取hőng作廢、規段 context 用 $6.25/M 重寫**，彼輪重寫
-    166,380 token（＝$1.04，佔彼批 $3.75 ê四分之一）。175k 彼幾輪
-    失效 0 擺，184k 彼輪失效 3 擺。**所以上限是「快取懸崖」，毋是
-    視窗**：18 輪 transcript 內底壓縮 0 擺、圖hőng提掉 0 擺。
-
-    24 張ê尖峰實測（照檔名順序切）是 121k／130k／143k，離懸崖猶有
-    三十外 k。整集：開會了 111（977 條）18 批 $27.93 → 3 批 $6.48。
-
-    `MIN_TAIL` 愛綴 `SIZE` 走：8 張（新聞約 200 條）徛會住，4 張
-    （~100 條）攤彼份 $1.43 ê起手費就貴四倍，倂入去較俗。
-
-    **《開會了》莫用這个數字。** 彼爿一張 ~14 條，24 張ê尖峰實測是
-    175k，拄仔好貼佇懸崖頂懸；而且彼爿ê族語列有撇號ê字形問題
-    （`'` hőng寫做 `"`，三个讀者內底一个會犯）。彼爿走ê是別一份 brief。
+    換模型、換 harness、抑是組合圖ê打包規則改，攏愛重量。
     """
 
-    NEWS_PER_SHEET = 25       # 新聞一張約幾條 cue（壓 2000 了後）
-    NEWS_SHEET_TOKENS = 1900  # 新聞一張約幾个視覺 token（實測中位 1,890）
-    BASE = 69184              # 固定底（提示、工具、累積ê推理文字）
-    PER_ROW = 17              # 逐逝 TSV 佇 context 內底ê重量
-    CLIFF = 175000            # 快取開始失效彼條線
+    CLIFF = 175000
+    WORST = 1.327
 
-    def test_the_default_batch_is_twenty_four_sheets(self):
-        self.assertEqual(prompt.SIZE, 24)
+    def test_the_measured_constants(self):
+        self.assertEqual(prompt.CEILING, 120000)
+        self.assertEqual(prompt.BASE, 69184)
+        self.assertEqual(prompt.PER_ROW, 17)
 
-    def test_the_tail_floor_scales_with_it(self):
-        self.assertEqual(prompt.MIN_TAIL, 8)
-        self.assertLess(prompt.MIN_TAIL, prompt.SIZE)
+    def test_the_worst_underestimate_stays_under_the_cache_cliff(self):
+        self.assertLess(prompt.CEILING * self.WORST, self.CLIFF)
 
-    def test_a_news_batch_stays_under_the_cache_cliff(self):
-        """真正ê上限是快取失效，毋是 cue 數。
-
-        懸過彼條線ê症頭是**恬恬加錢**：無錯誤、無警告，干焦 cache
-        寫入翻倍。184k 彼輪重寫 166,380 token。
-        """
-        rows = prompt.SIZE * self.NEWS_PER_SHEET
-        peak = (self.BASE + prompt.SIZE * self.NEWS_SHEET_TOKENS
-                + rows * self.PER_ROW)
-        self.assertLess(peak, self.CLIFF)
-
-    def test_an_eight_sheet_tail_stands_on_its_own(self):
-        """8 張（新聞約 200 條）徛會住，莫倂入去。"""
-        self.assertEqual(prompt.plan(32), [(0, 24), (24, 32)])
-
-    def test_a_four_sheet_tail_is_folded(self):
-        """4 張（~100 條）攤彼份 $1.43 起手費貴四倍，倂入去較俗。"""
-        self.assertEqual(prompt.plan(28), [(0, 28)])
-
-    def test_fifty_one_sheets_is_three_batches(self):
-        """058晨 壓 2000 了後ê實際張數：51 張，24＋24＋3，尾 3 張倂入。"""
-        self.assertEqual(prompt.plan(51), [(0, 24), (24, 51)])
+    def test_the_old_knobs_are_gone(self):
+        # 一批幾張、尾批地板：佮累積 context 無關，莫閣予人調
+        self.assertFalse(hasattr(prompt, "SIZE"))
+        self.assertFalse(hasattr(prompt, "MIN_TAIL"))
 
 
 class TestNativeFrameSource(VisionPromptCase):
@@ -547,18 +607,35 @@ class TestNativeFrameSource(VisionPromptCase):
 
     def test_without_an_archive_the_reader_is_told_how_to_fetch_the_mp4(self):
         with mock.patch.object(prompt, "MKV_DIR", "/nonexistent-mkv"):
-            text = self.brief(40, 1, size=24)
+            text = self.brief(40, 1)
         self.assertIn("sftp.sh get", text)
         self.assertIn(self.REMOTE, text)
-        self.assertIn(os.path.join(prompt.READ_STAGE,
+        # 暫存也照月份分層
+        self.assertIn(os.path.join(prompt.READ_STAGE, "2021-02",
                                    "21NL003_55午間族語新聞.mp4"), text)
+
+    def test_the_brief_names_the_stage_folders(self):
+        # 讀者照工作說明去找圖：寫 `sheets/`、`strips/` 就找不到
+        text = self.brief(40, 1)
+        self.assertIn("/4-sheets/", text)
+        self.assertIn("4-sheets/sheets.json", text)
+        self.assertIn("/2-strips/", text)
+        self.assertNotIn("/sheets/`", text)
+        self.assertNotIn("/strips/`", text)
+
+    def test_the_work_dir_is_the_month_layered_one(self):
+        slug = "2021_055_2021-02-24_午間_Cou_鄒"
+        self.assertEqual(prompt.workdir(slug),
+                         os.path.join("kithann", "out", "news", "1-ocr",
+                                      "2021-02", slug + ".work"))
 
     def test_with_an_archive_the_mkv_is_used_and_nothing_is_fetched(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        mkv = os.path.join(tmp.name, self.NAME + ".mkv")
+        os.makedirs(os.path.join(tmp.name, "2021-02"))
+        mkv = os.path.join(tmp.name, "2021-02", self.NAME + ".mkv")
         open(mkv, "wb").close()
         with mock.patch.object(prompt, "MKV_DIR", tmp.name):
-            text = self.brief(40, 1, size=24)
+            text = self.brief(40, 1)
         self.assertIn(mkv, text)
         self.assertNotIn("sftp.sh get", text)

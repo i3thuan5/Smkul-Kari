@@ -92,8 +92,8 @@ PASS; full width it read y=892 (the station bug) and refused the file.
 
 This is a measurement, not a proof. On the first file of any new folder, run
 WITHOUT --quiet, eyeball the printed profile, and open
-`kithann/out/mxf/<slug>.work/sheets/sheet_001.png` to see that the strips
-carry the dialogue line and nothing else.
+`kithann/out/news/1-ocr/<年-月>/<slug>.work/4-sheets/sheet_001.png`
+to see that the strips carry the dialogue line and nothing else.
 """
 import argparse
 import json
@@ -102,6 +102,7 @@ import numpy as np
 
 from scripts.news import paths
 from scripts.ocr import cuelib
+from scripts.ocr import decode
 
 # Rows to average over when separating broad features from thin ones: about
 # the height of a subtitle glyph, so a line of text survives and a two-pixel
@@ -118,7 +119,7 @@ def profile(path, region, spec, start, duration, fps=1.0):
     """Mean ink per row, off one decode."""
     rows = np.zeros(region[3], dtype=np.int64)
     frames = 0
-    for _, rgb in cuelib.stream_region(path, region, fps=fps,
+    for _, rgb in decode.stream_region(path, region, fps=fps,
                                        start=start, duration=duration):
         mask = cuelib.text_mask(rgb, spec)
         rows += mask.sum(axis=1)
@@ -191,7 +192,7 @@ def probe_region(want):
     right = want[0] + want[2]
     if x < BUG_MARGIN and right - BUG_MARGIN >= MIN_PROBE_WIDTH:
         x = BUG_MARGIN
-    return cuelib.normalize_region(
+    return decode.normalize_region(
         (x, want[1] - 40, right - x, want[3] + 120))
 
 

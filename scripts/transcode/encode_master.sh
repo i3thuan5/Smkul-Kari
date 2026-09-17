@@ -47,8 +47,8 @@
 #                     for the master rather than just be re-processable.
 #   1920x1080, 29.97  the band geometry in presets.json and the 9 px outline
 #                     test are tuned for 1080p, and refine_cues.py re-reads
-#                     at 25 fps. Scaling or dropping frames breaks one of
-#                     those, and neither buys much: at a fixed CRF, 5 fps
+#                     at the native frame rate. Scaling or dropping frames
+#                     breaks one of those, and neither buys much: at a fixed CRF, 5 fps
 #                     saved 21% and deinterlacing 9%.
 #   -c:a flac         lossless, ~33% of PCM. The corpus exists to train
 #                     acoustic models, so the audio must not be re-quantised.

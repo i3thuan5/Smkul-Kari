@@ -26,14 +26,13 @@ if [[ ! -x "$PY" ]]; then
     echo "  用 SUBS2SRT_PY=/path/to/python 指定，抑是 tox -e rebuild 建起來" >&2
     exit 1
 fi
-WORK=$(python3 -m scripts.news.paths --var WORK)
-LOG=$(python3 -m scripts.news.paths --var LOGS)
+LOGS=$(python3 -m scripts.news.paths --var LOGS)
 PRESETS=$(python3 -m scripts.news.paths --var ENGINE_PRESETS)
 INVENTORY=$(python3 -m scripts.news.paths --var INVENTORY)
 STAGE=${STAGE:-/tmp/ilrdf-stage}
 DECODERS=${DECODERS:-3}
 
-mkdir -p "$WORK" "$LOG" "$STAGE"
+mkdir -p "$STAGE"
 
 mapfile -t JOBS < <(python3 -c "
 import json
@@ -46,7 +45,10 @@ echo "$(date +%H:%M:%S) ${#JOBS[@]} episodes to process"
 for job in "${JOBS[@]}"; do
     slug=${job%%$'\t'*}
     video=${job#*$'\t'}
-    if [[ -n "$("$PY" -m scripts.news.paths --cues-of "$WORK/$slug.work")" ]]; then
+    work=$(python3 -m scripts.news.paths --work-of "$slug") || continue
+    LOG="$LOGS/$(basename "$(dirname "$work")")"
+    mkdir -p "$LOG"
+    if [[ -n "$("$PY" -m scripts.news.paths --cues-of "$work")" ]]; then
         echo "$(date +%H:%M:%S) skip  $slug (done)"
         continue
     fi
@@ -69,7 +71,7 @@ for job in "${JOBS[@]}"; do
     (
         echo "$(date +%H:%M:%S) cues  $slug"
         nice -n 15 ionice -c 3 "$PY" -m scripts.ocr.cli cues "$local_copy" \
-            -o "$WORK/$slug.work" --sheets \
+            -o "$work" --sheets \
             --presets "$PRESETS" --preset titv-news \
             > "$LOG/$slug.cues.log" 2>&1
         rc=$?
@@ -78,7 +80,7 @@ for job in "${JOBS[@]}"; do
             echo "$(date +%H:%M:%S) WARN  $slug did not use the preset"
         fi
         if [[ $rc -eq 0 ]]; then
-            "$PY" -m scripts.ocr.cli ocr "$WORK/$slug.work" \
+            "$PY" -m scripts.ocr.cli ocr "$work" \
                 --engine tesseract \
                 > "$LOG/$slug.ocr.log" 2>&1
         fi

@@ -95,11 +95,12 @@ class Batch(unittest.TestCase):
             texts[str(index)] = {"formosan": "a%d" % index,
                                  "han": "甲%d" % index}
             verified[str(index)] = {"formosan": True, "han": True}
-        self._json(os.path.join(work, "transcripts.json"), texts)
-        self._json(os.path.join(work, "verified.json"), verified)
+        self._json(datadirs.transcripts_file(work), texts)
+        self._json(datadirs.verified_file(work), verified)
         return name, work
 
     def _json(self, path, value):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as handle:
             json.dump(value, handle, ensure_ascii=False)
 

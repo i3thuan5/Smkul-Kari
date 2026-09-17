@@ -103,6 +103,14 @@ class TestStageName(unittest.TestCase):
     編 mkv。兩爿若各號各的名，這爿就揣無，19 GB 的母帶會閣抓一擺。
     """
 
+    def test_it_waits_in_its_month_folder(self):
+        # fetch_sftp.sh 把一個月的影片放在 stage/<年-月>/；這邊要找同一處
+        self.assertEqual(
+            archive_batch.staged_path(
+                "20210201_032_晚間_Amis_阿美",
+                "/docker/ilrdf-corpus/2月原始mxf檔/20NL004_32晚間族語新聞.mxf"),
+            os.path.join(paths.STAGE, "2021-02", "20NL004_32晚間族語新聞.mxf"))
+
     def test_it_is_the_source_file_own_name(self):
         self.assertEqual(
             archive_batch.stage_name(
@@ -167,11 +175,16 @@ class TestOutputPath(unittest.TestCase):
             out = archive_batch.output_path("20210201_032_晚間_Amis_阿美")
         self.assertTrue(out.startswith("/tmp/somewhere-else/"), out)
 
-    def test_output_is_srt_name_dot_mkv(self):
+    def test_output_is_month_then_srt_name_dot_mkv(self):
+        # kithann/out/news/mkv/<年-月>/：一個資料夾放一整年的封存太難找
         out = archive_batch.output_path(
             "20210201_032_晚間_Amis_阿美", archive_dir="/tmp/mkv")
         self.assertEqual(
-            out, "/tmp/mkv/20210201_032_晚間_Amis_阿美.mkv")
+            out, "/tmp/mkv/2021-02/20210201_032_晚間_Amis_阿美.mkv")
+
+    def test_the_default_is_the_news_archive(self):
+        out = archive_batch.output_path("20210201_032_晚間_Amis_阿美")
+        self.assertEqual(out, paths.mkv_path("20210201_032_晚間_Amis_阿美"))
 
 
 class TestAlreadyDone(unittest.TestCase):
@@ -179,7 +192,8 @@ class TestAlreadyDone(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             name = "20210201_032_晚間_Amis_阿美"
             self.assertFalse(archive_batch.already_done(name, tmp))
-            open(os.path.join(tmp, name + ".mkv"), "w").close()
+            os.makedirs(os.path.join(tmp, "2021-02"))
+            open(os.path.join(tmp, "2021-02", name + ".mkv"), "w").close()
             self.assertTrue(archive_batch.already_done(name, tmp))
 
 

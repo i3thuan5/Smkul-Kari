@@ -201,7 +201,7 @@ class TestBackgroundTextDoesNotStopTheBatch(unittest.TestCase):
                                       presets), \
                     mock.patch.object(verify_band.paths, "check_under",
                                       lambda path, kind=None: path), \
-                    mock.patch.object(verify_band.cuelib, "stream_region",
+                    mock.patch.object(verify_band.decode, "stream_region",
                                       frames), \
                     mock.patch.object(verify_band.cuelib, "text_mask",
                                       lambda rgb, spec: mask), \

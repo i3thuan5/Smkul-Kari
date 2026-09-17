@@ -12,7 +12,9 @@ import os
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
+from scripts import datadirs
 from scripts.ocr import cuelib
+from scripts.ocr import sheetsize
 from scripts.ocr import stripname
 
 LABEL_FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
@@ -201,6 +203,37 @@ def undecided_share(undecided, decided, blank=0):
     return float(undecided) / total
 
 
+# The line drawn under a cue's last strip, between it and the next cue.
+SEPARATOR = 2
+
+
+def _screen_gap(upper, lower):
+    """Rows between two lines on screen: 0 for lines that touch.
+
+    From the layout, not a constant: 開會了's two lines touch, but a layout
+    whose lines have space between them must keep it, or the type is
+    squeezed together.
+    """
+    return max(int(lower["y"]) - (int(upper["y"]) + int(upper["h"])), 0)
+
+
+def layout_height(lines, gap):
+    """Rows one cue's block takes when every line of `lines` has a strip.
+
+    The one formula for it: `gap`, the lines as they sit on screen, and a
+    separator under the last. A single-line layout is `gap + h + 2` --
+    族語新聞 stays at 134.
+    """
+    height = gap
+    for position, line in enumerate(lines):
+        height += int(line["h"])
+        if position + 1 < len(lines):
+            height += _screen_gap(line, lines[position + 1])
+        else:
+            height += SEPARATOR
+    return height
+
+
 def _cue_blocks(workdir, manifest, spec, row_slots=None,
                 compare_cols=None, right_anchor=None):
     """(blocks, undecided, decided, blank) -- one block per cue with a strip.
@@ -220,7 +253,7 @@ def _cue_blocks(workdir, manifest, spec, row_slots=None,
     blocks = []
     undecided = decided = blank = 0
     for cue in manifest["cues"]:
-        tiles = []
+        found = []
         for line in manifest["lines"]:
             rel = cue["images"].get(line["name"])
             if not rel:
@@ -239,16 +272,43 @@ def _cue_blocks(workdir, manifest, spec, row_slots=None,
                     blank += 1
                 else:
                     undecided += 1
+            found.append((line, img, box, rows))
+        # One column crop per cue, the union of its lines' ink. Cropping
+        # each line to its own ink put 開會了's two lines a median 85 px
+        # (at most 636) out of step, and the descenders the line window
+        # cuts off the upper line -- printed at the top of the lower
+        # strip on 88% of 111's cues -- landed under unrelated letters,
+        # where they read as diacritics (`ubu` came back as `ybu`).
+        # Widening the gap instead only made the stray bit easier to see,
+        # left it misplaced, and cost 102.9% of the tokens; rejoining is
+        # 98.5%, because the union is about as wide as the wider line
+        # (both are centred) and one separator goes.
+        union = None
+        for _line, img, box, _rows in found:
+            if box is None:
+                continue
+            if union is None:
+                union = box
+            else:
+                union = (min(union[0], box[0]), max(union[1], box[1]))
+        tiles = []
+        after = []
+        for position, (line, img, _box, rows) in enumerate(found):
             top, bottom = rows if rows else (0, img.height)
             # A strip with no ink at all has nothing to crop to, but it
             # must still take the trim: at full frame width it is the one
             # thing left that can make a page too wide to be delivered
             # whole (25 of 058晨's 1,284 strips are blank).
-            left, right = box if box is not None else (
+            left, right = union if union is not None else (
                 max(img.width - MAX_TILE, 0), img.width)
+            right = min(right, img.width)
             if (left, right) != (0, img.width) or rows is not None:
                 img = img.crop((left, top, right, bottom))
             tiles.append(img)
+            if position + 1 < len(found):
+                after.append(_screen_gap(line, found[position + 1][0]))
+            else:
+                after.append(SEPARATOR)
         if tiles:
             # Carry the timestamp, not just the index. Cue numbers are only
             # meaningful for one particular cues.json -- re-running `cues`
@@ -256,7 +316,8 @@ def _cue_blocks(workdir, manifest, spec, row_slots=None,
             # lands each transcription on the wrong subtitle.
             clock = "%d:%02d" % (int(cue["start"]) // 60,
                                  int(cue["start"]) % 60)
-            blocks.append((cue["index"], clock, tiles, cue["start"]))
+            blocks.append((cue["index"], clock, tiles, cue["start"],
+                           after))
     return blocks, undecided, decided, blank
 
 
@@ -279,9 +340,9 @@ def _cue_blocks(workdir, manifest, spec, row_slots=None,
 # All three numbers belong to somebody else's service, so changing the
 # model, the tier, or the tool that delivers the image means measuring
 # them again.
-PATCH = 28
-LONG_EDGE = 2000
-VISUAL_TOKENS = 4784
+PATCH = sheetsize.PATCH
+LONG_EDGE = sheetsize.LONG_EDGE
+VISUAL_TOKENS = sheetsize.VISUAL_TOKENS
 
 # The page a strip sits on is `GUTTER + strip + TILE_MARGIN` wide, so a
 # strip wider than this makes a page the delivery tool has to shrink. The
@@ -321,7 +382,7 @@ MAX_TILE = MAX_PAGE - GUTTER - TILE_MARGIN
 
 def _height_bound(page_w):
     """The tallest a page this wide can be and still not be scaled down."""
-    patches = -(-page_w // PATCH)
+    patches = sheetsize.visual_tokens(page_w, PATCH)
     return min(LONG_EDGE, (VISUAL_TOKENS // max(patches, 1)) * PATCH)
 
 
@@ -337,12 +398,16 @@ def _sheet_width(widest_tile, gutter):
     return gutter + widest_tile + TILE_MARGIN
 
 
-def _block_size(tiles, gap):
-    """(height, width) one cue's block occupies on a sheet."""
+def _block_size(tiles, gap, after=None):
+    """(height, width) one cue's block occupies on a sheet.
+
+    `after[i]` is the space pasted under tile i -- see `_cue_blocks`.
+    """
     height = gap
     width = 0
-    for tile in tiles:
-        height += tile.height + 2
+    for position, tile in enumerate(tiles):
+        height += tile.height
+        height += after[position] if after else SEPARATOR
         width = max(width, tile.width)
     return height, width
 
@@ -363,7 +428,8 @@ def _by_width(blocks, gap):
     still resumes.
     """
     order = list(blocks)
-    order.sort(key=lambda block: (_block_size(block[2], gap)[1], block[0]))
+    order.sort(key=lambda block: (_block_size(block[2], gap, block[4])[1],
+                                  block[0]))
     return order
 
 
@@ -377,7 +443,7 @@ def build_sheets(workdir, manifest, row_slots=None,
     and the glyphs stop being legible, which defeats the point. See
     `_height_bound` for where that limit comes from.
     """
-    sheets_dir = os.path.join(workdir, "sheets")
+    sheets_dir = datadirs.sheets_dir(workdir)
     os.makedirs(sheets_dir, exist_ok=True)
     spec = cuelib.MaskSpec.from_dict(manifest.get("mask", {}))
     gutter = GUTTER
@@ -399,8 +465,8 @@ def build_sheets(workdir, manifest, row_slots=None,
     batch = []
     height = 0
     widest = 0
-    for index, clock, tiles, start in _by_width(blocks, gap):
-        block_h, block_w = _block_size(tiles, gap)
+    for index, clock, tiles, start, after in _by_width(blocks, gap):
+        block_h, block_w = _block_size(tiles, gap, after)
         grown = max(widest, block_w)
         # The width this cue would give the sheet decides the height it is
         # allowed: a page is charged by area, so a wider page may hold
@@ -415,7 +481,7 @@ def build_sheets(workdir, manifest, row_slots=None,
             batch = []
             height = 0
             grown = block_w
-        batch.append((index, clock, tiles, block_h, start))
+        batch.append((index, clock, tiles, block_h, start, after))
         height += block_h
         widest = grown
     if batch:
@@ -428,7 +494,7 @@ def build_sheets(workdir, manifest, row_slots=None,
     # Record which cues landed on which sheet. Reading 389 sheets does not
     # fit in one sitting, so the map is what lets the job be picked up again
     # later -- see the `pending` stage.
-    path = os.path.join(workdir, "sheets.json")
+    path = datadirs.sheets_index(workdir)
     with open(path, "w", encoding="utf-8") as handle:
         json.dump(index_map, handle, ensure_ascii=False, indent=2,
                   sort_keys=True)
@@ -444,14 +510,14 @@ def flush_sheet(sheets_dir, batch, width, height, gutter, gap, font):
     except OSError:
         pass
     y = 0
-    for index, clock, tiles, block_h, _start in batch:
+    for index, clock, tiles, block_h, _start, after in batch:
         draw.line([(0, y), (width, y)], fill=(190, 190, 190), width=1)
         draw.text((10, y + 6), "%d" % index, font=font, fill=(0, 0, 0))
         draw.text((10, y + 44), clock, font=small, fill=(120, 120, 120))
         cursor = y + gap
-        for tile in tiles:
+        for position, tile in enumerate(tiles):
             sheet.paste(tile, (gutter, cursor))
-            cursor += tile.height + 2
+            cursor += tile.height + after[position]
         y += block_h
     # Named for where it begins, not for its place in the batch: cue
     # numbers move when a cue is split and the sheets are rebuilt, so an
@@ -460,12 +526,12 @@ def flush_sheet(sheets_dir, batch, width, height, gutter, gap, font):
     # widest-with-widest, so the one that happens to sort first is an
     # arbitrary pick out of the whole episode.
     earliest = None
-    for _index, _clock, _tiles, _bh, start in batch:
+    for _index, _clock, _tiles, _bh, start, _after in batch:
         if earliest is None or start < earliest:
             earliest = start
     path = os.path.join(sheets_dir, stripname.sheet_of(earliest))
     sheet.save(path)
     covered = []
-    for index, _clock, _tiles, _bh, _start in batch:
+    for index, _clock, _tiles, _bh, _start, _after in batch:
         covered.append(index)
     return os.path.basename(path), covered

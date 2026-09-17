@@ -67,7 +67,7 @@ python3 -m scripts.news.add_episodes '族語新聞/110.1-110.10/7月/…mp4' …
 ```
 
 Before committing to a whole month, run the fetch with `--limit 2` and look
-at a contact sheet (`kithann/out/mxf/<slug>.work/sheets/sheet_001.png`) to
+at a contact sheet (`kithann/out/news/1-ocr/<年-月>/<slug>.work/4-sheets/sheet_001.png`) to
 confirm the strips show the dialogue line and nothing else. A month can span
 folders, and layout follows the folder, so the band is verified once per
 folder, not once per month.

@@ -32,6 +32,14 @@ from scripts.datadirs import ALLOWED_ROOTS   # noqa: F401  (re-export)
 from scripts.datadirs import COARSE_STAGE    # noqa: F401  (re-export)
 from scripts.datadirs import KARI
 from scripts.datadirs import REFINED_STAGE   # noqa: F401  (re-export)
+from scripts.datadirs import SHEETS_STAGE    # noqa: F401  (re-export)
+from scripts.datadirs import STRIPS_STAGE    # noqa: F401  (re-export)
+from scripts.datadirs import TRANSCRIPTS_STAGE  # noqa: F401  (re-export)
+from scripts.datadirs import sheets_dir      # noqa: F401  (re-export)
+from scripts.datadirs import sheets_index    # noqa: F401  (re-export)
+from scripts.datadirs import strips_dir      # noqa: F401  (re-export)
+from scripts.datadirs import transcripts_file  # noqa: F401  (re-export)
+from scripts.datadirs import verified_file   # noqa: F401  (re-export)
 from scripts.datadirs import coarse_cues     # noqa: F401  (re-export)
 from scripts.datadirs import cues_to_read    # noqa: F401  (re-export)
 from scripts.datadirs import refined_cues    # noqa: F401  (re-export)
@@ -88,8 +96,18 @@ def stage_path(stage, srt_name, suffix=""):
     return os.path.join(stage, month_of(srt_name), srt_name + suffix)
 
 
-WORK = os.path.join(KITHANN, "out", "mxf")
-LOGS = os.path.join(KITHANN, "out", "mxf-logs")
+# The working area, layered corpus -> technique/kind -> month -> episode,
+# the same way Kari-SRT is (2026-09 reorganisation). It used to be flat:
+# 400-odd work dirs in `out/mxf/` -- named after the early source format,
+# long after it held no mxf -- with logs, archive copies, staged videos and
+# the speech side each loose somewhere else under `out/`.
+NEWS_OUT = os.path.join(KITHANN, "out", "news")
+WORK = os.path.join(NEWS_OUT, "1-ocr")
+ASRMT_WORK = os.path.join(NEWS_OUT, "2-asr")
+# Per-episode logs stay outside the work dirs: they start at the download,
+# before a work dir exists, and must outlive it -- work dirs are deleted
+# once an episode is accepted.
+LOGS = os.path.join(NEWS_OUT, "logs")
 
 
 # The work dir's cue stages (`COARSE_STAGE`, `REFINED_STAGE`, and the two
@@ -120,14 +138,14 @@ def cue_keyed(work, srt_name):
     """
     return {
         "timeline": cues_to_read(work) or coarse_cues(work),
-        "sheets": os.path.join(work, "sheets.json"),
-        "transcripts": os.path.join(work, "transcripts.json"),
+        "sheets": sheets_index(work),
+        "transcripts": transcripts_file(work),
         "vision": stage_path(KARI_VISION, srt_name),
     }
 
 
 def timeline_is_refined(path):
-    """Does this one timeline file record that the 25fps pass ran?
+    """Does this one timeline file record that the refine pass ran?
 
     The flag is how the pre-split layout said so, and the store still does:
     a store timeline is a single file, not a work dir. Unreadable counts as
@@ -142,9 +160,9 @@ def timeline_is_refined(path):
 
 
 def is_refined(work):
-    """Has the 25fps pass produced a timeline for this work dir?
+    """Has the refine pass produced a timeline for this work dir?
 
-    The `2-refined/` file existing is the whole answer -- that is what makes
+    The `3-refined/` file existing is the whole answer -- that is what makes
     the coarse file read-only and a killed refine harmless.
 
     There used to be a second arm here, reading a `refined` flag out of
@@ -169,9 +187,71 @@ def is_refined(work):
 WORK_EXT = ".work"
 
 
+SLUG_DATE = re.compile(r"[0-9]{4}_[0-9]{3}_([0-9]{4})-([0-9]{2})-[0-9]{2}_")
+
+
+def check_month(month):
+    """A `YYYY-MM` folder name, or a refusal."""
+    if not re.fullmatch(r"[0-9]{4}-(0[1-9]|1[0-2])", month or ""):
+        raise PipelineError("月份 %r 不是 YYYY-MM" % (month,))
+    return month
+
+
+def month_of_slug(slug):
+    """The broadcast month of a work dir name: 2021_368_2022-01-03… -> 2022-01.
+
+    From the broadcast date, not the leading 年度 field -- the fiscal year
+    and the calendar month part ways at the turn of the year, and the month
+    folder is the calendar one, the same as Kari-SRT's.
+    """
+    slug = check_name(slug, "slug")
+    match = SLUG_DATE.match(slug)
+    if not match:
+        raise PipelineError(
+            "slug %r 不符「<年度>_<集數3碼>_<YYYY-MM-DD>_…」格式" % slug)
+    return check_month(match.group(1) + "-" + match.group(2))
+
+
 def work_dir(slug, work=None):
-    """This episode's work dir."""
-    return os.path.join(WORK if work is None else work, slug + WORK_EXT)
+    """This episode's work dir: <WORK>/<年-月>/<slug>.work.
+
+    Named by slug, not srt_name, on purpose (see `resolve_slug.slugify`):
+    a work dir that follows a rename of the delivered file would orphan
+    the work already in it.
+    """
+    base = WORK if work is None else work
+    return os.path.join(base, month_of_slug(slug), slug + WORK_EXT)
+
+
+def log_dir(month):
+    """Where one month's per-episode logs go."""
+    return os.path.join(LOGS, check_month(month))
+
+
+def stage_dir(month):
+    """Where one month's downloaded videos wait to be cut or archived."""
+    return os.path.join(STAGE, check_month(month))
+
+
+def staged_path(srt_name, source):
+    """Where a downloaded video waits: its own file name, in its month.
+
+    The source's own name, not the srt_name: `fetch_sftp.sh` keeps a master
+    for `archive_batch`, and the two have to agree on where it is or a
+    19 GB file is fetched twice.
+    """
+    return os.path.join(stage_dir(month_of(srt_name)),
+                        os.path.basename(source))
+
+
+def mkv_path(srt_name):
+    """The archival mkv of one episode."""
+    return stage_path(MKV_ARCHIVE, srt_name, ".mkv")
+
+
+def asrmt_dir(srt_name):
+    """The speech side's working folder for one episode."""
+    return stage_path(ASRMT_WORK, srt_name)
 
 
 def has_cues(slug, work=None):
@@ -194,11 +274,11 @@ def has_cues(slug, work=None):
 # Shared download staging area (fetch_sftp.sh convention):
 # big disk, survives restarts, a file with the right byte count is reused
 # rather than re-fetched.
-STAGE = os.path.join(KITHANN, "out", "stage")
+STAGE = os.path.join(NEWS_OUT, "stage")
 
 # Archival mkv copies (scripts/transcode/encode_master.sh output), one per
 # episode -- see .claude/skills/video-subtitle-srt/壓縮率分析.md for the spec.
-MKV_ARCHIVE = os.path.join(KITHANN, "out", "mkv")
+MKV_ARCHIVE = os.path.join(NEWS_OUT, "mkv")
 
 # Working copy of the progress table, refreshed by make_all as often as you
 # like. The delivered one lives in Kari-SRT and is written only by publish,
@@ -317,6 +397,12 @@ def main():
                     help="the best timeline this work dir has, or nothing")
     ap.add_argument("--coarse-of", metavar="WORK",
                     help="where this work dir's coarse timeline belongs")
+    ap.add_argument("--work-of", metavar="SLUG",
+                    help="this episode's work dir")
+    ap.add_argument("--log-dir", metavar="YYYY-MM",
+                    help="where this month's per-episode logs go")
+    ap.add_argument("--stage-dir", metavar="YYYY-MM",
+                    help="where this month's videos are staged")
     args = ap.parse_args()
     # Per-work-dir paths, so they are computed rather than looked up. Shell
     # callers ask for them here instead of spelling the stage folder out --
@@ -328,8 +414,18 @@ def main():
     if args.coarse_of:
         print(coarse_cues(args.coarse_of))
         return
+    if args.work_of:
+        print(work_dir(args.work_of))
+        return
+    if args.log_dir:
+        print(log_dir(args.log_dir))
+        return
+    if args.stage_dir:
+        print(stage_dir(args.stage_dir))
+        return
     if not args.var:
-        raise PipelineError("--var、--cues-of、--coarse-of 揀一个")
+        raise PipelineError("--var、--cues-of、--coarse-of、--work-of、"
+                            "--log-dir、--stage-dir 揀一个")
     # A few "paths" have to be worked out rather than looked up: which
     # interpreter is present differs per machine, so VENV_PY is a call.
     computed = {"VENV_PY": venv_py}

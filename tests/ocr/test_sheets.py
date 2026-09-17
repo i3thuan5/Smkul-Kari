@@ -7,6 +7,7 @@ import unittest
 import numpy as np
 from PIL import Image
 
+from scripts import datadirs
 from scripts.news import gap_sheets
 from scripts.ocr import cuelib
 from scripts.ocr import sheets
@@ -74,6 +75,91 @@ class TestGlossaryTokens(unittest.TestCase):
     def test_double_quote_word_is_collected(self):
         got = transcripts.glossary_tokens("to 'a\"iyalaeho: a kamok")
         self.assertIn("'a\"iyalaeho:", got)
+
+
+class TestLinesOfOneCueRejoin(unittest.TestCase):
+    """同一條 cue 的多列，拼回畫面上的樣子。
+
+    《開會了》族語列的降部（g／p／y）被列窗切掉，印到下一列圖條的頂端
+    （111 集 88% 的 cue 如此）。兩列又各自裁自己的欄範圍——左緣差中位
+    85 px、最大 636 px——那一截降部就橫向錯位到無關的字母底下，讀者看
+    成下加符號，把 `ubu` 讀成 `ybu`。兩列用同一個欄範圍、照畫面間隔貼，
+    那一截才回得到自己的字母底下。
+    """
+
+    GAP = 10
+
+    def _sheet(self, lines, inks):
+        """One cue, one line per entry; return the rendered sheet array."""
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        work = tmp.name
+        os.makedirs(os.path.join(work, "2-strips"))
+        images = {}
+        for line, (x0, x1) in zip(lines, inks):
+            frame = np.full((line["h"], 1400, 3), 20, dtype=np.uint8)
+            frame[:, x0:x1] = 255
+            rel = os.path.join("2-strips", "t_%s.png" % line["name"])
+            Image.fromarray(frame).save(os.path.join(work, rel))
+            images[line["name"]] = rel
+        manifest = {"lines": lines, "mask": {},
+                    "cues": [{"index": 1, "start": 3.0, "end": 5.0,
+                              "images": images}]}
+        sheets.build_sheets(work, manifest)
+        with open(datadirs.sheets_index(work), encoding="utf-8") as handle:
+            (name,) = json.load(handle)
+        page_path = os.path.join(datadirs.sheets_dir(work), name)
+        with Image.open(page_path) as page:
+            return np.asarray(page.convert("L"))
+
+    def _first_lit(self, row):
+        lit = np.nonzero(row > 252)[0]   # 字是 255；頁底色是 250
+        lit = lit[lit >= sheets.GUTTER]
+        return int(lit[0]) if len(lit) else None
+
+    AIYA = [{"name": "formosan", "y": 12, "h": 60},
+            {"name": "han", "y": 72, "h": 64}]
+
+    def test_both_lines_share_one_column_crop(self):
+        # 族語列的字從 500 起、華語列從 300 起：各自裁的話兩列都從
+        # 圖條左緣開始，畫面上 200 px 的相對位置就不見了
+        page = self._sheet(self.AIYA, [(500, 900), (300, 1200)])
+        top = self.GAP + 10
+        low = self.GAP + 60 + 10
+        self.assertEqual(self._first_lit(page[top]) -
+                         self._first_lit(page[low]), 200)
+
+    def test_adjacent_lines_are_pasted_without_a_gap(self):
+        # 畫面上兩列相連（12+60 = 72）：下一列的第一列畫素緊接著上一列
+        page = self._sheet(self.AIYA, [(500, 900), (300, 1200)])
+        first_han_row = self.GAP + 60
+        self.assertIsNotNone(self._first_lit(page[first_han_row]))
+        self.assertEqual(self._first_lit(page[first_han_row]),
+                         self._first_lit(page[first_han_row + 20]))
+        self.assertEqual(page.shape[0], self.GAP + 60 + 64 + 2)
+
+    def test_a_layout_with_space_between_lines_keeps_it(self):
+        # 兩列在畫面上隔 20 px：一律不留空隙會把字擠在一起
+        lines = [{"name": "formosan", "y": 0, "h": 50},
+                 {"name": "han", "y": 70, "h": 50}]
+        page = self._sheet(lines, [(300, 900), (300, 900)])
+        self.assertIsNone(self._first_lit(page[self.GAP + 60]))
+        self.assertIsNotNone(self._first_lit(page[self.GAP + 70]))
+        self.assertEqual(page.shape[0], self.GAP + 50 + 20 + 50 + 2)
+
+    def test_a_single_line_cue_is_unchanged(self):
+        # 族語新聞：區塊仍是 gap + 122 + 2 ＝ 134 px
+        lines = [{"name": "han", "y": 0, "h": 122}]
+        page = self._sheet(lines, [(300, 900)])
+        self.assertEqual(page.shape[0], self.GAP + 122 + 2)
+
+    def test_the_layout_height_is_the_one_packing_uses(self):
+        self.assertEqual(sheets.layout_height(
+            [{"name": "han", "y": 0, "h": 122}], 10), 134)
+        self.assertEqual(sheets.layout_height(self.AIYA, 10), 136)
+        self.assertEqual(sheets.layout_height(
+            [{"name": "a", "y": 0, "h": 50},
+             {"name": "b", "y": 70, "h": 50}], 10), 132)
 
 
 if __name__ == "__main__":
@@ -181,18 +267,18 @@ class TestCueBlocksCropping(unittest.TestCase):
     def _workdir(self, upper_rows, lower_rows):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        os.makedirs(os.path.join(tmp.name, "strips"))
+        os.makedirs(os.path.join(tmp.name, "2-strips"))
         frame = np.full((122, 400, 3), 20, dtype=np.uint8)
         for lo, hi in (upper_rows, lower_rows):
             if hi > lo:
                 frame[lo:hi, 120:360] = 255
         Image.fromarray(frame).save(
-            os.path.join(tmp.name, "strips", "a.png"))
+            os.path.join(tmp.name, "2-strips", "a.png"))
         manifest = {
             "lines": [{"name": "han", "y": 0, "h": 122}],
             "mask": {},
             "cues": [{"index": 1, "start": 3.0, "end": 5.0,
-                      "images": {"han": os.path.join("strips", "a.png")}}],
+                      "images": {"han": os.path.join("2-strips", "a.png")}}],
         }
         return tmp.name, manifest
 
@@ -286,16 +372,17 @@ class TestAnchorComesFromThePreset(unittest.TestCase):
         """規條線路：preset → `build_sheets` → `_cue_blocks` → 裁切。"""
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        os.makedirs(os.path.join(tmp.name, "strips"))
+        os.makedirs(os.path.join(tmp.name, "2-strips"))
         frame = np.full((122, 1920, 3), 20, dtype=np.uint8)
         frame[40:60, 598:1400] = 255          # 中央ê乾草，墨上濟
         frame[40:60, 1620:1760] = 255         # 置右ê字幕
-        Image.fromarray(frame).save(os.path.join(tmp.name, "strips", "a.png"))
+        Image.fromarray(frame).save(
+            os.path.join(tmp.name, "2-strips", "a.png"))
         manifest = {
             "lines": [{"name": "han", "y": 0, "h": 122}],
             "mask": {},
             "cues": [{"index": 1, "start": 3.0, "end": 5.0,
-                      "images": {"han": os.path.join("strips", "a.png")}}],
+                      "images": {"han": os.path.join("2-strips", "a.png")}}],
         }
         plain = sheets._cue_blocks(
             tmp.name, manifest, self._mask({}))[0][0][2][0]
@@ -490,7 +577,7 @@ class SheetFixture(unittest.TestCase):
         """
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        os.makedirs(os.path.join(tmp.name, "strips"))
+        os.makedirs(os.path.join(tmp.name, "2-strips"))
         cues = []
         number = 0
         for width in widths:
@@ -501,7 +588,7 @@ class SheetFixture(unittest.TestCase):
                 frame[10:strip_h - 10, 100:] = 255
             else:
                 frame[10:strip_h - 10, 100:100 + width - 12] = 255
-            rel = os.path.join("strips", "%d.png" % number)
+            rel = os.path.join("2-strips", "%d.png" % number)
             Image.fromarray(frame).save(os.path.join(tmp.name, rel))
             cues.append({"index": number, "start": 10.0 * number,
                          "end": 10.0 * number + 4.0,
@@ -514,12 +601,13 @@ class SheetFixture(unittest.TestCase):
         """{sheet name: (width, height, [cue numbers on it])}."""
         workdir, manifest = self._workdir(widths, strip_h, flush_right)
         sheets.build_sheets(workdir, manifest, **kwargs)
-        with open(os.path.join(workdir, "sheets.json"),
+        with open(datadirs.sheets_index(workdir),
                   encoding="utf-8") as handle:
             index_map = json.load(handle)
         made = {}
         for name, covered in index_map.items():
-            with Image.open(os.path.join(workdir, "sheets", name)) as page:
+            page_path = os.path.join(datadirs.sheets_dir(workdir), name)
+            with Image.open(page_path) as page:
                 made[name] = (page.width, page.height, covered)
         return made
 
@@ -658,13 +746,14 @@ class TestSheetHeight(SheetFixture):
         workdir, manifest = self._workdir([400, 400])
         blank = np.full((122, 1920, 3), 20, dtype=np.uint8)
         Image.fromarray(blank).save(
-            os.path.join(workdir, "strips", "1.png"))
+            os.path.join(workdir, "2-strips", "1.png"))
         sheets.build_sheets(workdir, manifest)
-        with open(os.path.join(workdir, "sheets.json"),
+        with open(datadirs.sheets_index(workdir),
                   encoding="utf-8") as handle:
             index_map = json.load(handle)
         for name in index_map:
-            with Image.open(os.path.join(workdir, "sheets", name)) as page:
+            page_path = os.path.join(datadirs.sheets_dir(workdir), name)
+            with Image.open(page_path) as page:
                 self.assertLessEqual(page.width, sheets.LONG_EDGE)
 
     def test_a_strip_taller_than_the_bound_still_gets_a_sheet(self):
@@ -742,11 +831,12 @@ class TestWidthSorting(SheetFixture):
         widths = self._mixed()
         workdir, manifest = self._workdir(widths)
         sheets.build_sheets(workdir, manifest)
-        with open(os.path.join(workdir, "sheets.json"),
+        with open(datadirs.sheets_index(workdir),
                   encoding="utf-8") as handle:
             index_map = json.load(handle)
         for name, covered in index_map.items():
-            with Image.open(os.path.join(workdir, "sheets", name)) as page:
+            page_path = os.path.join(datadirs.sheets_dir(workdir), name)
+            with Image.open(page_path) as page:
                 pixels = np.asarray(page.convert("L"))
             row = 10
             for number in covered:

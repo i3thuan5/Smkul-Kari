@@ -56,6 +56,7 @@ import subprocess
 import sys
 
 from scripts.errors import PipelineError
+from scripts import datadirs
 from scripts import lowpri
 from scripts.news import gap_sheets
 from scripts.news import episodes
@@ -199,12 +200,13 @@ def move_strips(work, cues, fresh, lo, count):
     `cues` is the spliced list, so the recut cues are at `lo .. lo+count-1`
     and carry the times the new names come from.
     """
-    strips = os.path.join(work, "strips")
+    strips = paths.strips_dir(work)
     added = 0
     for number in range(count):
         cue = cues[lo - 1 + number]
         source = None
-        for name in sorted(glob.glob(os.path.join(fresh, "strips", "*"))):
+        for name in sorted(glob.glob(os.path.join(paths.strips_dir(fresh),
+                                                  "*"))):
             if os.path.basename(name).startswith("%05d_" % (number + 1)) \
                     or os.path.basename(name).startswith(
                         stripname.of(cue["start"], "")[:-5]):
@@ -214,7 +216,7 @@ def move_strips(work, cues, fresh, lo, count):
             continue
         target = stripname.of(cue["start"], "han")
         shutil.copy2(source, os.path.join(strips, target))
-        cue["images"] = {"han": os.path.join("strips", target)}
+        cue["images"] = {"han": datadirs.strip_ref(target)}
         added += 1
     return 0, added
 
@@ -232,8 +234,13 @@ def main(argv=None):
                     help="rebuild the contact sheets and stop")
     args = ap.parse_args(argv)
 
-    work = os.path.join(paths.WORK, args.stem + ".work")
-    with open(os.path.join(work, "cues.json"), encoding="utf-8") as handle:
+    work = paths.work_dir(args.stem)
+    # the flat `<work>/cues.json` this used to name went with the stage
+    # split; rewrite the timeline readers actually use
+    timeline = paths.cues_to_read(work)
+    if timeline is None:
+        raise PipelineError("%s 無時間軸" % work)
+    with open(timeline, encoding="utf-8") as handle:
         book = json.load(handle)
     cues = book["cues"]
     if args.sheets_only:
@@ -247,8 +254,7 @@ def main(argv=None):
     print("舊 cue %d–%d：%.1f–%.1f 秒（%d 條）"
           % (args.lo, args.hi, start, end, args.hi - args.lo + 1))
 
-    video = args.video or os.path.join(paths.MKV_ARCHIVE,
-                                       book["video"].split("/")[-1])
+    video = args.video or paths.mkv_path(_srt_name(args.stem))
     if not os.path.exists(video):
         raise PipelineError("揣無影片：%s" % video)
 
@@ -276,7 +282,7 @@ def main(argv=None):
     book["rescanned"] = book.get("rescanned", []) + [
         {"lo": args.lo, "hi": args.hi, "region": args.region,
          "count": len(new)}]
-    with open(os.path.join(work, "cues.json"), "w", encoding="utf-8") as out:
+    with open(timeline, "w", encoding="utf-8") as out:
         json.dump(book, out, ensure_ascii=False, indent=2, sort_keys=True)
 
     moved, added = move_strips(work, spliced, fresh, args.lo, len(new))
@@ -304,17 +310,16 @@ def rebuild_sheets(work, book):
     anything. `gap_sheets` cannot do it either -- it builds `.work` out of
     a `.work` beside it, and this batch was cut straight into `.work`.
     """
-    for stale in ("transcripts.json", "verified.json"):
-        target = os.path.join(work, stale)
+    for target in (paths.transcripts_file(work), paths.verified_file(work)):
         if os.path.exists(target):
             os.rename(target, target + ".before-rescan")
-    folder = os.path.join(work, "sheets")
+    folder = paths.sheets_dir(work)
     if os.path.isdir(folder):
         shutil.rmtree(folder)
     slots, cols, anchor = gap_sheets.news_sheet_layout()
     made = sheets.build_sheets(work, book, row_slots=slots,
                                compare_cols=cols, right_anchor=anchor)
-    with open(os.path.join(work, "transcripts.json"), "w",
+    with open(paths.transcripts_file(work), "w",
               encoding="utf-8") as handle:
         json.dump({}, handle, ensure_ascii=False, indent=2,
                   sort_keys=True)

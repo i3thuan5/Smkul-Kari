@@ -56,12 +56,16 @@ aiyalaeho，依賴ê方向就顛倒去（這馬是 aiyalaeho → news），所�
 
 | 檔 | 做什麼 |
 |---|---|
-| `cuelib.py` | 像素核心：遮罩、區域運算、取樣、cue 切分（Segmenter）；`MaskSpec.band_rows` 會使共遮罩裁到字幕帶彼幾列，帶以外逐列算空 |
+| `decode.py` | ffmpeg 讀取：裁切框（`exact=1`、偶數界）、`stream_region`（`fps` 濾鏡重取樣）、`stream_frames`（原生格率逐格，時間取 `showinfo` 的真實 pts；可只放行 select 視窗，視窗多時走 `-filter_script`）、`window_frames`（重疊視窗共用畫面、關一個交一個）；ffmpeg 執行緒數預設 2 |
+| `refine.py` | 邊界精修的判斷：±0.24 秒視窗逐格歸左右兩側、取兩側中點；一集所有視窗一支 ffmpeg（`refine_all`）；沿用粗切值時分「取不到畫面」「無法分辨」 |
+| `sheetsize.py` | Claude Vision 輸入組合圖的價錢：只讀 PNG 檔頭 24 bytes 拿寬高、算視覺 token（`⌈寬÷28⌉×⌈高÷28⌉`），`PATCH`／`LONG_EDGE`／`VISUAL_TOKENS` 的正本；只用標準函式庫，切批跑在沒有 numpy／PIL 的系統 python3 上 |
+| `sampling.py` | 粗切取樣：每 0.2 秒目標取最接近的來源格，時間記該格真實 pts，同一格不交兩次；格率宣告為 0/0 時估算用 29.97 |
+| `cuelib.py` | 像素核心：遮罩、cue 切分（Segmenter，調成每 0.2 秒餵一格）；`MaskSpec.band_rows` 會使共遮罩裁到字幕帶彼幾列，帶以外逐列算空 |
 | `band.py` | 字幕帶位置偵測（preset 載入與帶位判準） |
 | `ocr.py` | tesseract 輸出清理 |
 | `sheets.py` | contact sheet 產生（給視覺辨識讀） |
 | `transcripts.py` | 視覺逐字稿帳本：TSV 驗證匯入、transcripts.json／verified.json |
-| `cli.py` | `python -m scripts.ocr.cli`：detect／cues／ocr／srt／auto 五階段；`cues --band-rows LO,HI` 用**絕對列**指定字幕帶，寫入 manifest ê是 region 內ê偏移（《開會了》靠這隻共遮罩裁到帶頂，畫面別位ê字免影響切 cue）；`cues --mask-scale N` 覆寫 preset ê取樣倍率（無傳就照 preset，無 preset 就是 1＝逐畫素） |
+| `cli.py` | `python -m scripts.ocr.cli`：detect／cues／ocr／srt／auto 五階段；`cues` 原生格率解碼、每 `1/--fps` 秒取一格（`--threads` 調 ffmpeg 執行緒數）；`cues --band-rows LO,HI` 用**絕對列**指定字幕帶，寫入 manifest ê是 region 內ê偏移（《開會了》靠這隻共遮罩裁到帶頂，畫面別位ê字免影響切 cue）；`cues --mask-scale N` 覆寫 preset ê取樣倍率（無傳就照 preset，無 preset 就是 1＝逐畫素） |
 
 ## srtlib/——兩側共用
 
@@ -98,12 +102,13 @@ aiyalaeho，依賴ê方向就顛倒去（這馬是 aiyalaeho → news），所�
 | `sources.py` | 一集配一支檔的規則（母帶優先→時段相符→同名不同夾→一檔一集） |
 | `episodes.py`／`resolve_slug.py` | 節目目錄讀出來ê逐集條目（`slug`／`file`／`pending` 攏是推導ê）；目錄索引與命名 |
 | `fetch_sftp.sh`／`run_cues.sh`／`sftp.sh`／`sftp-askpass.sh` | 影像側抓檔與切 cue（吃播出月份，清單對節目目錄提；密碼只以檔案存在；`sftp.sh` 收動詞＋獨立參數，路徑不進指令字串） |
-| `refine_cues.py`／`verify_band.py` | cue 邊界精修（**愛 `--preset`／`--presets`**，精修愛佮切 cue 用仝一款判準，無講就拒絕走）、字幕帶前驗（順紲驗欄方向：字幕ê右緣有無猶佇比對遮罩內底） |
+| `refine_cues.py`／`verify_band.py` | cue 邊界精修（一集一支 ffmpeg、原生格率；**愛 `--preset`／`--presets`**，精修愛佮切 cue 用仝一款判準，無講就拒絕走）、字幕帶前驗（順紲驗欄方向：字幕ê右緣有無猶佇比對遮罩內底） |
 | `ocr/stripname.py` | Strip ê檔名：用 cue ê起始時間，因為序號會綴重新編號走 |
 | `blank_runs.py` | 掠 vision TSV 內底ê長連紲空白：字幕印佇帶外ê段會規段變空白 |
 | `rescan_band.py` | 用改正ê帶重切一段，接轉原本ê cue 排、規集重新編號 |
 | `split_cue.py` | 佇量出來ê時間點kā一條 cue 剖做兩條，後壁ê重新編號 |
 | `migrate_strips.py` | Strip ê檔名對 cue 序號換做起始時間（照磁碟頂ê檔案走，毋是照 cue）|
+| `move_outdirs.py` | 一次性搬家：`kithann/out` 改成「語料 → 月份 → 集」（`news/1-ocr/<年-月>/<slug>.work`、`news/logs`、`news/mkv`、`news/2-asr`、`news/stage*`），work dir 內（連開會了）改成 `2-strips`／`3-refined`／`4-sheets`／`5-transcripts` 並改寫時間軸記的圖條路徑；`--dry-run` 先列清單，搬完自檢，不覆寫已存在的目的地 |
 | `redump_store.py` | 店面ê JSON 重排做人讀有ê形（縮排、鍵排序、漢字免跳脫）；JSONL 一逝一筆免縮排。干焦改排版，內容無動 |
 | `gap_sheets.py`／`batches.py`／`ingest.py` | 視覺辨識批次的出題與收卷 |
 | `make_srt.py`／`make_all.py`／`publish.py`／`rebuild.py` | 組裝、時間軸入庫、離線重建驗證 |
@@ -117,6 +122,15 @@ aiyalaeho，依賴ê方向就顛倒去（這馬是 aiyalaeho → news），所�
 | `reread_tools/regen_strips.py` | 照新編號重生 strips／sheets／sheets.json |
 | `resplit.py` | kā `reread` 切出來ê段真正寫入時間軸：一條 cue 換做幾若條，TSV ê編號綴咧徙（兩爿做伙改，無就逐格ê字會歪去） |
 | `presets.json` | 版型知識（哪個節目哪種帶位） |
+
+## 新節目要走哪一套：看字幕是「族語＋華語兩列」還是「只有華語一列」
+
+使用者裁定 2026-09-16。`news/` 與 `aiyalaeho/` 分成兩套，**分界不是節目名，是字幕版型**：
+
+- **只有華語一列**（族語新聞這種）→ 走 `news/`。一條 cue 一列圖條，組合圖上兩條 cue 之間隔著區塊間隔，字不會互相干擾。
+- **族語一列＋華語一列**（《開會了》這種）→ 走 `aiyalaeho/`。一條 cue 兩列圖條，而且兩列在畫面上是**貼著的**：列窗必然切在字身上，族語的降部（`g`、`p`、`y`）會被切到下一列圖條的頂端（111 集實測 88% 的 cue 如此，殘餘中位 3 px、p99 6 px），所以組合圖上同一條 cue 的兩列之間要留得比殘餘開，讀者才不會把它看成上一列字母的一部分。族語列還有 `^`、`'` 這些符號要逐字保留，判準（`aiyalaeho/brief.md`）和新聞那份不一樣。
+
+新節目進來時先看這一項再決定放哪一邊；兩列的還要量一次「降部被切幾 px」，因為那要看該節目的字型與行距。
 
 ## aiyalaeho/——《開會了》編排
 

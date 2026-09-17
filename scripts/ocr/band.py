@@ -15,6 +15,7 @@ import subprocess
 import numpy as np
 
 from scripts.ocr import cuelib
+from scripts.ocr import decode
 from scripts.errors import PipelineError
 
 
@@ -60,7 +61,7 @@ def detect_band(video_path, samples=120, spec=None, search_top=0.55,
     width = info["width"]
     height = info["height"]
     top = int(height * search_top)
-    region = cuelib.normalize_region((0, top, width, height - top),
+    region = decode.normalize_region((0, top, width, height - top),
                                      width, height)
     top = region[1]
 
@@ -134,7 +135,7 @@ def region_from_profile(profile, top, width, height,
     y1 = min(top + hi + pad, height)
     x0, x1 = _column_extent(profile, lo, hi, width)
 
-    region = cuelib.normalize_region((x0, y0, x1 - x0, y1 - y0),
+    region = decode.normalize_region((x0, y0, x1 - x0, y1 - y0),
                                      width, height)
     if region[3] < 12:
         # The chosen band was tens of pixels tall; if the box that came out
@@ -263,17 +264,17 @@ def _pad_lines(kept, pad, limit):
 
 def probe_or_die(video_path):
     try:
-        return cuelib.probe_video(video_path)
+        return decode.probe_video(video_path)
     except Exception as exc:
         raise PipelineError("ffprobe failed on %s: %s" % (video_path, exc))
 
 
 def grab_frame(video_path, ts, region):
-    x, y, w, h = cuelib.normalize_region(region)
+    x, y, w, h = decode.normalize_region(region)
     cmd = [
         "ffmpeg", "-v", "error", "-ss", "%.3f" % ts, "-i", video_path,
         "-frames:v", "1",
-        "-vf", cuelib.crop_chain((x, y, w, h), "format=rgb24"),
+        "-vf", decode.crop_chain((x, y, w, h), "format=rgb24"),
         "-f", "rawvideo", "-",
     ]
     out = subprocess.run(cmd, stdout=subprocess.PIPE,
@@ -285,13 +286,13 @@ def grab_frame(video_path, ts, region):
 
 def grab_burst(video_path, ts, region, count=2, fps=5.0):
     """Grab `count` consecutive samples from one seek."""
-    x, y, w, h = cuelib.normalize_region(region)
+    x, y, w, h = decode.normalize_region(region)
     span = (count + 0.5) / float(fps)
     cmd = [
         "ffmpeg", "-v", "error", "-ss", "%.3f" % ts, "-t", "%.3f" % span,
         "-i", video_path,
         "-vf", "fps=%s,%s" % (
-            fps, cuelib.crop_chain((x, y, w, h), "format=rgb24")),
+            fps, decode.crop_chain((x, y, w, h), "format=rgb24")),
         "-f", "rawvideo", "-",
     ]
     out = subprocess.run(cmd, stdout=subprocess.PIPE,

@@ -31,7 +31,7 @@ def vision_complete(work):
     assembled and published with subtitles simply missing from it.
     """
     cues = paths.cues_to_read(work)
-    verified = os.path.join(work, "verified.json")
+    verified = paths.verified_file(work)
     if not (cues and os.path.exists(verified)):
         return False
     with open(cues, encoding="utf-8") as handle:

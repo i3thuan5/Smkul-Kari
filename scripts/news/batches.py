@@ -20,40 +20,10 @@ WORK = paths.WORK
 OUT = paths.KARI_VISION
 
 
-def pending_sheets(work):
-    """Sheets whose cues are not all verified yet."""
-    with open(os.path.join(work, "sheets.json"), encoding="utf-8") as handle:
-        sheets = json.load(handle)
-    verified = {}
-    path = os.path.join(work, "verified.json")
-    if os.path.exists(path):
-        with open(path, encoding="utf-8") as handle:
-            verified = json.load(handle)
-    out = []
-    for name in sorted(sheets):
-        todo = []
-        for index in sheets[name]:
-            if not verified.get(str(index)):
-                todo.append(index)
-        if todo:
-            out.append((name, sheets[name]))
-    return out
-
-
-def spans(count, size=None):
-    """Where to cut `count` pending sheets into batches: a list of (lo, hi).
-
-    Delegates to the reader brief's own planner instead of cutting here, so
-    the two cannot drift: this module hands out the TSV names (b01, b02...)
-    and `prompt` writes the brief for each of those numbers. They used to
-    disagree about a short tail -- 51 sheets came out as three batches here
-    and two there -- which sent two readers at the same cues under two
-    names, and `ingest` refuses the episode ("cue X appears in both").
-
-    `size` defaults to `prompt.SIZE` rather than to a number of its own,
-    for the same reason: one knob, not two that have to be kept equal.
-    """
-    return prompt.plan(count, size or prompt.SIZE, prompt.MIN_TAIL)
+# One planner, one list: `prompt` both cuts the batches and names their TSVs,
+# and this prints exactly that. See `prompt.batches_of` and
+# `prompt.tsv_names` for why the two used to disagree.
+pending_sheets = prompt.pending_sheets
 
 
 def srt_name_of(slug):
@@ -74,33 +44,35 @@ def srt_name_of(slug):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("slug")
-    ap.add_argument("--size", type=int, default=None)
     ap.add_argument("--limit", type=int, default=0)
     args = ap.parse_args()
     args.slug = paths.check_name(args.slug, "slug")
 
-    work = os.path.join(WORK, args.slug + ".work")
+    work = paths.work_dir(args.slug, WORK)
     tag = srt_name_of(args.slug)
-    sheets = pending_sheets(work)
-    print("# %s: %d sheet(s) pending" % (args.slug, len(sheets)))
-    made = 0
-    for lo, hi in spans(len(sheets), args.size):
-        batch = sheets[lo:hi]
-        made += 1
+    with open(paths.sheets_index(work), encoding="utf-8") as handle:
+        sheets = json.load(handle)
+    planned = prompt.batches_of(work)
+    names = prompt.tsv_names(work, tag, len(planned))
+    weights = dict(prompt.sheet_weights(work, sorted(sheets), sheets))
+    print("# %s: %d sheet(s) pending in %d batch(es)"
+          % (args.slug, len(pending_sheets(work)), len(planned)))
+    for made, batch in enumerate(planned, 1):
         if args.limit and made > args.limit:
             break
-        names = []
         cues = []
-        for name, on in batch:
-            names.append(name)
-            cues += on
+        load = []
+        for name in batch:
+            cues += sheets[name]
+            load.append(weights[name])
         cues = sorted(cues)
-        print("\n=== batch %02d  (%d sheets, %d cues) ===" %
-              (made, len(names), len(cues)))
-        print("DIR %s/sheets/" % work)
-        print("SHEETS %s" % " ".join(names))
+        print("\n=== batch %02d  (%d sheets, %d cues, ~%d tokens) ===" %
+              (made, len(batch), len(cues), prompt.estimate(load)))
+        print("DIR %s" % paths.sheets_dir(work))
+        print("SHEETS %s" % " ".join(batch))
         print("CUES %d..%d" % (cues[0], cues[-1]))
-        print("TSV %s/b%02d.tsv" % (paths.stage_path(OUT, tag), made))
+        print("TSV %s" % os.path.join(paths.stage_path(OUT, tag),
+                                      names[made - 1]))
 
 
 if __name__ == "__main__":

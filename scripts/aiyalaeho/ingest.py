@@ -33,6 +33,7 @@ import json
 import os
 import sys
 
+from scripts import datadirs
 from scripts.aiyalaeho import paths
 from scripts.ocr import transcripts
 from scripts.errors import PipelineError
@@ -83,7 +84,7 @@ def _audit(files, on_sheets):
 
 
 def _on_sheets(work):
-    with open(os.path.join(work, "sheets.json"), encoding="utf-8") as handle:
+    with open(datadirs.sheets_index(work), encoding="utf-8") as handle:
         sheets = json.load(handle)
     out = set()
     for cues in sheets.values():

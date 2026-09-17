@@ -28,7 +28,7 @@ from scripts.srtlib import srt
 
 
 def load_transcripts(work):
-    path = os.path.join(work, "transcripts.json")
+    path = paths.transcripts_file(work)
     if not os.path.exists(path):
         return {}
     with open(path, encoding="utf-8") as handle:

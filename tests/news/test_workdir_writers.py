@@ -1,4 +1,4 @@
-"""Work dir timelines: written once into `1-cues/`, refined into `2-refined/`.
+"""Work dir stages: 1-cues, 2-strips, 3-refined, 4-sheets, 5-transcripts.
 
 `refine_cues` used to rewrite the coarse file in place. Two things went
 wrong with that, both silent: a refine killed midway left the coarse
@@ -9,16 +9,19 @@ reporting it.
 
 The read side already goes through `cues_to_read()`. These are the
 **write** side: `cues` puts the coarse timeline in `1-cues/` and never
-touches it again, `refine_cues` puts its result beside it in `2-refined/`.
+touches it again, `refine_cues` puts its result beside it in `3-refined/`.
+The number is the production order: strips are written by the same pass
+that cuts, before refining.
 
 舊ê平版面（`<work>/cues.json`）愛繼續行會通：遷移工具猶未掃，而且
 《開會了》彼爿ê程式直接讀彼个路徑。所以 refine **看輸入ê版面**決定
-欲寫佗位——新版面寫 `2-refined/`，平版面照舊就地改寫。
+欲寫佗位——新版面寫 `3-refined/`，平版面照舊就地改寫。
 """
 import json
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 from scripts import datadirs
 from scripts.news import paths
@@ -39,7 +42,30 @@ class TestStageNamesAreShared(unittest.TestCase):
 
     def test_the_stage_names_live_in_the_shared_module(self):
         self.assertEqual(datadirs.COARSE_STAGE, "1-cues")
-        self.assertEqual(datadirs.REFINED_STAGE, "2-refined")
+        self.assertEqual(datadirs.STRIPS_STAGE, "2-strips")
+        self.assertEqual(datadirs.REFINED_STAGE, "3-refined")
+        self.assertEqual(datadirs.SHEETS_STAGE, "4-sheets")
+        self.assertEqual(datadirs.TRANSCRIPTS_STAGE, "5-transcripts")
+
+    def test_each_product_is_inside_its_own_stage(self):
+        work = "/w"
+        self.assertEqual(datadirs.strips_dir(work), "/w/2-strips")
+        self.assertEqual(datadirs.sheets_dir(work), "/w/4-sheets")
+        self.assertEqual(datadirs.sheets_index(work),
+                         "/w/4-sheets/sheets.json")
+        self.assertEqual(datadirs.transcripts_file(work),
+                         "/w/5-transcripts/transcripts.json")
+        self.assertEqual(datadirs.verified_file(work),
+                         "/w/5-transcripts/verified.json")
+
+    def test_a_refine_written_to_the_old_stage_is_not_read(self):
+        # 精修寫進舊的 `2-refined/`，讀的人看 `3-refined/`，會靜靜讀到粗切
+        with tempfile.TemporaryDirectory() as work:
+            old = os.path.join(work, "2-refined", "cues.json")
+            os.makedirs(os.path.dirname(old))
+            with open(old, "w", encoding="utf-8") as handle:
+                handle.write("{}")
+            self.assertIsNone(datadirs.cues_to_read(work))
 
     def test_news_paths_still_exposes_them(self):
         self.assertEqual(paths.COARSE_STAGE, datadirs.COARSE_STAGE)
@@ -121,6 +147,48 @@ class TestRefineWritesBesideTheCoarseOne(unittest.TestCase):
         with open(flat, encoding="utf-8") as handle:
             self.assertTrue(json.load(handle)["refined"])
         self.assertFalse(os.path.exists(paths.refined_cues(self.work)))
+
+
+class TestStripsLandWhereTheTimelineSays(unittest.TestCase):
+    """圖條寫進 `strips/`、時間軸卻記 `2-strips/`，組合圖就抓不到圖。"""
+
+    def test_recorded_strip_paths_exist(self):
+        from tests.ocr import test_cues_native as native
+        case = native.TestCuesOnNativeFrames("test_manifest_says_how_it_"
+                                             "was_sampled")
+        with tempfile.TemporaryDirectory() as work:
+            manifest = case.run_into(work)
+            self.assertEqual(len(manifest["cues"]), 2)
+            for cue in manifest["cues"]:
+                for rel in cue["images"].values():
+                    self.assertTrue(rel.startswith("2-strips" + os.sep), rel)
+                    self.assertTrue(os.path.exists(os.path.join(work, rel)))
+            self.assertFalse(os.path.exists(os.path.join(work, "strips")))
+
+
+class TestSheetsAndTranscriptsStages(unittest.TestCase):
+
+    def test_sheets_and_their_index_go_to_4_sheets(self):
+        from scripts.ocr import sheets
+        with tempfile.TemporaryDirectory() as work:
+            with mock.patch.object(sheets, "_cue_blocks",
+                                   return_value=([], 0, 0, 0)):
+                sheets.build_sheets(work, {"cues": []})
+            self.assertTrue(os.path.exists(datadirs.sheets_index(work)))
+            self.assertTrue(os.path.isdir(datadirs.sheets_dir(work)))
+            self.assertFalse(os.path.exists(os.path.join(work, "sheets")))
+            self.assertFalse(os.path.exists(
+                os.path.join(work, "sheets.json")))
+
+    def test_transcripts_go_to_5_transcripts(self):
+        from scripts.ocr import transcripts
+        with tempfile.TemporaryDirectory() as work:
+            transcripts._merge_transcripts(work, {"1": {"han": "字"}}, False)
+            self.assertTrue(os.path.exists(datadirs.transcripts_file(work)))
+            self.assertEqual(transcripts.load_transcripts(work),
+                             {"1": {"han": "字"}})
+            self.assertFalse(os.path.exists(
+                os.path.join(work, "transcripts.json")))
 
 
 if __name__ == "__main__":

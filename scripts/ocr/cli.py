@@ -27,6 +27,8 @@ from scripts import datadirs
 from scripts.ocr import transcripts
 from scripts.srtlib import assemble
 from scripts.ocr import cuelib
+from scripts.ocr import decode
+from scripts.ocr import sampling
 from scripts.ocr import stripname
 from scripts.srtlib import srt as srtfmt
 from scripts.ocr import band as detector
@@ -165,8 +167,13 @@ def _split_region_lines(video, region, spec, lang):
     return lines
 
 
-def _feed_frames(video, region, spec, seg, args, total):
+def _feed_frames(video, region, spec, seg, args, total, source_fps=None):
     """Stream the band through the segmenter; returns (last_ts, seen).
+
+    Every source frame is decoded, then one per `1 / --fps` seconds is
+    picked -- the one nearest the target time -- and handed over with its
+    own pts. The segmenter's `min_stable` is tuned for that spacing; fed
+    every frame it would believe a two-frame glitch.
 
     `frame_mask`, not `text_mask`: the segmenter is the one caller that may
     look at a subsampled, windowed view of the band. The frame handed to
@@ -174,9 +181,15 @@ def _feed_frames(video, region, spec, seg, args, total):
     """
     last_ts = args.start
     seen = 0
-    for ts, frame in cuelib.stream_region(video, region, args.fps,
-                                          start=args.start,
-                                          duration=args.duration):
+    frames = decode.stream_frames(video, region, threads=args.threads,
+                                  start=args.start, duration=args.duration,
+                                  grid=(1.0 / args.fps, source_fps))
+    # the edge rule has to use ffmpeg's own pass width, or the first and
+    # last grid points come out differently from a thinned stream
+    half = decode.grid_half(sampling.source_fps(source_fps))
+    picked = sampling.nearest_samples(frames, interval=1.0 / args.fps,
+                                      start=args.start, tolerance=half)
+    for ts, frame in picked:
         seg.feed(ts, frame, cuelib.frame_mask(frame, spec))
         last_ts = ts
         seen += 1
@@ -194,7 +207,7 @@ def write_manifest(workdir, manifest):
     """Put the coarse timeline in its stage folder; return where it went.
 
     Written once and then read-only: `refine_cues` puts its result beside
-    it in `2-refined/` rather than over the top of it, so a refine killed
+    it in `3-refined/` rather than over the top of it, so a refine killed
     midway costs the refinement and not the cut. Regenerating a damaged
     coarse timeline means cutting the episode again, which means fetching
     the video again -- the reason the stages are separate at all.
@@ -233,7 +246,7 @@ def stage_cues(args):
     region, spec, lines = _region_spec_lines(video, args, key, preset)
 
     info = detector.probe_or_die(video)
-    fixed = cuelib.normalize_region(region, info["width"], info["height"])
+    fixed = decode.normalize_region(region, info["width"], info["height"])
     if fixed != list(region):
         print("region snapped to even crop bounds: %d,%d,%d,%d"
               % tuple(fixed))
@@ -254,7 +267,7 @@ def stage_cues(args):
                   "lang": args.lang}]
 
     workdir = args.out
-    strips = os.path.join(workdir, "strips")
+    strips = datadirs.strips_dir(workdir)
     os.makedirs(strips, exist_ok=True)
 
     records = []
@@ -269,7 +282,7 @@ def stage_cues(args):
             crop = cue.best_rgb[lo:hi, :, :]
             name = stripname.of(cue.start, line["name"])
             Image.fromarray(crop).save(os.path.join(strips, name))
-            record["images"][line["name"]] = os.path.join("strips", name)
+            record["images"][line["name"]] = datadirs.strip_ref(name)
         records.append(record)
 
     # --mask-scale overrides what the preset declared; neither given means
@@ -296,7 +309,8 @@ def stage_cues(args):
     total = info["duration"]
     if args.duration is not None:
         total = min(total, args.duration)
-    last_ts, seen = _feed_frames(video, region, spec, seg, args, total)
+    last_ts, seen = _feed_frames(video, region, spec, seg, args, total,
+                                 info.get("fps"))
 
     cues = seg.finish(last_ts + frame_dt)
     print("frames sampled: %d   cues found: %d" % (seen, len(cues)))
@@ -307,6 +321,8 @@ def stage_cues(args):
         "lines": lines,
         "mask": spec.to_dict(),
         "sample_fps": args.fps,
+        "sampling": "nearest-native",
+        "source_fps": round(sampling.source_fps(info.get("fps")), 3),
         "segmenter": {
             "min_ink": args.min_ink,
             "change": args.change,
@@ -327,7 +343,7 @@ def stage_cues(args):
                                     compare_cols=spec.compare_cols,
                                     right_anchor=spec.right_anchor)
         print("wrote %d contact sheet(s) to %s"
-              % (made, os.path.join(workdir, "sheets")))
+              % (made, datadirs.sheets_dir(workdir)))
     return 0
 
 
@@ -344,7 +360,8 @@ def stage_ocr(args):
     else:
         raise PipelineError("unknown engine %r" % args.engine)
 
-    path = os.path.join(workdir, "transcripts.json")
+    path = datadirs.transcripts_file(workdir)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as handle:
         json.dump(texts, handle, ensure_ascii=False, indent=2,
                   sort_keys=True)
@@ -513,7 +530,7 @@ def stage_pending(args):
     manifest = transcripts.read_manifest(workdir)
     verified = transcripts.load_verified(workdir)
 
-    path = os.path.join(workdir, "sheets.json")
+    path = datadirs.sheets_index(workdir)
     if not os.path.exists(path):
         raise PipelineError(
             "no sheets.json in %s -- rebuild the contact sheets so the "
@@ -783,7 +800,13 @@ def add_cue_options(parser):
                              "pixel). Cut points only -- strips and contact "
                              "sheets are built from full-resolution frames")
     parser.add_argument("--fps", type=float, default=5.0,
-                        help="frames sampled per second (default 5)")
+                        help="frames judged per second (default 5): every "
+                             "source frame is decoded and the one nearest "
+                             "each 1/fps target is used, with its real pts")
+    parser.add_argument("--threads", type=int,
+                        default=decode.DEFAULT_THREADS,
+                        help="ffmpeg decode threads (default %d)"
+                             % decode.DEFAULT_THREADS)
     parser.add_argument("--start", type=float, default=0.0)
     parser.add_argument("--duration", type=float, default=None)
     parser.add_argument("--min-ink", type=int, default=120,

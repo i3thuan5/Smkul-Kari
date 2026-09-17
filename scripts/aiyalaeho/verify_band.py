@@ -63,6 +63,7 @@ import numpy as np
 
 from scripts.aiyalaeho import paths
 from scripts.ocr import cuelib
+from scripts.ocr import decode
 from scripts.errors import PipelineError
 
 # Where to sample: past the opening titles, long enough that a stretch
@@ -145,13 +146,13 @@ def measure(video, region, spec, start=START, duration=DURATION, fps=FPS):
     measured too: the band's own share means nothing without them, and a
     layout whose band starts higher shows up as a band that never ends.
     """
-    probe = cuelib.normalize_region(
+    probe = decode.normalize_region(
         (region[0], region[1] - ABOVE_ROWS - ABOVE_GAP, region[2],
          region[3] + ABOVE_ROWS + ABOVE_GAP))
     band = np.zeros(probe[3])
     ink = np.zeros(probe[3])
     frames = 0
-    for _stamp, rgb in cuelib.stream_region(video, probe, fps=fps,
+    for _stamp, rgb in decode.stream_region(video, probe, fps=fps,
                                             start=start, duration=duration):
         band += band_fraction(rgb)
         ink += cuelib.text_mask(rgb, spec).sum(axis=1)
@@ -355,7 +356,7 @@ def load_preset(name, presets_path=None):
 
 def check(video, preset, start=START, duration=DURATION):
     """(state, problems, report) for one episode."""
-    region = cuelib.normalize_region(preset["region"])
+    region = decode.normalize_region(preset["region"])
     spec = cuelib.MaskSpec.from_dict(preset.get("mask", {}))
     band, ink, probe_top, frames = measure(video, region, spec, start,
                                            duration)

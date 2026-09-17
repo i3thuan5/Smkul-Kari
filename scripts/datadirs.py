@@ -100,8 +100,15 @@ def check_under(path, kind="path", roots=None):
 # With the stages separated the coarse file is written once and never
 # touched again, so a failed refine costs only the refinement.
 # 使用者裁定 2026-08-31.
+#
+# Every product has its stage (2026-09 reorganisation): the strips come out
+# of the cutting pass, so they are 2 and refining is 3; the Claude Vision
+# input sheets are 4 and what was read off them is 5.
 COARSE_STAGE = "1-cues"
-REFINED_STAGE = "2-refined"
+STRIPS_STAGE = "2-strips"
+REFINED_STAGE = "3-refined"
+SHEETS_STAGE = "4-sheets"
+TRANSCRIPTS_STAGE = "5-transcripts"
 
 
 def coarse_cues(work):
@@ -110,8 +117,38 @@ def coarse_cues(work):
 
 
 def refined_cues(work):
-    """The timeline `refine_cues` wrote: boundaries re-read at 25fps."""
+    """The timeline `refine_cues` wrote: boundaries at the native rate."""
     return os.path.join(work, REFINED_STAGE, "cues.json")
+
+
+def strips_dir(work):
+    """Where `cues` writes one strip per cue."""
+    return os.path.join(work, STRIPS_STAGE)
+
+
+def strip_ref(name):
+    """A strip as the timeline records it: relative to the work dir."""
+    return os.path.join(STRIPS_STAGE, name)
+
+
+def sheets_dir(work):
+    """The Claude Vision input sheets."""
+    return os.path.join(work, SHEETS_STAGE)
+
+
+def sheets_index(work):
+    """Which cues are on which sheet -- beside the sheets it describes."""
+    return os.path.join(work, SHEETS_STAGE, "sheets.json")
+
+
+def transcripts_file(work):
+    """The text read off the sheets, keyed by cue number."""
+    return os.path.join(work, TRANSCRIPTS_STAGE, "transcripts.json")
+
+
+def verified_file(work):
+    """Which cue numbers have been read, so a part-finished read resumes."""
+    return os.path.join(work, TRANSCRIPTS_STAGE, "verified.json")
 
 
 # What a work dir's timeline records about *this machine* and the store has

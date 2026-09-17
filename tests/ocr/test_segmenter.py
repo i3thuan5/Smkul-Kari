@@ -4,6 +4,7 @@ import unittest
 import numpy as np
 
 from scripts.ocr import cuelib
+from scripts.ocr import sampling
 
 
 class TestSegmenter(unittest.TestCase):
@@ -171,6 +172,54 @@ class TestSegmenterCallback(unittest.TestCase):
         self._feed([None, None, 0, 0, None, None, None],
                    lambda n, c: seen.append(n))
         self.assertEqual(seen, [1])
+
+
+class TestFeedRate(unittest.TestCase):
+    """The segmenter is tuned for one frame per 0.2 s, not the source rate.
+
+    `min_stable=2` means "two looks agree". At 0.2 s that is 0.4 s of
+    evidence; fed every 29.97 fps frame it is 0.067 s, so a two-frame
+    glitch inside a sentence confirms a change and splits the sentence.
+    Cue cutting must decode natively and then pick one frame per 0.2 s.
+    """
+
+    FPS = 30000 / 1001
+
+    def _native(self, glitch_at):
+        """7 s: one line, a 2-frame glitch at `glitch_at`, then blank."""
+        frames = []
+        for index in range(int(7 * self.FPS)):
+            slot = 0
+            if index in (glitch_at, glitch_at + 1):
+                slot = 2
+            if index >= int(6 * self.FPS):
+                slot = None
+            frames.append((round(index / self.FPS, 6), slot))
+        return frames
+
+    def _cut(self, frames, dt):
+        seg = cuelib.Segmenter(frame_dt=dt, min_ink=10, change=0.35,
+                               min_stable=2, min_duration=0.30)
+        rgb = np.zeros((4, 40, 3), dtype=np.uint8)
+        for ts, slot in frames:
+            mask = np.zeros((4, 40), dtype=bool)
+            if slot is not None:
+                mask[:, slot * 10:slot * 10 + 10] = True
+            seg.feed(ts, rgb, mask)
+        return seg.finish(7.0)
+
+    def test_every_native_frame_splits_a_sentence_on_a_glitch(self):
+        cues = self._cut(self._native(90), 1 / self.FPS)
+        self.assertEqual(len(cues), 2)
+
+    def test_one_frame_per_0_2_s_keeps_the_sentence_whole(self):
+        for glitch_at in range(90, 96):
+            picked = list(sampling.nearest_samples(iter(self._native(
+                glitch_at))))
+            cues = self._cut(picked, sampling.INTERVAL)
+            self.assertEqual(len(cues), 1, "glitch at frame %d" % glitch_at)
+            self.assertAlmostEqual(cues[0].start, 0.0, places=6)
+            self.assertAlmostEqual(cues[0].end, 6.0, delta=0.2)
 
 
 if __name__ == "__main__":

@@ -47,8 +47,9 @@ is the definition the test uses, and 002晨 cue 1 -- a studio shot, no
 text anywhere -- clears it with 11 marks of width 3. Studio openings are
 where that shows up, which is another reason the clock earns its column.
 
-The strips live in the work dir (`kithann/out/mxf/<slug>.work/strips/`),
-which is regenerable and not always still there. An episode whose work dir
+The strips live in the work dir
+(`kithann/out/news/1-ocr/<年-月>/<slug>.work/2-strips/`), which is
+regenerable and not always still there. An episode whose work dir
 is gone reports "no strips to measure" rather than "nothing to see": those
 are different answers and the caller is told which one it got.
 """
@@ -268,7 +269,7 @@ def work_of(srt_name):
         if entry.get("srt_name") != srt_name:
             continue
         folder = paths.work_dir(entry["slug"])
-        if os.path.isdir(os.path.join(folder, "strips")):
+        if os.path.isdir(paths.strips_dir(folder)):
             return folder
     return None
 

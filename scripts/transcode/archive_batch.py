@@ -100,6 +100,12 @@ def stage_name(srt_name, remote):
     return os.path.basename(remote)
 
 
+def staged_path(srt_name, remote):
+    """Where the staged master is: `paths.staged_path`, named as above."""
+    return os.path.join(os.path.dirname(paths.staged_path(srt_name, remote)),
+                        stage_name(srt_name, remote))
+
+
 def remote_archive_dir(srt_name):
     """<root>/<年-月> on the server."""
     return "%s/%s" % (REMOTE_ARCHIVE_ROOT, paths.month_of(srt_name))
@@ -229,7 +235,7 @@ def output_path(srt_name, archive_dir=None):
     # paths.MKV_ARCHIVE 就無效，測試改了看起來若像有影，其實無。
     if archive_dir is None:
         archive_dir = paths.MKV_ARCHIVE
-    return os.path.join(archive_dir, srt_name + ".mkv")
+    return paths.stage_path(archive_dir, srt_name, ".mkv")
 
 
 def already_done(srt_name, archive_dir=None):
@@ -252,6 +258,7 @@ def _fetch(remote, local):
     size = _remote_size(remote)
     if size is None:
         raise PipelineError("not found on SFTP: %s" % remote)
+    os.makedirs(os.path.dirname(local), exist_ok=True)
     have = os.path.getsize(local) if os.path.exists(local) else 0
     if have == size:
         print("  已在 stage，重用（%d MB）" % (size // 1_000_000))
@@ -385,6 +392,7 @@ def _encode(src, dst):
     a warning, and nothing lands in `dst` when it happens.
     """
     work = os.path.dirname(dst)
+    os.makedirs(work, exist_ok=True)
     name = os.path.basename(dst)
     if name.endswith(".mkv"):
         name = name[:-len(".mkv")]
@@ -471,7 +479,7 @@ def run_all_masters(args):
             print("skip  %s（拄仔才有人轉好）" % name, flush=True)
             continue
         print("== [%d/%d] %s" % (position, len(todo), name), flush=True)
-        local = os.path.join(paths.STAGE, stage_name(name, remote))
+        local = staged_path(name, remote)
         try:
             print("  抓取", remote, flush=True)
             _fetch(remote, local)
@@ -569,7 +577,7 @@ def main(argv=None):
         if not is_master(remote):
             continue
         print("==", name, flush=True)
-        local = os.path.join(paths.STAGE, stage_name(name, remote))
+        local = staged_path(name, remote)
         try:
             print("  抓取", remote)
             _fetch(remote, local)

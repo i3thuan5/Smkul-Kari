@@ -34,7 +34,7 @@ BRIEF = os.path.join(os.path.dirname(__file__), "brief.md")
 def work_dir(name):
     """The `.work` directory holding this episode's transcripts."""
     bits = name.split("_")
-    for d in sorted(glob.glob("kithann/out/mxf/*.work")):
+    for d in sorted(glob.glob(os.path.join(paths.WORK, "*", "*.work"))):
         got = os.path.basename(d)[:-len(".work")].split("_")
         if got[1] == bits[1] and got[3] == bits[2]:
             return d
@@ -70,7 +70,7 @@ def brief(name, tag, halves=2, span=None):
         lo = which * step + 1
         hi = min(total, lo + step - 1)
     got = sources(name)
-    videos = sorted(glob.glob("kithann/out/mkv/%s.mkv" % name))
+    videos = sorted(glob.glob(paths.mkv_path(name)))
     if not videos:
         raise PipelineError("揣無影片：%s" % name)
     with open(BRIEF, encoding="utf-8") as handle:

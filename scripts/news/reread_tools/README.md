@@ -68,14 +68,15 @@ strips/ 檔名        照起始時間號名（`t<毫秒八碼>_<列>.png`）
 
 **2 月 054–059 這 14 集是對頭做起ê，切 cue 愛指定 `--preset titv-news`。**
 `presets.json` ê `titv-news` 是比對**檔名內底ê `NL00`**（原始來源
-`21NL003_54午間族語新聞.mxf`），毋過 kithann/out/mkv/ ê檔名是用
+`21NL003_54午間族語新聞.mxf`），毋過 kithann/out/news/mkv/<年-月>/ ê檔名是用
 `srt_name` 號ê（`20210223_054_午間_Kavalan_噶瑪蘭.mkv`），比袂著。
 無指定ê時伊會家己偵測，出來是 `0,588,1920,436`——436 列懸，紅帶
 佮超文字攏含入去，全然毋著。
 
 ```bash
 PYTHONPATH=. .tox/rebuild/bin/python -m scripts.ocr.cli cues \
-  "kithann/out/mkv/<srt_name>.mkv" -o "kithann/out/mxf/<slug>.work" \
+  "kithann/out/news/mkv/<年-月>/<srt_name>.mkv" \
+  -o "kithann/out/news/1-ocr/<年-月>/<slug>.work" \
   --presets scripts/news/presets.json --preset titv-news --sheets --progress
 ```
 

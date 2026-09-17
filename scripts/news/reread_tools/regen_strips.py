@@ -12,23 +12,26 @@ import sys
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from scripts.ocr import cuelib
+from scripts.ocr import decode
 
+from scripts import datadirs
 from scripts import lowpri
+from scripts.news import paths
 from scripts.ocr import stripname
 
 lowpri.be_nice()   # 重生規集圖條，是長時間ê重工
 
 NAME, SLUG = sys.argv[1], sys.argv[2]
-W = os.path.join("kithann/out/mxf", SLUG + ".work")
-doc = json.load(open(os.path.join(W, "cues.json"), encoding="utf-8"))
+W = paths.work_dir(SLUG)
+doc = json.load(open(paths.cues_to_read(W), encoding="utf-8"))
 cues = doc["cues"] if isinstance(doc, dict) else doc
 spec = cuelib.MaskSpec.from_dict(
     (doc if isinstance(doc, dict) else {}).get("mask", {}))
 _meta = doc if isinstance(doc, dict) else {}
 region = tuple(_meta.get("region", [0, 722, 1920, 122]))
-vid = os.path.join("kithann/out/mkv", NAME + ".mkv")
+vid = paths.mkv_path(NAME)
 
-sdir = os.path.realpath(os.path.join(W, "strips"))
+sdir = os.path.realpath(paths.strips_dir(W))
 for f in glob.glob(os.path.join(sdir, "*.png")):
     os.remove(f)
 os.makedirs(sdir, exist_ok=True)
@@ -36,7 +39,7 @@ print("%s：%d cue → %s" % (NAME, len(cues), sdir), flush=True)
 
 for c in cues:
     frames = []
-    for _ts, rgb in cuelib.stream_region(
+    for _ts, rgb in decode.stream_region(
             vid, region, fps=5.0, start=c["start"],
             duration=max(0.2, c["end"] - c["start"])):
         frames.append(rgb)
@@ -50,8 +53,8 @@ for c in cues:
     # 見 `scripts/ocr/stripname.py`。
     Image.fromarray(img).save(
         os.path.join(sdir, stripname.of(c["start"], "han")))
-    c["images"] = {"han": os.path.join("strips",
-                                       stripname.of(c["start"], "han"))}
+    c["images"] = {"han": datadirs.strip_ref(
+        stripname.of(c["start"], "han"))}
     if c["index"] % 100 == 0:
         print("  %d/%d" % (c["index"], len(cues)), flush=True)
 
@@ -65,11 +68,11 @@ GUT, SCALE = 130, 0.62
 sw, sh = int(region[2] * SCALE), int(region[3] * SCALE)
 idx = [c["index"] for c in cues]
 manifest = {}
-base = os.path.join(W, "sheets")
+base = paths.sheets_dir(W)
 if os.path.isdir(base):
     for f in glob.glob(os.path.join(base, "*.png")):
         os.remove(f)
-shdir = os.path.realpath(os.path.join(W, "sheets"))
+shdir = os.path.realpath(paths.sheets_dir(W))
 os.makedirs(shdir, exist_ok=True)
 for k in range(0, len(idx), 4):
     group = idx[k:k + 4]
@@ -87,7 +90,7 @@ for k in range(0, len(idx), 4):
     sheet.save(os.path.join(shdir, fn))
     manifest[fn] = group
 json.dump(manifest,
-          open(os.path.join(W, "sheets.json"), "w", encoding="utf-8"),
+          open(paths.sheets_index(W), "w", encoding="utf-8"),
           ensure_ascii=False, indent=2, sort_keys=True)
 print("  strips %d、sheets %d、sheets.json 好矣"
       % (len(idx), len(manifest)), flush=True)

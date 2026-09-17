@@ -10,6 +10,7 @@ import tempfile
 import unittest
 
 from scripts.news import gap_sheets
+from scripts.news import paths
 
 
 class TestAlreadyRead(unittest.TestCase):
@@ -17,7 +18,8 @@ class TestAlreadyRead(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         if payload is not None:
-            with open(os.path.join(tmp.name, "verified.json"), "w",
+            os.makedirs(os.path.dirname(paths.verified_file(tmp.name)))
+            with open(paths.verified_file(tmp.name), "w",
                       encoding="utf-8") as handle:
                 json.dump(payload, handle)
         return tmp.name

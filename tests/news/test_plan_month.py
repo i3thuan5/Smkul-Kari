@@ -223,7 +223,7 @@ class TestAlreadyCut(unittest.TestCase):
             json.dump(body, handle)
 
     def _work(self, entry, refined):
-        work = os.path.join(self.root, entry["slug"] + ".work")
+        work = paths.work_dir(entry["slug"], self.root)
         self._write(paths.coarse_cues(work), {"cues": []})
         if refined:
             self._write(paths.refined_cues(work),
@@ -273,7 +273,7 @@ class TestAlreadyCut(unittest.TestCase):
         過，彼集就無閣重切矣。
         """
         entry = self._entry()
-        work = os.path.join(self.root, entry["slug"] + ".work")
+        work = paths.work_dir(entry["slug"], self.root)
         self._write(paths.coarse_cues(work), {"cues": [], "refined": True})
         self.assertFalse(self._cut(entry))
 

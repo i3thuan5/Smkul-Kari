@@ -29,7 +29,7 @@ RD = os.path.join("kithann/out/reread", NAME)
 # 對 TSV 讀，彼寡字就無去矣；閣較歹ê是編號一改，舊條目會指去**別
 # ê cue**，字就走位，而且無一个所在會報錯。
 W = None
-for d in sorted(glob.glob("kithann/out/mxf/*.work")):
+for d in sorted(glob.glob(os.path.join(paths.WORK, "*", "*.work"))):
     stem = os.path.basename(d)[:-len(".work")]
     bits = stem.split("_")
     if bits[1] == NAME.split("_")[1] and bits[3] == NAME.split("_")[2]:
@@ -37,7 +37,7 @@ for d in sorted(glob.glob("kithann/out/mxf/*.work")):
         break
 if W is None:
     raise SystemExit("揣無 work dir：%s" % NAME)
-with open(os.path.join(W, "transcripts.json"), encoding="utf-8") as handle:
+with open(paths.transcripts_file(W), encoding="utf-8") as handle:
     store = json.load(handle)
 rows = {}
 for key, got in store.items():

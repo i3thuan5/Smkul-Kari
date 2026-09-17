@@ -25,13 +25,14 @@
 
 | 路徑 | 何時產生 | 內容 | 性質 |
 |---|---|---|---|
-| `out/mxf/<slug>.work/` | `fetch_sftp.sh`／`run_cues.sh` 跑 `cues` 步驟 | `cues.json`（時間軸）、`sheets.json`、`sheets/*.png`、`strips/*.png` | 快取，遷入 Kari-SRT 後可刪 |
-| `out/mxf/<slug>.work/transcripts.json` | 有跑 `ocr --engine tesseract` 才有（非預設）| tesseract 辨識草稿 | 快取，不供字，可刪 |
+| `out/news/1-ocr/<年-月>/<slug>.work/` | `fetch_sftp.sh` 跑 `cues`、`refine_cues`、`gap_sheets`、`ingest` | `1-cues/cues.json`（粗切時間軸）、`2-strips/*.png`（圖條）、`3-refined/cues.json`（精修時間軸）、`4-sheets/`（Claude Vision 輸入組合圖與 `sheets.json`）、`5-transcripts/`（`transcripts.json`、`verified.json`）| 快取，遷入 Kari-SRT 後可刪 |
 | `out/smkul.csv` | `make_all.py` | 進度表**工作版**（含還沒做完的集數）| 快取，可刪；交付版由 `publish.py` 寫進 Kari-SRT |
-| `out/mxf-logs/<slug>.get.log` | `fetch_sftp.sh` 下載階段 | SFTP `get` 輸出紀錄 | 日誌，可刪 |
-| `out/mxf-logs/<slug>.cues.log` | `fetch_sftp.sh` 切 cue 階段 | `cues` 指令 stdout/stderr | 日誌，可刪 |
+| `out/news/logs/<年-月>/<slug>.{get,cues,refine}.log` | `fetch_sftp.sh` 下載、切 cue、精修 | 各步驟 stdout/stderr（放在 work dir 外，work dir 刪了還在）| 日誌，可刪 |
+| `out/news/mkv/<年-月>/<srt_name>.mkv` | `archive_batch.py` | 母帶的封存壓縮版 | 封存，伺服器另有一份 |
+| `out/news/2-asr/<年-月>/<srt_name>/` | `asrmt_run.py` | 語音側暫存（抽出的音檔等）| 快取，可刪 |
+| `out/news/stage/<年-月>/`、`out/news/stage-read/<年-月>/` | `fetch_sftp.sh`、讀者抽原生格 | 下載中的影片、讀者抓來看的 mp4 | 暫存，可刪 |
 
-兩點容易誤會：原始影片不會留在這裡——`fetch_sftp.sh` 下載到 `kithann/out/stage/`（同名同位元組數會重用；放 `影片名.keep` 可留給別的 session，誰放誰刪），
+兩點容易誤會：原始影片不會留在這裡——`fetch_sftp.sh` 下載到 `kithann/out/news/stage/<年-月>/`（同名同位元組數會重用；放 `影片名.keep` 可留給別的 session，誰放誰刪），
 `cues.json` 一寫出來就刪片。視覺辨識的 TSV 也不會寫進這裡——`ingest.py`
 預設直接讀寫 `Kari-SRT/news/1-ocr/2-vision/<年-月>/<srt_name>/`，
 `kithann/` 這邊的 `verified.json` 只是本地追蹤「這個 work dir 核實到哪」
@@ -57,10 +58,12 @@ python3 -m scripts.news.rebuild --verify   # 通過的集數＝已交付集數
 
 | 階段 | 入口 | 吃什麼 | 一集約略 |
 |---|---|---|---|
-| **一、cues** | `fetch_sftp.sh`（下載 → 驗字幕帶 → 切 cue → 精修） | 本機 CPU＋網路 | 下載 5 分、切 cue 6 分、精修 8.5 分 |
+| **一、cues** | `fetch_sftp.sh`（下載 → 驗字幕帶 → 切 cue → 精修） | 本機 CPU＋網路 | 下載數分鐘；切 cue 5–8 分、精修 7.5–8.5 分（各約 13–16 核心分鐘，ffmpeg 2 緒）；同時 6 集（量測見下）|
 | **二、OCR** | `/smkul-news` 的視覺辨識 → `ingest` → `make_all` → `publish` | **Claude 視覺辨識**（模型呼叫）；前後的匯入與組裝是秒級 CPU | 約 50 分（178 張 sheet、8.2 批）|
 | **三、asr** | `asrmt_batch`（抓音檔 → vosk → 投影 → render） | 本機 CPU | 約 15 分 |
 | **四、品質** | `asrmt_run --step mt` → `judge` → sonnet subagent → `ingest` → `--second` → fable subagent → `ingest` → `quality` | ai-labs 服務（免費、單併發）＋**Claude 判定** | 翻譯約 15 分、判定約 8 批 |
+
+**第一階段的 CPU 帳（2026-09-17 量）**：切 cue 以原生格率解碼、ffmpeg 端先用 select 丟掉用不到的格，一集（48 分鐘）閒置時 757 核心秒、牆鐘約 5 分；精修一集一支 ffmpeg，848–937 核心秒、牆鐘約 8 分（兩集同時跑時量的）。舊做法切 cue 1,061 核心秒、精修 1,989–2,734 核心秒。ffmpeg 執行緒效率（同一段 120 秒、機器閒置）：1 緒 42.3 核心秒、2 緒 48.1（每核效率 0.88）、4 緒 51.7、8 緒 56.6、預設約 11 緒 62.5（0.68）——預設比 2 緒多燒約 30%。2021-10 前 10 集實跑（同時 6 集）：10 集 45.6 分鐘（約 13 集／小時），每集下載 0.5–1 分、切 cue 9–11 分、精修 8–10 分（同時 6 集互搶，比單跑慢），一集約用 2.2 核，機器約八成滿。實際切 cue 一集約用 2.4 核，16 核機器同時 6 集（`fetch_sftp.sh --jobs`／`FETCH_JOBS`、`--threads`／`FFMPEG_THREADS` 可調）。
 
 **時間的大頭在第二階段**：一個月 71 集 ≈ 58 小時視覺辨識，而第一階段
 整月約 7.5 小時。第三階段跟第二階段可以並行。封存 mkv
@@ -446,7 +449,7 @@ mp4 是 1920×1080 h264，沒有 soft subtitle。region 一樣是
 
 | 物件 | 路徑 |
 |---|---|
-| 圖條佮 strips | `kithann/out/mxf/<slug>.work/` |
+| 圖條佮 strips | `kithann/out/news/1-ocr/<年-月>/<slug>.work/`（`2-strips/`、`4-sheets/`）|
 | 視覺辨識 TSV | `Kari-SRT/news/1-ocr/2-vision/<月份>/<srt_name>/b*.tsv` |
 | 交付ê SRT | `Kari-SRT/news/1-ocr/3-srt/<月份>/<srt_name>.srt` |
 | Cue 時間 | `Kari-SRT/news/1-ocr/1-cues/<月份>/<srt_name>.json` |
@@ -843,7 +846,7 @@ crop（`crop=1920:360:0:690`）才看會著。這條已經寫入 brief。
 負例）。**樣本猶少，拄著新ê病灶愛kā伊加入去重校**——數字囥佇
 `blank_runs.py` ê `EDGE_INK`／`EDGE_SHARE`，改一擺就好。
 
-圖條是囥佇 work dir（`kithann/out/mxf/<slug>.work/strips/`）ê，會
+圖條是囥佇 work dir（`kithann/out/news/1-ocr/<年-月>/<slug>.work/2-strips/`）ê，會
 重生毋過嘛會予人清掉。Work dir 無矣ê集數，這支報「無圖條通量」，
 **毋是**報「無代誌」——兩句話無仝款。
 
@@ -1293,11 +1296,16 @@ sheet 讀了一遍，還多花了建兩次 contact sheet 的工。真正的價�
   （214、219、533…）。prompt 必須明講「讀 gutter 上的數字，不要自己 +1
   補號」，否則整段字幕會靜靜落在錯的位置——比讀錯字嚴重，因為不會報錯。
   `ingest.py` 再擋一層：TSV 裡出現不屬於該批 sheet 的 cue，整批拒收。
-- **一批 4 張（約 100 條 cue）、TSV 直接寫進磁碟。** 主對話只收行數，不然
-  context 會被圖吃光。批次大小的正本是 `vision_tools/prompt.py` 的 `SIZE`，
-  `batches.py` 沒有自己的預設值——兩邊各記一份就會靜靜走精，實際踩過：51 張
-  的集數在這裡切成三批、在那裡切成兩批，同一批 cue 被派兩次、掛兩個名，
-  `ingest` 把整集擋下來。理由與量到的曲線見〈一批幾張〉。
+- **一批照預估的累積 context 切、TSV 直接寫進磁碟。** 主對話只收行數，不然
+  context 會被圖吃光。切批只有一支：`vision_tools/prompt.py` 的 `plan()`
+  （最長作業優先分配法：重量＝組合圖的視覺 token＋逐逝數×17，一批上限
+  `CEILING` 120,000 含起手 69,184；由重到輕丟給目前最輕的一批，批內小圖
+  先讀）。`batches.py` 印的就是這份清單，TSV 編號接在 Kari-SRT 已經收進去的
+  `bNN.tsv` 後面。兩邊各切一份就會靜靜走精，實際踩過：51 張的集數在這裡切成
+  三批、在那裡切成兩批，同一批 cue 被派兩次、掛兩個名，`ingest` 把整集擋下
+  來；讀到一半再派時兩邊都從 `b01` 算起，會蓋掉已收進去的檔。**這些常數是
+  2026-09-11 用 18 輪實讀量的，換模型、換 harness 或改組合圖打包規則要重量。**
+  理由與量到的曲線見〈一批幾張〉。
 - **空白 cue 的行尾 tab 會被 Write 工具剪掉**，`ingest.py` 匯入前統一補回。
   prompt 要叫 subagent「寫一次就好、不要自己修 tab」，否則有 agent 會為了
   補 tab 反覆改檔，用掉 16 萬 tokens（正常 6.4 萬）。
@@ -1307,8 +1315,8 @@ sheet 讀了一遍，還多花了建兩次 contact sheet 的工。真正的價�
 | | |
 |---|---|
 | `run_cues.sh` | 複製到本機 → 切 cue |
-| `gap_sheets.py` | 把全部 cue 做成 contact sheet（`<slug>.work/sheets/`）|
-| `batches.py` | 列出一集還沒讀的 sheet，照 `prompt.SIZE` 切批 |
+| `gap_sheets.py` | 把全部 cue 做成 Claude Vision 輸入組合圖（`<slug>.work/4-sheets/`）|
+| `batches.py` | 列出一集還沒讀的組合圖怎麼切批（與 `prompt.plan()` 同一份清單、TSV 編號接續既有檔）|
 | `ingest.py` | 驗證 TSV（格式＋cue 編號歸屬）並匯入 |
 | `make_srt.py` | 單集組裝 SRT |
 | `make_all.py` | 全部組裝＋寫進度表工作版 |
@@ -1316,7 +1324,7 @@ sheet 讀了一遍，還多花了建兩次 contact sheet 的工。真正的價�
 | `sftp.sh` | SFTP 包裝：密碼只以檔案存在，處理 BatchMode／askpass 兩個坑 |
 | `sftp-askpass.sh` | 給 OpenSSH 讀密碼檔的 hook（`SSH_ASKPASS`）|
 | `fetch_sftp.sh` | 吃播出月份；逐集：下載 → 驗位元組 → 驗band → 切cue → 精修 → **刪影片** |
-| `refine_cues.py` | 邊界精修：0.2s 粗切 → 25fps 逐幀分類 → ≤0.05s |
+| `refine_cues.py` | 邊界精修：0.2s 粗切 → 原生格率逐幀分類（一集一支 ffmpeg，select 視窗）→ ≤0.05s；沿用粗切的邊界分「取不到畫面」「無法分辨」兩種計數 |
 | `verify_band.py` | 量列剖面，確認字幕帶真的在 preset 說的位置 |
 | `blank_runs.py` | 掠 vision TSV 內底ê長連紲空白——字幕若印佇帶外，規段會變空白（離線，免影片）|
 | `rescan_band.py` | kā一段用毋著帶切ê cue 重切、接轉去、規集重新編號（五項用號碼做鍵ê物件做伙徙）|
@@ -1351,8 +1359,9 @@ Kari-SRT 的資料重組全部 SRT 並逐 byte 比對，缺件即指名失敗。
 
 ### 時間精度與留白
 
-- **邊界精度**：`cues` 粗切在 0.2s 格點（5fps）；`refine_cues.py` 在每個
-  邊界 ±0.24s 窗內以 25fps 逐幀分類（不重切、不動 cue 集合與文字），
+- **邊界精度**：`cues` 以原生格率解碼、每 0.2s 取最接近的一格（時間記
+  該格真實 pts）；`refine_cues.py` 在每個邊界 ±0.24s 窗內以原生格率
+  逐幀分類（29.97 fps 格距 0.033s；一集所有視窗一支 ffmpeg 讀完）（不重切、不動 cue 集合與文字），
   精修到 ≤0.05s，manifest 記 `refined` 與 `duration`。新月份由
   `fetch_sftp.sh` 在刪影片前自動跑。
 - **SRT 留白**：組裝時每句前後各延伸至多 0.5s（CLAUDE.md 規定，對齊
@@ -1369,7 +1378,7 @@ Kari-SRT 的資料重組全部 SRT 並逐 byte 比對，缺件即指名失敗。
 
 | | 怎麼辦 |
 |---|---|
-| `kithann/out/mxf/*.work/` | 純快取（strips/sheets 約 15 GB）。**不用搬**，`rebuild --verify` 保證正本可離線重生 |
+| `kithann/out/news/1-ocr/*/*.work/` | 純快取（圖條與組合圖約 15 GB）。**不用搬**，`rebuild --verify` 保證正本可離線重生 |
 | `Kari-SRT/news/smkul.csv` | 節目目錄正本，`resolve_slug.py`、`plan_month.py`、`episodes.py` 都要它 |
 | `.sftp-pass` | 故意不進 git。到新機器**自己在終端機重建**，不要叫 Claude 寫 |
 
@@ -1564,7 +1573,8 @@ PYTHONPATH=. .tox/rebuild/bin/python -m scripts.ocr.cli cues \
 仝一个固定成本，工課賰十二分之一。
 所以尾批若無到 ~24 張，就kā伊倂入前一批（72/72/72/**78**，
 毋是 72/72/72/72/**6**）。倂入了後彼批較大，逐張ê價數猶原較俗。
-（倂尾批這條猶原做算，干焦地板綴批次縮做 2 張——`prompt.MIN_TAIL`。）
+（倂尾批這條後來換掉矣：今仔是照累積 context 切、批數照總重量算，
+無尾批地板彼个旋鈕——見〈一批幾張〉尾ê 2026-09-17 註。）
 
 ### 一之二、一批幾張（2026-09-09 重量ê，這節是現行ê）
 
@@ -1586,6 +1596,12 @@ cache 讀對 9.56M 落到 2.02M——**帳面ê九成以上是 cache 讀**。
 cue 數 soah 差 1.75 倍——逐个讀者起手彼份固定開銷（~19k token）咧
 kā伊搝倒轉去。**目標是一批 60–100 條 cue**，新聞逐張 ~25 條，就是
 `SIZE = 4`。
+
+> **2026-09-17 註：`SIZE`／`MIN_TAIL` 已經提掉。** 後來平行讀（一則訊息
+> 同時發 3–4 个 Read）落地，重量了後改做「照累積 context 切」：尖峰
+> ≈ 69,184 ＋ 視覺 token ＋ 逐逝數 × 17，每批上限 120,000（快取失效ê線
+> 佇 175k–184k，估算最壞 +32.7% 嘛才 ~160k），用最長作業優先分配法
+> 分，批內細張先讀（大張先讀貴約 10%）。張數已經毋是旋鈕。
 
 **《開會了》莫用這个數字。** 彼爿逐張 ~14 條，仝款 60–100 條是
 5–7 張，而且彼爿ê族語列有撇號ê字形問題（`'` hőng寫做 `"`），愛先

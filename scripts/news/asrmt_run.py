@@ -20,7 +20,7 @@ the file and silently dropped everything that had been filled in on top
 of it. What is worth keeping is kept content-addressed instead, in the
 caches beside the stages.
 
-The audio file is expected at kithann/out/asrmt/<srt_name>/audio.mp3
+The audio file is expected at kithann/out/news/2-asr/<年-月>/<srt_name>/audio.mp3
 (fetched via sftp.sh); its duration must match the cue timeline within
 one second or nothing runs at all.
 """
@@ -119,10 +119,10 @@ def audio_source(entry):
     閣飼第二份路徑。
     """
     name = entry["srt_name"]
-    staged = os.path.join(paths.STAGE, os.path.basename(entry["file"]))
+    staged = paths.staged_path(name, entry["file"])
     if os.path.exists(staged):
         return staged, ""
-    archived = os.path.join(paths.MKV_ARCHIVE, name + ".mkv")
+    archived = paths.mkv_path(name)
     if os.path.exists(archived):
         return archived, ""
     chosen, problem = sources.pick(entry)
@@ -198,7 +198,7 @@ def _stage(base, srt_name, suffix=""):
 
 
 def _workdir(srt_name):
-    folder = os.path.join(paths.ROOT, "kithann", "out", "asrmt", srt_name)
+    folder = paths.asrmt_dir(srt_name)
     os.makedirs(folder, exist_ok=True)
     return folder
 
@@ -232,8 +232,7 @@ def _cues_path(srt_name, slug):
     stored = paths.stage_path(paths.KARI_CUES, srt_name, JSON)
     if os.path.exists(stored):
         return stored
-    work = os.path.join(paths.WORK,
-                        paths.check_name(slug, "slug") + ".work")
+    work = paths.work_dir(slug)
     pending = paths.cues_to_read(work)
     if pending:
         return pending
@@ -269,6 +268,7 @@ def _load(path):
 
 
 def _save(doc, path):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as handle:
         json.dump(doc, handle, ensure_ascii=False, indent=2,
                   sort_keys=True)
@@ -303,7 +303,7 @@ def _chain_rows(srt_name):
         shutil.copy2(_cues_path(srt_name, _entry_of(srt_name)["slug"]),
                      timeline)
         _save(rebuild.episode_transcripts(srt_name),
-              os.path.join(work, "transcripts.json"))
+              paths.transcripts_file(work))
         manifest, records = make_srt.build(work)
         records = make_srt.drop_leader(records)
         entries = make_srt.entries_from(records)

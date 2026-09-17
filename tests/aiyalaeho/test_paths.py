@@ -104,7 +104,6 @@ class TestPresetPacking(unittest.TestCase):
 
     # build_sheets' own numbers (they are locals in that function).
     GUTTER = 10          # vertical gap between cue blocks
-    PER_TILE = 2         # each strip is drawn with a 2px separator
     WANT_PER_SHEET = 4
 
     # Sheet width is `108 + widest ink-cropped tile + 16`, and since
@@ -128,11 +127,15 @@ class TestPresetPacking(unittest.TestCase):
             presets = json.load(handle)
         out = []
         for name in sorted(presets):
-            block = self.GUTTER
-            for line in presets[name]["lines"]:
-                block += line["h"] + self.PER_TILE
+            block = sheets.layout_height(presets[name]["lines"],
+                                         self.GUTTER)
             out.append((name, block))
         return out
+
+    def test_the_two_rows_are_rejoined_not_separated(self):
+        # 兩列在畫面上相連：拼回去後區塊是 10 + 60 + 64 + 2 ＝ 136，
+        # 不是各加 2 px 分隔的 138
+        self.assertIn(("aiyalaeho-bilingual", 136), self._blocks())
 
     def test_four_cues_fit_on_a_sheet(self):
         budget = sheets._height_bound(self.SHEET_WIDTH)

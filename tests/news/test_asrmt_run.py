@@ -93,7 +93,8 @@ class TestAudioSource(unittest.TestCase):
     def test_a_staged_original_is_used_first(self):
         tmp = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, tmp, True)
-        staged = os.path.join(tmp, "20NL003_32午間族語新聞.mxf")
+        os.makedirs(os.path.join(tmp, "2021-02"))
+        staged = os.path.join(tmp, "2021-02", "20NL003_32午間族語新聞.mxf")
         open(staged, "w").close()
         with mock.patch.object(asrmt_run.paths, "STAGE", tmp):
             local, remote = asrmt_run.audio_source(self._entry())
@@ -103,7 +104,8 @@ class TestAudioSource(unittest.TestCase):
     def test_the_archived_mkv_is_next(self):
         tmp = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, tmp, True)
-        mkv = os.path.join(tmp, "20210201_032_午間_Atayal_泰雅.mkv")
+        os.makedirs(os.path.join(tmp, "2021-02"))
+        mkv = os.path.join(tmp, "2021-02", "20210201_032_午間_Atayal_泰雅.mkv")
         open(mkv, "w").close()
         with mock.patch.object(asrmt_run.paths, "STAGE", tmp), \
                 mock.patch.object(asrmt_run.paths, "MKV_ARCHIVE", tmp):
@@ -164,7 +166,7 @@ class TestCuesPath(unittest.TestCase):
         return path
 
     def _in_work(self):
-        folder = os.path.join(self.work, self.SLUG + ".work")
+        folder = paths.work_dir(self.SLUG)
         os.makedirs(folder, exist_ok=True)
         os.makedirs(os.path.join(folder, "1-cues"), exist_ok=True)
         path = paths.coarse_cues(folder)

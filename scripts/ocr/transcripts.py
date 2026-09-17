@@ -22,7 +22,7 @@ def read_manifest(workdir):
 
 
 def load_transcripts(workdir):
-    path = os.path.join(workdir, "transcripts.json")
+    path = datadirs.transcripts_file(workdir)
     if not os.path.exists(path):
         raise PipelineError("no transcripts.json in %s -- run `ocr` first"
                             % workdir)
@@ -57,9 +57,6 @@ def parse_transcript_tsv(text, default_line):
             name, value = parts[1].strip(), "\t".join(parts[2:])
         out.setdefault(key, {})[name] = value.strip()
     return out, errors
-
-
-VERIFIED_NAME = "verified.json"
 
 
 def import_tsv(workdir, source, replace=False):
@@ -115,7 +112,8 @@ def _collect_row_errors(parsed, valid, known, errors):
 
 
 def _merge_transcripts(workdir, parsed, replace):
-    path = os.path.join(workdir, "transcripts.json")
+    path = datadirs.transcripts_file(workdir)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     existing = {}
     if os.path.exists(path) and not replace:
         with open(path, "r", encoding="utf-8") as handle:
@@ -140,7 +138,7 @@ def _mark_verified(workdir, parsed):
 
 
 def load_verified(workdir):
-    path = os.path.join(workdir, VERIFIED_NAME)
+    path = datadirs.verified_file(workdir)
     if not os.path.exists(path):
         return {}
     with open(path, "r", encoding="utf-8") as handle:
@@ -148,7 +146,8 @@ def load_verified(workdir):
 
 
 def save_verified(workdir, verified):
-    path = os.path.join(workdir, VERIFIED_NAME)
+    path = datadirs.verified_file(workdir)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as handle:
         json.dump(verified, handle, ensure_ascii=False, indent=2,
                   sort_keys=True)
