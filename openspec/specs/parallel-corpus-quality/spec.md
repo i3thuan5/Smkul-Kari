@@ -80,7 +80,7 @@
 
 ### Requirement: 判定正本內容定址
 
-判定結果 SHALL 以內容定址存入 `Kari-SRT/news/2-asr/quality-cache/`（每個裁判一個 JSONL 檔、一列一筆）：鍵為（裁判、prompt 版本、族語行、華語行、機器譯文、前一條字幕、後一條字幕），值為該裁判給的標籤。SHALL NOT 以條目編號或時間戳為鍵——時間軸換版時編號會整批移位。同一鍵 SHALL NOT 重複詢問模型；重投影後材料相同的條目 SHALL 直接命中。
+判定結果 SHALL 以內容定址存入 `Kari-SRT/news/2-asr-kaldi/quality-cache/`（每個裁判一個 JSONL 檔、一列一筆）：鍵為（裁判、prompt 版本、族語行、華語行、機器譯文、前一條字幕、後一條字幕），值為該裁判給的標籤。SHALL NOT 以條目編號或時間戳為鍵——時間軸換版時編號會整批移位。同一鍵 SHALL NOT 重複詢問模型；重投影後材料相同的條目 SHALL 直接命中。
 
 #### Scenario: 重投影後命中
 
@@ -94,7 +94,7 @@
 
 ### Requirement: 3-srt-ai 三行對照格式
 
-`Kari-SRT/news/2-asr/3-srt-ai/<年-月>/<srt_name>.srt` 每條 SHALL 恰為三行，依序：`族語ASR結果：`＋族語行、`華語OCR字幕：`＋華語行、`族語ASR結果翻譯華語-ailabs：`＋該族語行的機器譯文。這兩個交付是分析用，行首標籤 SHALL 標明來源；`2-srt-raw` 的短標籤（「族語：」「華語：」）是正式交付，兩邊 SHALL NOT 混用。族語行與華語行的文字 SHALL 與 `2-srt-raw` 同條逐字相同；族語行為空時譯文行 SHALL 保留前綴、文字留空、不呼叫服務。條目編號與時間戳 SHALL 與 `2-srt-raw` 逐條相同。
+`Kari-SRT/news/2-asr-kaldi/3-srt-ai/<年-月>/<srt_name>.srt` 每條 SHALL 恰為三行，依序：`族語ASR結果：`＋族語行、`華語OCR字幕：`＋華語行、`族語ASR結果翻譯華語-ailabs：`＋該族語行的機器譯文。這兩個交付是分析用，行首標籤 SHALL 標明來源；`2-srt-raw` 的短標籤（「族語：」「華語：」）是正式交付，兩邊 SHALL NOT 混用。族語行與華語行的文字 SHALL 與 `2-srt-raw` 同條逐字相同；族語行為空時譯文行 SHALL 保留前綴、文字留空、不呼叫服務。條目編號與時間戳 SHALL 與 `2-srt-raw` 逐條相同。
 
 #### Scenario: 三行齊全
 
@@ -108,7 +108,7 @@
 
 ### Requirement: 4-srt-quality 三行格式
 
-`Kari-SRT/news/2-asr/4-srt-quality/<年-月>/<srt_name>.srt` 每條 SHALL 恰為三行，依序：`族語ASR結果：`＋族語行、`華語OCR字幕：`＋華語行、`族華對應品質：`＋高／中／低。檔內 SHALL NOT 出現機器譯文。條目編號與時間戳 SHALL 與 `2-srt-raw` 逐條相同。
+`Kari-SRT/news/2-asr-kaldi/4-srt-quality/<年-月>/<srt_name>.srt` 每條 SHALL 恰為三行，依序：`族語ASR結果：`＋族語行、`華語OCR字幕：`＋華語行、`族華對應品質：`＋高／中／低。檔內 SHALL NOT 出現機器譯文。條目編號與時間戳 SHALL 與 `2-srt-raw` 逐條相同。
 
 #### Scenario: 每條都有品質
 
@@ -136,7 +136,7 @@
 
 ### Requirement: 沒有人力校準時的替代驗證與揭露
 
-在沒有懂族語的人核對之前，高的精度 SHALL 以下列兩項替代驗證並把數字記於 `Kari-SRT/news/2-asr/README.md`：(1) 構造法——把裁判給高的條目故意配上別條字幕、改動數字、砍掉後半句後重判，SHALL 全部降級，未降級的類型記為裁判盲點；(2) 自我一致——同一批打亂順序重跑，記錄翻牌率。README SHALL 明寫「高的精度未經人工驗證」。判定快取 SHALL 保留足以日後抽樣人核的資訊。
+在沒有懂族語的人核對之前，高的精度 SHALL 以下列兩項替代驗證並把數字記於 `Kari-SRT/news/2-asr-kaldi/README.md`：(1) 構造法——把裁判給高的條目故意配上別條字幕、改動數字、砍掉後半句後重判，SHALL 全部降級，未降級的類型記為裁判盲點；(2) 自我一致——同一批打亂順序重跑，記錄翻牌率。README SHALL 明寫「高的精度未經人工驗證」。判定快取 SHALL 保留足以日後抽樣人核的資訊。
 
 #### Scenario: 探針必須降級
 
@@ -145,7 +145,7 @@
 
 #### Scenario: README 揭露
 
-- **WHEN** 讀 `2-asr/README.md` 的品質段
+- **WHEN** 讀 `2-asr-kaldi/README.md` 的品質段
 - **THEN** 看得到構造法與自我一致的數字，以及高未經人工驗證的聲明
 
 ### Requirement: 機器翻譯語言碼由靜態表決定

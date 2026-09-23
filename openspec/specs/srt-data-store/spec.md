@@ -26,11 +26,19 @@ Kari-SRT/
     │   ├── 1-cues/<srt_name>.json       每集時間軸
     │   ├── 2-vision/<srt_name>/*.tsv    視覺逐字稿（文字唯一來源）
     │   └── 3-srt/<srt_name>.srt         交付字幕（＋<srt_name>.qc.json）
-    └── 2-asr/                       語音側：族語語音辨識與對應品質
+    ├── 主播.csv                     一位主播一列：族語別、族語名、漢名、語言別、
+    │                                語言別代號、抽聽的集、語別依據
+    ├── 2-asr-kaldi/                 語音側（kaldi）：族語語音辨識與對應品質
+    │   ├── README.md
+    │   ├── 1-words/ 2-srt-raw/ 3-srt-ai/ 4-srt-quality/   逐集階段
+    │   └── mt-cache/ quality-cache/                       跨集快取
+    │   （階段內容的契約見 asr-bilingual-srt 與 parallel-corpus-quality）
+    └── 2-asr-whisper/               語音側（whisper）：sapolita 族語辨識
         ├── README.md
-        ├── 1-words/ 2-srt-raw/ 3-srt-ai/ 4-srt-quality/   逐集階段
-        └── mt-cache/ quality-cache/                       跨集快取
-        （階段內容的契約見 asr-bilingual-srt 與 parallel-corpus-quality）
+        └── 1-srt-sapolita/
+            ├── 辨識紀錄.csv          一集一列
+            └── <年-月>/<成果檔名>.srt  伺服器回傳原樣
+        （內容的契約見 whisper-asr-srt）
 ```
 
 同一份資料 SHALL 只有一個路徑；同一產物的不同狀態 SHALL 分開存放於
@@ -51,7 +59,7 @@ SHALL NOT 存在第二份 inventory；所有讀寫 inventory 的程式與腳本 
 
 - **WHEN** 尋找任何一集的交付 SRT、逐字稿或節目資料對應
 - **THEN** 正本位於 `Kari-SRT/news/` 對應位置（影像側在 `1-ocr/`、
-  語音側在 `2-asr/`），`kithann/srt/` 不存在，主 repo 內亦無第二份
+  語音側在 `2-asr-kaldi/` 與 `2-asr-whisper/`），`kithann/srt/` 不存在，主 repo 內亦無第二份
   副本，Kari-SRT 頂層亦無殘留的舊位置
 
 #### Scenario: inventory 沒有第二份
@@ -67,7 +75,7 @@ SHALL NOT 存在第二份 inventory；所有讀寫 inventory 的程式與腳本 
 
 #### Scenario: 技術目錄各有 README
 
-- **WHEN** 瀏覽 `news/1-ocr/` 或 `news/2-asr/`
+- **WHEN** 瀏覽 `news/1-ocr/`、`news/2-asr-kaldi/` 或 `news/2-asr-whisper/`
 - **THEN** 各自的 README.md 說明該技術的檔案架構、產生流程與
   輸出入對應，目錄編號即產生順序
 
@@ -77,11 +85,78 @@ SHALL NOT 存在第二份 inventory；所有讀寫 inventory 的程式與腳本 
   `2-entries`、`3-srt-raw`、`4-srt-ai`、`5-align`、`6-srt-complete`
 - **THEN** 找不到任何目錄或檔案；廢止結論記於對應 README
 
+#### Scenario: 舊語音側目錄名不再存在
+
+- **WHEN** 在 Kari-SRT 與 `kithann/out/news/` 內搜尋名為 `2-asr` 的目錄
+- **THEN** 找不到；kaldi 那條的資料都在 `2-asr-kaldi/`，whisper 那條在
+  `2-asr-whisper/`
+
 #### Scenario: 跨集快取在 store
 
-- **WHEN** 檢視 `news/2-asr/`
+- **WHEN** 檢視 `news/2-asr-kaldi/`
 - **THEN** `mt-cache/` 與 `quality-cache/` 存在，各為每引擎／每裁判
   一個 JSONL 檔
+
+### Requirement: 工作目錄照語料、月份、編號階段分層
+
+工作區（`kithann/out/`）的每一集資料 SHALL 依「語料 → 月份 → 集」分層，
+集內再依**編號階段**分資料夾，編號即產出順序。族語新聞的工作資料
+SHALL 位於 `kithann/out/news/` 之下：
+
+```
+kithann/out/news/1-ocr/<年-月>/<slug>.work/
+    1-cues/        粗切時間軸
+    2-strips/      逐 cue 圖條
+    3-refined/     精修後時間軸
+    4-sheets/      Claude Vision 輸入組合圖與其索引
+    5-transcripts/ 校讀結果
+kithann/out/news/2-asr-kaldi/<年-月>/    語音側（kaldi）工作資料
+kithann/out/news/2-asr-whisper/<年-月>/  語音側（whisper）工作資料
+kithann/out/news/logs/<年-月>/       逐集逐步驟的執行紀錄
+kithann/out/news/mkv/<年-月>/        封存用整集影片
+kithann/out/news/stage*/<年-月>/     暫存影片與量測用中間檔
+```
+
+work dir 以 slug（`<年度>_<集數>_<播出日期>_…`）命名，月份取 slug 內的
+播出日期，不取年度欄；不以 srt_name 命名，因為交付檔名改動時不可讓
+做到一半的 work dir 找不到。
+
+同一集的檔案 SHALL NOT 平鋪在階段資料夾的上一層。資料夾名稱 SHALL
+反映內容：不得以早期的來源格式（如 `mxf`）命名一個不含該格式檔案的
+資料夾。
+
+逐集的執行紀錄 SHALL 與 work dir 分開存放，SHALL NOT 放在 work dir
+之內——紀錄從下載那一步就開始寫（那時 work dir 還不存在），而 work dir
+在驗收後會被刪除，紀錄要留得比它久。
+
+時間軸內記錄的圖條路徑 SHALL 與實際階段資料夾一致。
+
+#### Scenario: 每一集都在自己的月份層底下
+
+- **WHEN** 檢視 `kithann/out/news/1-ocr/`
+- **THEN** 其下是 `<年-月>` 資料夾，work dir 在月份資料夾之內，
+  SHALL NOT 直接出現在 `1-ocr/` 底下
+
+#### Scenario: 跨年的月份各自分開
+
+- **WHEN** 同時存在 2021 年 12 月與 2022 年 1 月的集數
+- **THEN** 兩者分別落在 `2021-12/` 與 `2022-01/`
+
+#### Scenario: 階段編號即產出順序
+
+- **WHEN** 檢視任一 work dir
+- **THEN** 資料夾依序為 `1-cues/`、`2-strips/`、`3-refined/`、
+  `4-sheets/`、`5-transcripts/`，且各階段的產物只出現在自己的資料夾內
+
+#### Scenario: 時間軸記的圖條路徑抓得到檔案
+
+- **WHEN** 依時間軸某條 cue 記錄的圖條相對路徑，到該集 work dir 取檔
+- **THEN** 檔案存在
+
+#### Scenario: 執行紀錄不隨 work dir 消失
+
+- **WHEN** 某集通過驗收、其 work dir 已被刪除
+- **THEN** 該集的下載、切 cue、精修紀錄仍在 `news/logs/<年-月>/`
 
 ### Requirement: aiyalaeho 語料的 store 結構
 
@@ -154,7 +229,7 @@ Kari-SRT 內。
 - **WHEN** 已知某集的 `srt_name`
 - **THEN** `news/1-ocr/3-srt/<年-月>/<srt_name>.srt`、
   `news/1-ocr/1-cues/<年-月>/<srt_name>.json`、
-  `news/1-ocr/2-vision/<年-月>/<srt_name>/`，以及 `news/2-asr/`
+  `news/1-ocr/2-vision/<年-月>/<srt_name>/`，以及 `news/2-asr-kaldi/`
   各階段目錄下的同名檔案，全部以同一字串定位，無須另查對應表；月份
   一層由該字串自身推導
 
