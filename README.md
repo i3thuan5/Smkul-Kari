@@ -35,7 +35,7 @@ tests/                   測試（鏡射 scripts 分包；全離線）
 Kari-SRT/                資料正本（submodule；語料 → 技術 → 編號階段）
 ├── news/                    語料：族語新聞
 │   ├── 1-ocr/               影像側階段資料
-│   └── 2-asr/               語音側階段資料（預設止於 3-srt-raw）
+│   └── 2-asr-kaldi/               語音側階段資料（預設止於 3-srt-raw）
 └── aiyalaeho/               語料：《開會了》
     └── 1-ocr/               影像側階段資料（1-cues／2-vision／3-srt）
 ```

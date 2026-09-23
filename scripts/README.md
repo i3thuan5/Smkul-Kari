@@ -81,8 +81,10 @@ aiyalaeho，依賴ê方向就顛倒去（這馬是 aiyalaeho → news），所�
 | `asr.py` | vosk 整集解碼 → 逐詞時間戳＋confidence（1-words） |
 | `project.py` | 詞按真實窗 max-overlap 歸戶條目（純函式，結果無落地——愛ê時陣當場算） |
 | `bisrt.py` | render：raw 兩逝「族語：／華語：」（2-srt-raw，正式交付）；分析用ê三逝版 |
-| `mtclient.py` | ai-labs 翻譯服務（族語→華語一个方向）＋內容定址ê `mt-cache/` |
+| `gradio.py` | Gradio 佇列協定共用層：上傳、`queue/join`＋讀 SSE 串流到 `process_completed`、暫時性閘道錯誤重試（502/503/504/529）——ai-labs 翻譯服務佮 sapolita 公家 |
+| `mtclient.py` | ai-labs 翻譯服務（族語→華語一个方向）＋內容定址ê `mt-cache/`；佇列協定包 `gradio.Client` |
 | `dialects.py` | 族別 → 服務ê語言碼靜態表（對服務ê選單抄落來；賽德克ê碼是 `trv_` 起頭，袂使用前綴臆族別） |
+| `sapolita.py` | sapolita（whisper 族語辨識）用戶端：16 族選單值表、語言別代號 → 族別選單值查表、`recognize()` 辨識一个音檔 |
 | `judge.py` | 族華對應品質：材料（族語逝／字幕／譯文／前後字幕）、批次、收件檢查、`quality-cache/`、兩个裁判合成 |
 | `judge_prompt.md` | 裁判ê prompt——三級ê定義本身；改伊愛順紲 `PROMPT_VERSION` 加一 |
 | `judge_prompts/` | 歷版ê正文。快取逐筆判定攏記版本，彼个記號無正文就無意義——測試會擋「快取有、遮無」 |
@@ -95,8 +97,10 @@ aiyalaeho，依賴ê方向就顛倒去（這馬是 aiyalaeho → news），所�
 | 檔 | 做什麼 |
 |---|---|
 | `paths.py` | 語料路徑的單一出處（`stage_path()` 是階段目錄唯一出口，逐集檔案囥佇月份一層；`--var` 供 shell 取值；版面與保護轉出自 `scripts/datadirs.py`） |
-| `asrmt_batch.py` | 語音側整批：逐集 抓音檔→解碼→投影＋render→刪音檔 |
-| `asrmt_run.py` | 語音側單集步驟（預設 words→raw；翻譯佮品質判斷 `--step` 指名） |
+| `audio.py` | 取這集辨識用ê音檔：封存 mkv → SFTP（位元組數比對），抽煞就刪抓來ê原檔——kaldi 佮 whisper 兩條線公家，暫存區既有ê原檔無算捷徑 |
+| `asrmt_batch.py` | 語音側（kaldi）整批：逐集 抓音檔→解碼→投影＋render→刪音檔 |
+| `asrmt_run.py` | 語音側（kaldi）單集步驟（預設 words→raw；翻譯佮品質判斷 `--step` 指名） |
+| `whisper_run.py` | 語音側（whisper／sapolita）逐集佮整批：取音檔→查語別碼（`新聞語言別代號.csv`）→辨識→原樣存 SRT→寫辨識紀錄→刪暫存音檔；一次一集、可續跑（SRT 佮紀錄兩者都在才算做完） |
 | `anchors_ami.json` | 阿美語錨點表（數詞＋借詞專名，拼法對照模型 lexicon） |
 | `plan_month.py` | 一批＝一个播出月份：揀來源、出跳過報告（**唯讀**，無寫任何檔）|
 | `sources.py` | 一集配一支檔的規則（母帶優先→時段相符→同名不同夾→一檔一集） |
@@ -108,7 +112,6 @@ aiyalaeho，依賴ê方向就顛倒去（這馬是 aiyalaeho → news），所�
 | `rescan_band.py` | 用改正ê帶重切一段，接轉原本ê cue 排、規集重新編號 |
 | `split_cue.py` | 佇量出來ê時間點kā一條 cue 剖做兩條，後壁ê重新編號 |
 | `migrate_strips.py` | Strip ê檔名對 cue 序號換做起始時間（照磁碟頂ê檔案走，毋是照 cue）|
-| `move_outdirs.py` | 一次性搬家：`kithann/out` 改成「語料 → 月份 → 集」（`news/1-ocr/<年-月>/<slug>.work`、`news/logs`、`news/mkv`、`news/2-asr`、`news/stage*`），work dir 內（連開會了）改成 `2-strips`／`3-refined`／`4-sheets`／`5-transcripts` 並改寫時間軸記的圖條路徑；`--dry-run` 先列清單，搬完自檢，不覆寫已存在的目的地 |
 | `redump_store.py` | 店面ê JSON 重排做人讀有ê形（縮排、鍵排序、漢字免跳脫）；JSONL 一逝一筆免縮排。干焦改排版，內容無動 |
 | `gap_sheets.py`／`batches.py`／`ingest.py` | 視覺辨識批次的出題與收卷 |
 | `make_srt.py`／`make_all.py`／`publish.py`／`rebuild.py` | 組裝、時間軸入庫、離線重建驗證 |

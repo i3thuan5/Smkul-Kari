@@ -14,12 +14,18 @@ argument-hint: "[2021-02]（不填就統計全部月份）"
 | 1. cues | `1-ocr/1-cues/<月份>/` | `<集名>.json` 一個檔 |
 | 2. vision | `1-ocr/2-vision/<月份>/` | `<集名>/` 一個目錄 |
 | 3. OCR SRT | `1-ocr/3-srt/<月份>/` | `<集名>.srt` 一個檔 |
-| 4. ASR 逐字 | `2-asr/1-words/<月份>/` | `<集名>.json` 一個檔 |
-| 5. ASR 切句 | `2-asr/2-srt-raw/<月份>/` | `<集名>.srt` 一個檔 |
-| 6. 雙語 SRT | `2-asr/3-srt-ai/<月份>/` | `<集名>.srt` 一個檔 |
-| 7. 品質判斷完成 | `2-asr/4-srt-quality/<月份>/` | `<集名>.srt` 一個檔 |
+| 4. ASR 逐字 | `2-asr-kaldi/1-words/<月份>/` | `<集名>.json` 一個檔 |
+| 5. ASR 切句 | `2-asr-kaldi/2-srt-raw/<月份>/` | `<集名>.srt` 一個檔 |
+| 6. 雙語 SRT | `2-asr-kaldi/3-srt-ai/<月份>/` | `<集名>.srt` 一個檔 |
+| 7. 品質判斷完成 | `2-asr-kaldi/4-srt-quality/<月份>/` | `<集名>.srt` 一個檔 |
 
-`2-asr/mt-cache/*.jsonl`、`2-asr/quality-cache/*.jsonl` 是共用快取（機翻、品質判斷結果），不是逐集檔案，**不算進表格**，附註提一下大小就好。
+`2-asr-kaldi/mt-cache/*.jsonl`、`2-asr-kaldi/quality-cache/*.jsonl` 是共用快取（機翻、品質判斷結果），不是逐集檔案，**不算進表格**，附註提一下大小就好。
+
+**`2-asr-whisper/`（sapolita 辨識）不是這條管線的下一步，是另一條獨立的線**——它只要節目目錄（`smkul.csv`）就能跑，不必等 1–7 階段做完，也不受「下游比上游多是錯」那條規則管。數它要另外一列：
+
+| 階段 | 目錄 | 一集長什麼樣 |
+|---|---|---|
+| whisper（sapolita） | `2-asr-whisper/1-srt-sapolita/<月份>/` | `<集名>.srt` 一個檔；做完的集數以 `2-asr-whisper/1-srt-sapolita/辨識紀錄.csv` 的列數為準（SRT 跟紀錄列都在才算做完） |
 
 `news/smkul.csv` 是**節目目錄**，涵蓋全部有影片的集數（含還沒做的），所以它的列數是「總共有幾集」，不是「做了幾集」——拿它當分母就好，不要當成某個階段的數字。
 
@@ -31,10 +37,10 @@ argument-hint: "[2021-02]（不填就統計全部月份）"
 ls Kari-SRT/news/1-ocr/1-cues/<月份>/*.json 2>/dev/null | wc -l
 find Kari-SRT/news/1-ocr/2-vision/<月份> -mindepth 1 -maxdepth 1 -type d | wc -l
 ls Kari-SRT/news/1-ocr/3-srt/<月份>/*.srt 2>/dev/null | wc -l
-ls Kari-SRT/news/2-asr/1-words/<月份>/*.json 2>/dev/null | wc -l
-ls Kari-SRT/news/2-asr/2-srt-raw/<月份>/*.srt 2>/dev/null | wc -l
-ls Kari-SRT/news/2-asr/3-srt-ai/<月份>/*.srt 2>/dev/null | wc -l
-ls Kari-SRT/news/2-asr/4-srt-quality/<月份>/*.srt 2>/dev/null | wc -l
+ls Kari-SRT/news/2-asr-kaldi/1-words/<月份>/*.json 2>/dev/null | wc -l
+ls Kari-SRT/news/2-asr-kaldi/2-srt-raw/<月份>/*.srt 2>/dev/null | wc -l
+ls Kari-SRT/news/2-asr-kaldi/3-srt-ai/<月份>/*.srt 2>/dev/null | wc -l
+ls Kari-SRT/news/2-asr-kaldi/4-srt-quality/<月份>/*.srt 2>/dev/null | wc -l
 ```
 
 沒有該月份的目錄就跳過（尚未開始），不要當成 0 跟「做完 0 集」混在一起。

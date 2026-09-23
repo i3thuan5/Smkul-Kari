@@ -15,16 +15,11 @@ timeline changes -- picks up every already-translated line for free.
 import json
 import os
 import time
-import urllib.error
-import urllib.request
 from scripts.asrmt import dialects
+from scripts.asrmt import gradio
 from scripts.errors import PipelineError
 
 ZH = "zho_Hant"
-
-# transient gateway states worth waiting out; anything else is a bug
-RETRYABLE = (502, 503, 504, 529)
-RETRY_WAITS = (5, 10, 20, 40, 80)
 
 # Which 族別 the handshake selects comes from `scripts.asrmt.dialects`,
 # a table read off the service's own dropdowns. It used to be read off
@@ -92,11 +87,12 @@ class MTCache(object):
 
 
 class HttpTransport(object):
-    """The real gradio queue protocol, single concurrency by construction.
+    """The ai-labs app's two endpoints, over the shared gradio protocol.
 
-    Kept in one place: `call(endpoint, text)` joins the queue and reads
-    the SSE stream until the result arrives. Failures carry the raw
-    response so a protocol change is diagnosable.
+    The queue-join-then-read-SSE mechanics (retries included) live in
+    `scripts.asrmt.gradio`, shared with sapolita; this class only knows
+    the app's own shape: which `fn_index`/`trigger_id` each endpoint is,
+    and how to build its payload.
     """
 
     # The app has four endpoints -- two per direction. Only the
@@ -106,8 +102,7 @@ class HttpTransport(object):
     TRIGGER = {"lambda": 7, "translate": 11}
 
     def __init__(self, base_url, session_hash):
-        self.base = base_url.rstrip("/") + "/gradio_api"
-        self.session = session_hash
+        self.client = gradio.Client(base_url, session_hash)
 
     def _payload(self, endpoint, text, src_lang):
         if endpoint == "lambda":
@@ -115,55 +110,13 @@ class HttpTransport(object):
         return [text, src_lang, ZH]
 
     def call_full(self, endpoint, text, src_lang=""):
-        """Retry transient gateway failures, then give up loudly."""
-        last = None
-        for wait in (0,) + RETRY_WAITS:
-            if wait:
-                time.sleep(wait)
-            try:
-                return self._once(endpoint, text, src_lang)
-            except urllib.error.HTTPError as err:
-                if err.code not in RETRYABLE:
-                    raise
-                last = err
-            except urllib.error.URLError as err:
-                last = err
-        raise PipelineError("service unreachable after retries: %s" % last)
-
-    def _once(self, endpoint, text, src_lang=""):
-        body = json.dumps({
-            "data": self._payload(endpoint, text, src_lang),
-            "fn_index": self.FN[endpoint],
-            "trigger_id": self.TRIGGER[endpoint],
-            "session_hash": self.session,
-        }).encode("utf-8")
-        req = urllib.request.Request(
-            self.base + "/queue/join", data=body,
-            headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            joined = resp.read().decode("utf-8")
-        if "event_id" not in joined:
-            raise PipelineError("queue/join failed: %s" % joined[:500])
-
-        stream = urllib.request.Request(
-            self.base + "/queue/data?session_hash=" + self.session)
-        with urllib.request.urlopen(stream, timeout=180) as resp:
-            for raw in resp:
-                line = raw.decode("utf-8").strip()
-                if not line.startswith("data:"):
-                    continue
-                event = json.loads(line[len("data:"):])
-                if event.get("msg") == "process_completed":
-                    output = event.get("output") or {}
-                    if not event.get("success", True):
-                        raise PipelineError("service error: %s"
-                                            % json.dumps(event)[:500])
-                    data = output.get("data") or [""]
-                    first = data[0]
-                    if isinstance(first, str):
-                        return first
-                    return json.dumps(first, ensure_ascii=False)
-        raise PipelineError("SSE stream ended without process_completed")
+        data = self.client.call(self.FN[endpoint], self.TRIGGER[endpoint],
+                                self._payload(endpoint, text, src_lang),
+                                timeout=180)
+        first = data[0] if data else ""
+        if isinstance(first, str):
+            return first
+        return json.dumps(first, ensure_ascii=False)
 
 
 class MTClient(object):

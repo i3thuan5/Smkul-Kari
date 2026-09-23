@@ -29,7 +29,8 @@
 | `out/smkul.csv` | `make_all.py` | 進度表**工作版**（含還沒做完的集數）| 快取，可刪；交付版由 `publish.py` 寫進 Kari-SRT |
 | `out/news/logs/<年-月>/<slug>.{get,cues,refine}.log` | `fetch_sftp.sh` 下載、切 cue、精修 | 各步驟 stdout/stderr（放在 work dir 外，work dir 刪了還在）| 日誌，可刪 |
 | `out/news/mkv/<年-月>/<srt_name>.mkv` | `archive_batch.py` | 母帶的封存壓縮版 | 封存，伺服器另有一份 |
-| `out/news/2-asr/<年-月>/<srt_name>/` | `asrmt_run.py` | 語音側暫存（抽出的音檔等）| 快取，可刪 |
+| `out/news/2-asr-kaldi/<年-月>/<srt_name>/` | `asrmt_run.py` | 語音側（kaldi）暫存（抽出的音檔等）| 快取，可刪 |
+| `out/news/2-asr-whisper/<年-月>/<srt_name>.mp3` | `whisper_run.py` | 語音側（whisper）暫存音檔 | 快取，辨識完即刪，可刪 |
 | `out/news/stage/<年-月>/`、`out/news/stage-read/<年-月>/` | `fetch_sftp.sh`、讀者抽原生格 | 下載中的影片、讀者抓來看的 mp4 | 暫存，可刪 |
 
 兩點容易誤會：原始影片不會留在這裡——`fetch_sftp.sh` 下載到 `kithann/out/news/stage/<年-月>/`（同名同位元組數會重用；放 `影片名.keep` 可留給別的 session，誰放誰刪），
@@ -107,6 +108,24 @@ python3 -m scripts.news.rebuild --verify
 
 `--only` 存在的理由是磁碟：一個月動輒上百支、幾百 GB，補三支不該用
 `--limit` 從頭數。
+
+## 語音側 whisper（sapolita）
+
+跟 kaldi 那條（`asrmt_batch`／`asrmt_run`）平行、獨立的另一條語音側
+辨識線，見 `Kari-SRT/news/2-asr-whisper/README.md` 的完整說明。取音檔
+（`scripts/news/audio.py`）兩條線共用：封存 mkv → SFTP，抓來的原檔
+抽完音軌就刪，不看暫存區既有的原檔。
+
+```bash
+python3 -m scripts.news.whisper_run                    # 整批，跳過做過的集
+python3 -m scripts.news.whisper_run --limit 5           # 先試 5 集
+python3 -m scripts.news.whisper_run <成果檔名>...       # 只做這幾集，強制重做
+python3 -m scripts.news.whisper_run --server URL ...    # 換伺服器（測試機／正式機）
+```
+
+伺服器一次只收一集，`whisper_run` 逐集依序送，不平行、也不用
+`--shard`。正式機網址見 `scripts/news/whisper_run.py` 的
+`DEFAULT_SERVER`。
 
 ### 做到哪一步：問階段目錄，不問欄位
 

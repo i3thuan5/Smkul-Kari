@@ -83,6 +83,8 @@ tests-e2e/        fixture.py  test_roundtrip  test_mxf2mkv_roundtrip
 | cue-timing | 時間軸寫一擺就唯讀：cues 寫 `1-cues/`、refine 寫 `2-refined/` | `news/test_workdir_writers.py` |
 | cue-timing | 用 cue 號碼做鍵ê物件清單（清單改一位就好） | `news/test_cue_key_registry.py` |
 | —（vosk 呼叫層） | 無法離線測——實模型煙霧測試把關；忠實性由投影與 render 測試守恆 | （無單元測試檔） |
+| whisper-asr-srt | 結果串流先來 estimation、process_starts、好幾個 heartbeat，讀到 process_completed 才算；`success: false` 要丟錯並帶原始回應，不可回傳 None 讓上層寫出空檔；上傳中文檔名的 multipart 要能送、伺服器回的暫存路徑照回傳的用；502／503／504／529 要重試，其他 HTTP 錯誤當場丟——mtclient 與 sapolita 共用這層佇列協定，抽出來後翻譯服務的行為不變（`test_mtclient.py` 不改照過） | `asrmt/test_gradio.py` |
+| whisper-asr-srt | 沒先在同一個 session 呼叫 `update_languages`，非阿美語別碼會失敗——每次辨識要先選族別、兩次呼叫用同一個 session；族別選單值「阿美語 (’Amis)」「拉阿魯哇語 (Hla’alua)」是 U+2019 彎撇，不是直撇；賽德克 `trv-x-tgdy` 和太魯閣 `trv-x-truku` 前綴都是 `trv`，查表不看前綴；伺服器回空字串沒有任何訊息，要丟錯並帶語別碼 | `asrmt/test_sapolita.py` |
 
 ## 編排（tests/news/ ↔ scripts/news/）
 
@@ -95,6 +97,9 @@ tests-e2e/        fixture.py  test_roundtrip  test_mxf2mkv_roundtrip
 | srt-data-store | pending 語意／整批完成才定版／進度表定版寫入 | `news/test_pending.py`、`news/test_tracker_home.py`、`news/test_tracker_row.py` |
 | srt-data-store | 語音側進度欄由 store 推導 | `news/test_smkul_asr.py` |
 | srt-data-store | 校讀完成比對編號集合 | `news/test_vision_complete.py` |
+| srt-data-store | `2-asr` 改名後 Kari-SRT 與工作目錄兩處都是 `2-asr-kaldi`，whisper 另有一組平行的路徑常數 | `news/test_paths.py` |
+| whisper-asr-srt／asr-bilingual-srt | 有封存 mkv 就不向 SFTP 要；暫存區裡切 cue 留下的原檔不用（kaldi 以前會先看它）；whisper 不看 kaldi 工作目錄的 `audio.mp3`；自 SFTP 抓來的原檔抽完音軌就刪、位元組數不符要指名該集中止 | `news/test_audio.py` |
+| whisper-asr-srt | SRT 原樣存：「族語：／華語：」兩行、片尾幻覺、檔尾不補換行都不動、不加 0.5 秒留白——存下的檔和伺服器回的逐 byte 相同；smkul.csv 7 族只記族語別要換成新聞語言別代號.csv 的語別碼、查族用 `族語別(中)` 不用代號前綴、表上查不到要中止指名；主播名取 OCR 字幕前 15 條第一個「我是」，取不到寫「不明」不留空；續跑以 SRT 與紀錄列都在為做完；整批一次一集、一集失敗不擋下一集，失敗的集不留 SRT 或紀錄列 | `news/test_whisper_run.py` |
 | subtitle-text-source | 文稿不供字／中間產物不擋交付 | `news/test_make_one.py`、`news/test_make_srt.py` |
 | asr-bilingual-srt | 音檔時長不符指名中止／續跑跳過已完成步驟 | `news/test_asrmt_run.py` |
 | —（工作流防線） | 不覆蓋已校讀 work dir、批次 sheet 歸屬、TSV 整批拒收 | `news/test_gap_guard.py`、`news/test_batches.py`、`news/test_ingest.py` |

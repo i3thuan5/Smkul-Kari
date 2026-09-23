@@ -38,10 +38,10 @@ from scripts.asrmt import glossary
 from scripts.asrmt import judge
 from scripts.asrmt import mtclient
 from scripts.asrmt import project
+from scripts.news import audio
 from scripts.news import make_srt
 from scripts.news import episodes
 from scripts.news import paths
-from scripts.news import sources
 from scripts.news import rebuild
 from scripts.srtlib import assemble
 from scripts import lowpri
@@ -105,42 +105,11 @@ def model_id_of(ethnicity):
     return MODEL_ID % fixed
 
 
-def audio_source(entry):
-    """這集ê影片，予抽音軌用ê。
-
-    影片ê正本佇遠端，毋過這條流程本底就會kā伊抓落來切 cue。所以揣ê
-    順序是：本機暫存ê原檔 → 本機封存 mkv → 攏無ê時照節目目錄ê
-    `原始影片檔案位置` 對遠端提（佮切 cue 仝一條路、仝一組憑證）。
-
-    本底這爿是問目錄ê `音檔位置(mp3)`，直接抓伺服器頂ê mp3。彼一欄
-    推導袂出來——量過 983 逝，干焦 835 逝ê音檔佮影片仝資料夾仝主檔名，
-    69 逝主檔名無仝（影片帶族語前綴、音檔無），64 逝規氣無仝資料夾，
-    15% 無規則通循。影片位置彼欄是規條流程攏咧用ê，音軌對伊抽就免
-    閣飼第二份路徑。
-    """
-    name = entry["srt_name"]
-    staged = paths.staged_path(name, entry["file"])
-    if os.path.exists(staged):
-        return staged, ""
-    archived = paths.mkv_path(name)
-    if os.path.exists(archived):
-        return archived, ""
-    chosen, problem = sources.pick(entry)
-    if not chosen:
-        raise PipelineError("%s：本機無影片，節目目錄嘛揀袂出來源（%s）"
-                            % (name, problem))
-    return "", REMOTE_ROOT + "/" + chosen
-
-
-def extract_audio(local_video, out):
-    """對影片抽音軌，落做辨識食ê mp3。"""
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    done = subprocess.run(["ffmpeg", "-nostdin", "-y", "-i", local_video,
-                           "-vn", "-ac", "1", "-ar", "16000", out],
-                          capture_output=True)
-    if done.returncode or not os.path.exists(out):
-        raise PipelineError("對 %s 抽音軌失敗" % local_video)
-    return out
+# 取音檔的邏輯搬去 `scripts.news.audio`（kaldi 佮 whisper 兩條線共用；
+# 2026-09-18 起來源改做「封存 mkv → SFTP」，暫存區既有的原檔不算
+# 捷徑）。這兩个名照舊留咧，予呼叫端毋免改。
+audio_source = audio.video_source
+extract_audio = audio.extract_audio
 
 
 AMI_CODES = ["ami_Coas", "ami_Heng", "ami_Mala", "ami_Sout", "ami_Xiug"]
@@ -148,10 +117,6 @@ DIALECT_SAMPLE = 50
 
 ANCHORS = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                        "anchors_ami.json")
-
-
-# 伺服器頂ê語料根，佮 transcode 彼爿仝款。
-REMOTE_ROOT = "/docker"
 
 _REDO = False
 

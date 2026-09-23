@@ -10,12 +10,12 @@ import json
 import os
 import tempfile
 import unittest
-import shutil
 from unittest import mock
 
 from scripts.asrmt import judge
 from scripts.asrmt import mtclient
 from scripts.news import asrmt_run
+from scripts.news import audio
 from scripts.news import paths
 from scripts.errors import PipelineError
 
@@ -71,64 +71,17 @@ class TestModelMapping(unittest.TestCase):
 
 
 class TestAudioSource(unittest.TestCase):
-    """音檔對**這集ê影片**抽，無閣問目錄ê音檔欄。
-
-    彼一欄推導袂出來——量過 983 逝，干焦 835 逝ê音檔佮影片仝資料夾
-    仝主檔名，69 逝主檔名無仝（影片帶族語前綴、音檔無），64 逝規氣
-    無仝資料夾，15% 無規則。影片位置彼欄是規條流程攏咧用ê。
+    """`audio_source`／`extract_audio` 搬去 `scripts.news.audio` 矣
+    （kaldi 佮 whisper 兩條線共用，2026-09-18）；逐个來源優先序的
+    scenario 攏在 `tests/news/test_audio.py` 驗。遮只驗這兩个名猶原
+    通對舊呼叫端（`asrmt_batch.py`）用——delegate 準確。
     """
 
-    MXF = ("ilrdf-corpus/族語新聞/110.1-110.10/2月原始mxf檔/"
-           "20NL003_32午間族語新聞.mxf")
+    def test_audio_source_delegates_to_the_shared_module(self):
+        self.assertIs(asrmt_run.audio_source, audio.video_source)
 
-    def _entry(self, **over):
-        one = {"srt_name": "20210201_032_午間_Atayal_泰雅",
-               "節目名稱": "午間族語新聞", "播出日期": "2021-02-01",
-               "集數": "32", "族語別(英)": "Atayal", "族語別(中)": "泰雅",
-               "file": "20NL003_32午間族語新聞.mxf",
-               "原始影片檔案位置": self.MXF}
-        one.update(over)
-        return one
-
-    def test_a_staged_original_is_used_first(self):
-        tmp = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, tmp, True)
-        os.makedirs(os.path.join(tmp, "2021-02"))
-        staged = os.path.join(tmp, "2021-02", "20NL003_32午間族語新聞.mxf")
-        open(staged, "w").close()
-        with mock.patch.object(asrmt_run.paths, "STAGE", tmp):
-            local, remote = asrmt_run.audio_source(self._entry())
-        self.assertEqual(local, staged)
-        self.assertEqual(remote, "")
-
-    def test_the_archived_mkv_is_next(self):
-        tmp = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, tmp, True)
-        os.makedirs(os.path.join(tmp, "2021-02"))
-        mkv = os.path.join(tmp, "2021-02", "20210201_032_午間_Atayal_泰雅.mkv")
-        open(mkv, "w").close()
-        with mock.patch.object(asrmt_run.paths, "STAGE", tmp), \
-                mock.patch.object(asrmt_run.paths, "MKV_ARCHIVE", tmp):
-            local, remote = asrmt_run.audio_source(self._entry())
-        self.assertEqual(local, mkv)
-
-    def test_nothing_local_falls_back_to_the_remote_video(self):
-        tmp = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, tmp, True)
-        with mock.patch.object(asrmt_run.paths, "STAGE", tmp), \
-                mock.patch.object(asrmt_run.paths, "MKV_ARCHIVE", tmp):
-            local, remote = asrmt_run.audio_source(self._entry())
-        self.assertEqual(local, "")
-        self.assertTrue(remote.startswith("/docker/ilrdf-corpus/"), remote)
-
-    def test_no_source_anywhere_is_named(self):
-        tmp = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, tmp, True)
-        with mock.patch.object(asrmt_run.paths, "STAGE", tmp), \
-                mock.patch.object(asrmt_run.paths, "MKV_ARCHIVE", tmp):
-            with self.assertRaises(PipelineError) as caught:
-                asrmt_run.audio_source(self._entry(原始影片檔案位置=""))
-        self.assertIn("20210201_032", str(caught.exception))
+    def test_extract_audio_delegates_to_the_shared_module(self):
+        self.assertIs(asrmt_run.extract_audio, audio.extract_audio)
 
 
 class TestCuesPath(unittest.TestCase):

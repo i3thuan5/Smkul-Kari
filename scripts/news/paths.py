@@ -103,7 +103,9 @@ def stage_path(stage, srt_name, suffix=""):
 # the speech side each loose somewhere else under `out/`.
 NEWS_OUT = os.path.join(KITHANN, "out", "news")
 WORK = os.path.join(NEWS_OUT, "1-ocr")
-ASRMT_WORK = os.path.join(NEWS_OUT, "2-asr")
+ASRMT_WORK = os.path.join(NEWS_OUT, "2-asr-kaldi")
+# Whisper (sapolita) 那條的暫存音檔，跟 kaldi 平行、不共路徑。
+WHISPER_WORK = os.path.join(NEWS_OUT, "2-asr-whisper")
 # Per-episode logs stay outside the work dirs: they start at the download,
 # before a work dir exists, and must outlive it -- work dirs are deleted
 # once an episode is accepted.
@@ -299,10 +301,21 @@ TRACKER_CACHE = os.path.join(KITHANN, "out", "smkul.csv")
 # month, a batch is one folder you can read, diff and review.
 NEWS_STORE = os.path.join(KARI, "news")
 OCR_STORE = os.path.join(NEWS_STORE, "1-ocr")
-ASR_DIR = os.path.join(NEWS_STORE, "2-asr")
+ASR_DIR = os.path.join(NEWS_STORE, "2-asr-kaldi")
 KARI_CUES = os.path.join(OCR_STORE, "1-cues")
 KARI_VISION = os.path.join(OCR_STORE, "2-vision")
 SRT_DIR = os.path.join(OCR_STORE, "3-srt")
+
+# whisper（sapolita）語音側：跟 kaldi 平行的技術目錄，內容契約見
+# whisper-asr-srt spec。逐集 SRT 存 sapolita 回傳的原樣，辨識紀錄
+# 一集一列。
+WHISPER_DIR = os.path.join(NEWS_STORE, "2-asr-whisper")
+SAPOLITA_SRT = os.path.join(WHISPER_DIR, "1-srt-sapolita")
+SAPOLITA_LOG = os.path.join(SAPOLITA_SRT, "辨識紀錄.csv")
+
+# 一位主播一列，跟 smkul.csv 同一層——是節目本身的資料，跟辨識引擎
+# 無關。
+ANCHORS_STORE = os.path.join(NEWS_STORE, "主播.csv")
 
 # The speech side's stages, in production order: whole-episode recognition
 # (1-words) -> the two-line deliverable (2-srt-raw) -> the analysis renders
@@ -334,6 +347,10 @@ TRACKER_STORE = os.path.join(NEWS_STORE, "smkul.csv")
 # with the other; two copies of the same truth is a synchronisation problem
 # nobody asked for.
 ENGINE_PRESETS = os.path.join(HERE, "presets.json")
+
+# 送 sapolita 的語別碼，一族一列——同樣是流程參數而非衍生資料，跟
+# presets.json 同一類，隨 repo 走（正本不在 Kari-SRT）。
+NEWS_VARIETIES = os.path.join(HERE, "新聞語言別代號.csv")
 
 
 # The interpreter `fetch_sftp.sh` and friends run the heavy steps with.

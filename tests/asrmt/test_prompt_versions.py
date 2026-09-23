@@ -15,7 +15,7 @@ from scripts.asrmt import judge
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))))
-CACHE = os.path.join(ROOT, "Kari-SRT", "news", "2-asr", "quality-cache")
+CACHE = os.path.join(ROOT, "Kari-SRT", "news", "2-asr-kaldi", "quality-cache")
 
 
 class TestVersionsAreKept(unittest.TestCase):

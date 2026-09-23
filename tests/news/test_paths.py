@@ -56,7 +56,7 @@ class TestConstants(unittest.TestCase):
         self.assertEqual(paths.SRT_DIR, os.path.join(ocr, "3-srt"))
         self.assertEqual(paths.TRACKER_STORE,
                          os.path.join(news, "smkul.csv"))
-        self.assertEqual(paths.ASR_DIR, os.path.join(news, "2-asr"))
+        self.assertEqual(paths.ASR_DIR, os.path.join(news, "2-asr-kaldi"))
 
     def test_stage_constants_are_base_folders_not_file_locations(self):
         # 逐集檔案住佇階段目錄下的月份一層，所以階段常數是「基底」，
@@ -396,7 +396,7 @@ class TestWorkLayout(unittest.TestCase):
         self.assertEqual(self._rel(paths.WORK),
                          os.path.join(self.NEWS, "1-ocr"))
         self.assertEqual(self._rel(paths.ASRMT_WORK),
-                         os.path.join(self.NEWS, "2-asr"))
+                         os.path.join(self.NEWS, "2-asr-kaldi"))
         self.assertEqual(self._rel(paths.LOGS),
                          os.path.join(self.NEWS, "logs"))
         self.assertEqual(self._rel(paths.MKV_ARCHIVE),
@@ -465,6 +465,54 @@ class TestWorkLayout(unittest.TestCase):
             capture_output=True, text=True, cwd=paths.ROOT)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertEqual(proc.stdout.strip(), paths.work_dir(slug))
+
+
+class TestWhisperPaths(unittest.TestCase):
+    """sapolita 那條線各自要有一個路徑常數（add-whisper-sapolita-srt）。
+
+    kaldi 那條的語音側目錄改名 `2-asr-kaldi` 之後，whisper 的
+    `2-asr-whisper/` 要跟它平行、不共用任何一段路徑。
+    """
+
+    def test_whisper_store_is_a_sibling_of_kaldi(self):
+        news = os.path.join(paths.KARI, "news")
+        self.assertEqual(paths.WHISPER_DIR,
+                         os.path.join(news, "2-asr-whisper"))
+        self.assertEqual(os.path.dirname(paths.ASR_DIR),
+                         os.path.dirname(paths.WHISPER_DIR))
+
+    def test_sapolita_srt_and_log_sit_under_1_srt_sapolita(self):
+        self.assertEqual(paths.SAPOLITA_SRT,
+                         os.path.join(paths.WHISPER_DIR, "1-srt-sapolita"))
+        self.assertEqual(paths.SAPOLITA_LOG,
+                         os.path.join(paths.SAPOLITA_SRT, "辨識紀錄.csv"))
+
+    def test_an_episode_lands_in_its_broadcast_month(self):
+        name = "20210227_058_晨間_Thau_邵"
+        self.assertEqual(
+            paths.stage_path(paths.SAPOLITA_SRT, name, ".srt"),
+            os.path.join(paths.SAPOLITA_SRT, "2021-02", name + ".srt"))
+
+    def test_the_work_dir_is_a_sibling_of_kaldis(self):
+        news = os.path.join(paths.KITHANN, "out", "news")
+        self.assertEqual(paths.WHISPER_WORK,
+                         os.path.join(news, "2-asr-whisper"))
+        self.assertEqual(os.path.dirname(paths.ASRMT_WORK),
+                         os.path.dirname(paths.WHISPER_WORK))
+
+    def test_anchor_table_sits_beside_smkul_csv(self):
+        self.assertEqual(paths.ANCHORS_STORE,
+                         os.path.join(paths.KARI, "news", "主播.csv"))
+
+    def test_variety_code_table_lives_with_the_code_not_the_data(self):
+        # 這是「這條流程要送什麼參數」的設定，跟著 repo 走，不進
+        # Kari-SRT。
+        import scripts.news as news_pkg
+        self.assertEqual(
+            paths.NEWS_VARIETIES,
+            os.path.join(os.path.dirname(news_pkg.__file__),
+                         "新聞語言別代號.csv"))
+        self.assertFalse(paths.NEWS_VARIETIES.startswith(paths.KARI))
 
 
 if __name__ == "__main__":

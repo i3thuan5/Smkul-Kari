@@ -1,0 +1,17 @@
+族語別(中),語言別代號,語言別,依據
+阿美,ami-x-pswl,海岸,多語別（5 種）；使用者 2026-09-18 指定保底海岸阿美（主播 Ohay Sewana，OCR 字幕與主播專區網頁相符）
+泰雅,tay-x-sql,賽考利克,多語別（6 種）；使用者 2026-09-18 指定保底賽考利克（兩位主播 Tasaw Watan、Xuzi Hakaw 網頁皆未載語別）
+排灣,pwn-x-pnvn,中排灣,多語別（4 種）；使用者 2026-09-18 指定保底中排灣（主播 Djupelang Tjaljiges 網頁與此相符，另一位主播 Muni Kadrangian 為北排灣）
+布農,bnn-x-isbk,郡群,多語別（5 種）；使用者 2026-09-18 指定保底郡群（主播 Landuun Ismahasan 網頁未載語別）
+卑南,pyu-x-pym,南王,多語別（4 種）；使用者 2026-09-18 指定保底南王（主播 Araytay Paregi 主播專區網頁自介提到南王）
+魯凱,dru-x-ngdr,霧台,多語別（6 種）；使用者 2026-09-18 指定保底霧台（節目目錄 20210101_001_午間 檔名亦寫「魯凱語-霧台」）
+賽德克,trv-x-tgdy,德固達雅,多語別（3 種）；使用者 2026-09-18 指定保底德固達雅（兩位主播 Awe Nawi、Iwan Nawe 網頁皆未載語別）
+鄒,tsu,,單一語別；代號查自 scripts/languages.py
+賽夏,xsy,,單一語別；代號查自 scripts/languages.py
+雅美,tao,,單一語別；代號查自 scripts/languages.py
+邵,ssf,,單一語別；代號查自 scripts/languages.py
+噶瑪蘭,ckv,,單一語別；代號查自 scripts/languages.py
+太魯閣,trv-x-truku,,單一語別；代號查自 scripts/languages.py
+撒奇萊雅,szy,,單一語別；代號查自 scripts/languages.py
+拉阿魯哇,sxr,,單一語別；代號查自 scripts/languages.py
+卡那卡那富,xnb,,單一語別；代號查自 scripts/languages.py

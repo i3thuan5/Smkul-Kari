@@ -12,10 +12,10 @@ skipped; a failing episode is reported and the batch moves on.
 """
 import argparse
 import os
-import subprocess
 import sys
 
 from scripts.news import asrmt_run
+from scripts.news import audio
 from scripts.news import episodes
 from scripts.news import paths
 from scripts import lowpri
@@ -35,14 +35,6 @@ def parse_shard(spec):
 
 def shard_ok(position, worker, total):
     return position % total == worker
-
-
-def _fetch(remote, local):
-    script = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                          "sftp.sh")
-    done = subprocess.run(["bash", script, "get", remote, local])
-    if done.returncode or not os.path.exists(local):
-        raise PipelineError("sftp fetch failed: %s" % remote)
 
 
 def _todo(entries, worker, total, raw_dir, only=""):
@@ -74,23 +66,18 @@ def _todo(entries, worker, total, raw_dir, only=""):
 def _run_episode(entry):
     """抽音軌 → 解碼 → 投影＋render → 刣掉音檔，一集。
 
-    音檔對**這集ê影片**抽，無閣去問目錄ê音檔欄——彼一欄推導袂出來
-    （983 逝內底 148 逝無規則），閣干焦服務這一步。影片本底就愛抓
-    落來切 cue，兩步排做伙就干焦抓一擺。
+    取音檔（封存 mkv → SFTP、位元組數比對、抓來的原檔用完就刪）是
+    `scripts.news.audio` 的代誌，kaldi 佮 whisper 兩條線公家。
     """
     name = entry["srt_name"]
     work = asrmt_run._workdir(name)
-    audio = os.path.join(work, "audio.mp3")
-    if not os.path.exists(audio):
-        local, remote = asrmt_run.audio_source(entry)
-        if not local:
-            local = paths.staged_path(name, entry["file"])
-            _fetch(remote, local)
-        asrmt_run.extract_audio(local, audio)
+    audio_path = os.path.join(work, "audio.mp3")
+    if not os.path.exists(audio_path):
+        audio.get_audio(entry, audio_path)
     asrmt_run.step_words(name, entry["族語別(英)"])
     asrmt_run.step_raw(name)
-    if os.path.exists(audio):
-        os.remove(audio)
+    if os.path.exists(audio_path):
+        os.remove(audio_path)
 
 
 def main(argv=None):
