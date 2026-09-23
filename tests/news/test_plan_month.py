@@ -205,6 +205,48 @@ class TestTodoFetchesOneChosenFile(unittest.TestCase):
         self.assertNotIn("2022_002_2022-01-02_晨間_Hla'alua_拉阿魯哇", found)
 
 
+class TestTodoGivesServerPaths(unittest.TestCase):
+    """`--todo` 交出伺服器上的絕對路徑，`fetch_sftp.sh` 毋免閣加根目錄。
+
+    新母帶（2026-09-23，1223 集）佇 `/home/mkv-raw/`，毋是 `/docker/
+    ilrdf-corpus/`；`fetch_sftp.sh` 若照舊加 `/docker/ilrdf-corpus/`，
+    規批攏揣無。
+    """
+
+    RAW = "home/mkv-raw/112/7月/23NL003_183_族語午間新聞_Kanakanavu.mkv"
+    ROWS = [
+        row("183", "2023-07-02", "午間", "Kanakanavu", "卡那卡那富", "xnb",
+            [RAW]),
+        row("122", "2021-05-02", "晨間", "Hla'alua", "拉阿魯哇", "sxr",
+            [JUL + "21NL005_122晨間族語新聞.mp4"]),
+    ]
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.table = os.path.join(tmp.name, "smkul.csv")
+        with open(self.table, "w", encoding="utf-8-sig",
+                  newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=HEAD)
+            writer.writeheader()
+            for one in self.ROWS:
+                writer.writerow(one)
+
+    def _todo(self, month):
+        entries = episodes.load(self.table, srt_dir=set())
+        return dict(plan_month.todo(month, entries,
+                                    already_cut=lambda entry: False))
+
+    def test_a_mkv_raw_episode_is_fetched_from_home(self):
+        found = self._todo("2023-07")
+        self.assertEqual(list(found.values()), ["/" + self.RAW])
+
+    def test_a_corpus_episode_is_fetched_from_docker(self):
+        found = self._todo("2021-05")
+        self.assertEqual(list(found.values()),
+                         ["/docker/" + JUL + "21NL005_122晨間族語新聞.mp4"])
+
+
 class TestAlreadyCut(unittest.TestCase):
     """「這集敢做好矣」——work dir 抑是 Kari-SRT 有精修過ê時間軸。"""
 

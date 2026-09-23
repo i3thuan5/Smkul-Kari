@@ -119,3 +119,28 @@ class TestNames(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestServerPath(unittest.TestCase):
+    """目錄路徑 → SFTP 伺服器上的絕對路徑。
+
+    舊母帶攏佇 `/docker/ilrdf-corpus/` 底下，目錄寫 `ilrdf-corpus/…`，
+    三支程式各自寫死 `/docker` 抑是 `/docker/ilrdf-corpus` 去接。
+    2026-09-23 新到的 1223 集 mkv 囥佇 `/home/mkv-raw/…`，目錄寫
+    `home/mkv-raw/…`，照舊接會變成 `/docker/home/mkv-raw/…`、
+    `/docker/ilrdf-corpus/home/mkv-raw/…`，伺服器揣無，規批抓袂落來。
+    """
+
+    def test_the_corpus_root_is_served_under_docker(self):
+        self.assertEqual(resolve_slug.server_path(MP4), "/docker/" + MP4)
+
+    def test_every_way_of_writing_a_corpus_path_gives_one_answer(self):
+        tail = "族語新聞/110.1-110.10/7月/21NL004_37晚間族語新聞.mp4"
+        for given in (MP4, "/docker/" + MP4, tail, "/" + MP4):
+            self.assertEqual(resolve_slug.server_path(given),
+                             "/docker/" + MP4, given)
+
+    def test_mkv_raw_is_its_own_root_not_under_docker(self):
+        raw = "home/mkv-raw/112/7月/23NL003_183_族語午間新聞_Kanakanavu.mkv"
+        for given in (raw, "/" + raw):
+            self.assertEqual(resolve_slug.server_path(given), "/" + raw)

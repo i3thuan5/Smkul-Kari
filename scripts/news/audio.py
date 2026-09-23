@@ -23,14 +23,12 @@ import os
 import subprocess
 
 from scripts.news import paths
+from scripts.news import resolve_slug
 from scripts.news import sources
 from scripts.errors import PipelineError
 
 SFTP_SCRIPT = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "sftp.sh")
-
-# 伺服器頂ê語料根，佮 transcode 彼爿仝款。
-REMOTE_ROOT = "/docker"
 
 
 def video_source(entry):
@@ -48,7 +46,7 @@ def video_source(entry):
     if not chosen:
         raise PipelineError("%s：本機無封存 mkv，節目目錄嘛揀袂出來源（%s）"
                             % (name, problem))
-    return "", REMOTE_ROOT + "/" + chosen
+    return "", resolve_slug.server_path(chosen)
 
 
 def _remote_size(remote):

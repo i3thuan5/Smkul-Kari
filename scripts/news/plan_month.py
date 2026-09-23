@@ -146,8 +146,10 @@ def todo(month, entries, already_cut=already_cut):
     can ever ask for a second cut of an episode -- the failure that would
     renumber every cue under a delivered SRT.
 
-    Paths come back corpus-root-relative, the form the server takes under its
-    own root and the form `resolve_slug` normalises to.
+    Paths come back absolute on the server (`resolve_slug.server_path`):
+    most sources sit under `/docker/ilrdf-corpus/`, but the 2026-09-23 mkv
+    delivery is under `/home/mkv-raw/`, so the caller cannot add one fixed
+    root itself.
 
     The path is the one `sources.resolve` chose, the same as `plan` reports
     -- `原始影片檔案位置` is a candidate list, and handing the raw cell to
@@ -167,7 +169,7 @@ def todo(month, entries, already_cut=already_cut):
             continue
         if already_cut(entry):
             continue
-        out.append((entry["slug"], resolve_slug.normalise(video)))
+        out.append((entry["slug"], resolve_slug.server_path(video)))
     return out
 
 

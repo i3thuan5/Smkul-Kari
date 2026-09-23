@@ -45,7 +45,6 @@ BRIEF = os.path.join(os.path.dirname(__file__), "brief.md")
 MKV_DIR = os.path.relpath(paths.MKV_ARCHIVE, paths.ROOT)
 READ_STAGE = os.path.relpath(os.path.join(paths.NEWS_OUT, "stage-read"),
                              paths.ROOT)
-REMOTE_ROOT = "/docker/ilrdf-corpus"
 # `or`, not a `get` default: an exported-but-empty CLAUDE_SCRATCH counts
 # as set, and `os.path.join("", name)` then hands the reader a
 # relative path that lands wherever it happens to be standing.
@@ -67,13 +66,13 @@ def episode(slug):
 
 
 def remote_of(name):
-    """這集ê來源影片，照 `sources` ê規則揀ê彼條（語料根目錄相對路徑）。"""
+    """這集ê來源影片，照 `sources` ê規則揀ê彼條（伺服器上ê絕對路徑）。"""
     for entry in episodes.load():
         if entry["srt_name"] == name:
             path, problem = sources.pick(entry)
             if not path:
                 raise PipelineError("%s 揀無來源影片：%s" % (name, problem))
-            return resolve_slug.normalise(path)
+            return resolve_slug.server_path(path)
     raise PipelineError("節目目錄內底揣無：%s" % name)
 
 
@@ -87,10 +86,10 @@ def video_source(name):
     folder = os.path.join(READ_STAGE, month)
     local = os.path.join(folder, os.path.basename(remote))
     fetch = ('——這集無封存 mkv，愛先抓 mp4：`mkdir -p %s && [ -f "%s" ] || '
-             '{ bash scripts/news/sftp.sh get "%s/%s" "%s.part.$$" && '
+             '{ bash scripts/news/sftp.sh get "%s" "%s.part.$$" && '
              'mv "%s.part.$$" "%s"; }`（檔案已經佇咧就免閣抓，仝一集另外'
              '一批ê讀者可能抓好矣）'
-             % (folder, local, REMOTE_ROOT, remote, local, local, local))
+             % (folder, local, remote, local, local, local))
     return local, fetch
 
 

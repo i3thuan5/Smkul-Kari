@@ -70,6 +70,15 @@ class TestVideoSource(unittest.TestCase):
             "/docker/ilrdf-corpus/族語新聞/110.1-110.10/2月原始mxf檔/"
             "20NL003_32午間族語新聞.mxf")
 
+    def test_a_mkv_raw_source_is_fetched_from_its_own_root(self):
+        # 2026-09-23 新母帶佇 /home/mkv-raw，毋是 /docker 底下
+        raw = "home/mkv-raw/112/7月/23NL003_183_族語午間新聞_Kanakanavu.mkv"
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, tmp, True)
+        with mock.patch.object(audio.paths, "MKV_ARCHIVE", tmp):
+            local, remote = audio.video_source(_entry(原始影片檔案位置=raw))
+        self.assertEqual(remote, "/" + raw)
+
     def test_no_source_anywhere_is_named(self):
         tmp = tempfile.mkdtemp()
         self.addCleanup(__import__("shutil").rmtree, tmp, True)

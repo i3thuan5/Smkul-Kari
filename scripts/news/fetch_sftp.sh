@@ -60,7 +60,6 @@ if [[ ! -x "$PY" ]]; then
     exit 1
 fi
 PRESETS=$(python3 -m scripts.news.paths --var ENGINE_PRESETS)
-REMOTE_ROOT=/docker/ilrdf-corpus
 
 PRESET=titv-news
 LIMIT=0
@@ -133,7 +132,7 @@ fi
 # anything tries to use them as paths.
 sizes=$(mktemp); trap 'rm -f "$todo" "$sizes"' EXIT
 cut -f2 "$todo" | xargs -r -n1 dirname | sort -u | while read -r folder; do
-    "$HERE/sftp.sh" ls "$REMOTE_ROOT/$folder" 2>/dev/null \
+    "$HERE/sftp.sh" ls "$folder" 2>/dev/null \
       | "$PY" -c '
 import sys
 folder = sys.argv[1]
@@ -236,7 +235,7 @@ while IFS=$'\t' read -r slug remote <&3; do
         echo "$(date +%H:%M:%S) reuse $slug (already staged)"
     else
         echo "$(date +%H:%M:%S) get   $slug  ($(( size / 1000000 )) MB)"
-        if ! "$HERE/sftp.sh" get "$REMOTE_ROOT/$remote" "$local_file" \
+        if ! "$HERE/sftp.sh" get "$remote" "$local_file" \
              > "$LOG/$slug.get.log" 2>&1; then
             echo "$(date +%H:%M:%S) FAIL  download $slug"; rm -f "$local_file"; continue
         fi

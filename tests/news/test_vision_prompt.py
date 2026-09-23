@@ -63,7 +63,8 @@ class VisionPromptCase(unittest.TestCase):
 
     NAME = "20210224_055_午間_Cou_鄒"
     SLUG = "2021_055_2021-02-24_午間_Cou_鄒"
-    REMOTE = "族語新聞/110.1-110.10/2月/21NL003_55午間族語新聞.mp4"
+    REMOTE = ("/docker/ilrdf-corpus/族語新聞/110.1-110.10/2月/"
+              "21NL003_55午間族語新聞.mp4")
 
     def setUp(self):
         # 來源路徑本底愛讀節目目錄；測試離線，換做固定值
@@ -613,6 +614,13 @@ class TestNativeFrameSource(VisionPromptCase):
         # 暫存也照月份分層
         self.assertIn(os.path.join(prompt.READ_STAGE, "2021-02",
                                    "21NL003_55午間族語新聞.mp4"), text)
+
+    def test_the_fetch_command_uses_the_server_path_as_is(self):
+        # remote_of 已經是伺服器絕對路徑；閣加 /docker/ilrdf-corpus 就
+        # 變做 /docker/ilrdf-corpus/docker/…，/home/mkv-raw 嘛仝款揣無
+        with mock.patch.object(prompt, "MKV_DIR", "/nonexistent-mkv"):
+            text = self.brief(40, 1)
+        self.assertIn('sftp.sh get "%s"' % self.REMOTE, text)
 
     def test_the_brief_names_the_stage_folders(self):
         # 讀者照工作說明去找圖：寫 `sheets/`、`strips/` 就找不到

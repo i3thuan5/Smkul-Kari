@@ -52,6 +52,25 @@ def normalise(path):
     return path
 
 
+# Sources that are not under the corpus root at all. The 2026-09-23 mkv
+# delivery sits in `/home/mkv-raw/`, a sibling of `/docker`, and the
+# catalogue writes it `home/mkv-raw/…`.
+OTHER_ROOTS = ("home/",)
+
+
+def server_path(path):
+    """Where this catalogue path lives on the SFTP server, absolute.
+
+    One answer for every caller that downloads: the corpus root is served
+    under `/docker/ilrdf-corpus/`, anything under `OTHER_ROOTS` from `/`.
+    """
+    bare = path.strip().lstrip("/")
+    for root in OTHER_ROOTS:
+        if bare.startswith(root):
+            return "/" + bare
+    return "/" + SERVER_ROOT + CORPUS_ROOT + normalise(bare)
+
+
 class Catalogue(object):
     """The catalogue, indexed so that a file can be looked up by path.
 
