@@ -10,6 +10,7 @@
 tests/
 ├── languages/    族語別佮語言別ê代號對照表（對照表佇該目錄ê README）
 ├── catalogue/    節目目錄ê共同欄位佮不變量（仝款）
+├── lexicon/      官方族語辭典：xlsx 讀取、切詞、命中率（仝款；開會了佮新聞平行語料公家）
 ├── ocr/          test_mask  test_region  test_segmenter  test_sheets
 │                 test_import_tsv  test_ocr_prep  test_presets  test_auto_options
 ├── srtlib/       test_srt  test_merge_repeats  test_pad_edges  test_chain
@@ -18,6 +19,7 @@ tests/
 │                 test_detect_blocks  test_detect_scores  test_detect_classify
 ├── news/         族語新聞編排層測試（來源選擇、月份計畫、完整性、
 │                 asrmt_run、smkul、tracker、refine、paths 保護…）
+├── mt/           族語新聞平行語料：對齊、分層、CSV、調參（對照表佇該目錄ê README）
 ├── aiyalaeho/    《開會了》編排層測試（檔名解析、雙槽驗版型、雙列
 │   │             組裝、九欄進度表、0-cue 交付、離線重建）
 │   └── langcheck/  逐條語言判定（對照表佇該目錄ê README）
@@ -115,6 +117,8 @@ tests-e2e/        fixture.py  test_roundtrip  test_mxf2mkv_roundtrip
 | subtitle-text-source | 視覺 token 從 PNG 檔頭拿：不是 PNG、檔頭截斷、第一塊不是 IHDR 要報錯，不可猜數字；切批跑在沒有 numpy／PIL 的系統 python3，這支只准用標準函式庫 | `ocr/test_sheetsize.py` |
 | cue-timing | 抓檔批次的並行集數與 ffmpeg 執行緒數預設 6／2（2 緒每核效率 0.98，預設 8–9 緒只有 0.67）；旗標勝過環境變數；0、負數、非數字要在開工前擋下（0 會讓等空位的迴圈永遠等不到）；同時跑的工作不超過上限、一集失敗不卡住整批 | `news/test_fetch_sftp_config.py` |
 
+**片頭辨識、段落表、帶外補切、字幕帶版型**（`news-segments` 與相關修改）：表放 `tests/news/README.md`，無囥佇遮。
+
 ## 一集配一支檔（tests/news/ ↔ scripts/news/）
 
 | spec | scenario | 測試檔 |
@@ -125,6 +129,7 @@ tests-e2e/        fixture.py  test_roundtrip  test_mxf2mkv_roundtrip
 | episode-sourcing | 一個月可跨資料夾／同資料夾別的月份不選入／登記先於下載／重跑不重複登記 | `news/test_plan_month.py` |
 | episode-sourcing | 抓檔清單來自 inventory 的 pending 條目，不是遠端 ls | `news/test_plan_month.py` |
 | episode-sourcing | 抓檔清單（`--todo`）要先照規則挑檔，不可把整格候選「a.mp4;b.mp4」原樣交給下載（修之前 59 集這樣被跳過；規則 4 也跟著失效，2021-03 有 3 對集數各自用同一支影片切了）；挑不出來的不上清單 | `news/test_plan_month.py` |
+| episode-sourcing | 伺服器路徑只由 `resolve_slug.server_path` 算：2026-09-23 新到的 1223 集 mkv 在 `/home/mkv-raw/`，不在 `/docker/ilrdf-corpus/` 底下，抓檔、whisper 抽音、讀者抽格三處各自寫死 `/docker…` 去接，會變成 `/docker/home/mkv-raw/…`、`/docker/ilrdf-corpus//docker/…`，整批抓不到 | `news/test_resolve_slug.py`、`news/test_plan_month.py`、`news/test_audio.py`、`news/test_vision_prompt.py` |
 
 ## 《開會了》編排（tests/aiyalaeho/ ↔ scripts/aiyalaeho/）
 
@@ -140,7 +145,8 @@ tests-e2e/        fixture.py  test_roundtrip  test_mxf2mkv_roundtrip
 | subtitle-text-source | 每條恆兩行帶標籤「族語：／華語：」；某列空白猶原出標籤行；兩列攏空無出；合併比兩行合成ê字串 | `aiyalaeho/test_make_srt.py` |
 | episode-catalogue | 族語別佮語言別ê代號對照表（16 種族語別攏查有代號、太魯閣 `trv-x-truku` 毋是 `trv`、德路固是賽德克ê變體、查無退族語級、代號倒轉查名、`und` 是標準答案）——13 逝ê對照表佇 `languages/README.md` | `languages/test_languages.py` |
 | episode-catalogue | 節目目錄ê共同欄位佮不變量（播出時段對節目名稱推、集數補三碼、成果檔名佮識別欄互推、重複、列序、素材位置非空、語言欄值域、孤兒檔）——11 逝ê對照表佇 `catalogue/README.md` | `catalogue/test_catalogue_checks.py` |
-| aiyalaeho-language-check | 逐條語言判定ê規組（字元分類、辭典蒸餾、詞庫比對、方言別正音、兩張 CSV）——27 逝ê對照表佇 `aiyalaeho/langcheck/README.md` | `aiyalaeho/langcheck/*.py` |
+| aiyalaeho-language-check | 逐條語言判定ê規組（逐條標記、兩張 CSV）——對照表佇 `aiyalaeho/langcheck/README.md` | `aiyalaeho/langcheck/*.py` |
+| aiyalaeho-language-check | 官方族語辭典（字元分類、辭典蒸餾、詞庫比對、方言別正音）——13 逝ê對照表佇 `lexicon/README.md` | `lexicon/*.py` |
 | subtitle-text-source | 兩逝一 cue ê TSV：列名毋著／cue 無佇 sheet 頂懸／仝一 cue 兩批攏有——規批拒收 | `aiyalaeho/test_ingest.py` |
 | srt-data-store | store 版面（`aiyalaeho/1-ocr/{1-cues,2-vision,3-srt}`、不分層）；inventory 欄位宣告 | `aiyalaeho/test_paths.py` |
 | —（成本防線） | preset ê列懸度愛予一張 sheet 囥會落四條 cue（1.10 MP 預算；超過就恬恬加三成閱讀量） | `aiyalaeho/test_paths.py` |

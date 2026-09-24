@@ -17,7 +17,7 @@ import sys
 
 from scripts import catalogue_checks as checks
 from scripts.aiyalaeho import paths
-from scripts.aiyalaeho.langcheck import dictionary
+from scripts.lexicon import dictionary
 from scripts.aiyalaeho.langcheck import mark
 from scripts.errors import PipelineError
 

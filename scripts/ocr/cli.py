@@ -338,10 +338,13 @@ def stage_cues(args):
         # Both come off the preset, never the manifest: they describe the
         # layout, not this episode (ruled 2026-09-09).
         slots = (preset or {}).get("sheet", {}).get("row_slots")
+        ignore = (preset or {}).get("sheet", {}).get("ignore_cols")
+        centre = (preset or {}).get("sheet", {}).get("centre")
         made = contact.build_sheets(workdir, manifest,
                                     row_slots=slots,
                                     compare_cols=spec.compare_cols,
-                                    right_anchor=spec.right_anchor)
+                                    right_anchor=spec.right_anchor,
+                                    ignore_cols=ignore, centre=centre)
         print("wrote %d contact sheet(s) to %s"
               % (made, datadirs.sheets_dir(workdir)))
     return 0

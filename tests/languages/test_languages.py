@@ -37,6 +37,22 @@ class TestEveryNewsLanguageHasACode(unittest.TestCase):
             seen[english] = name
 
 
+class TestKaxabu(unittest.TestCase):
+    """噶哈巫毋是 16 族之一，毋過受訪者名條會出現（2024-12-28 晨間邵語：
+    黃美玉、周珈萱 Kaxabu）。規範 CSV 猶未收；使用者裁定 2026-09-24
+    先用 `pzh-x-kaxabu`：ISO 639-3 ê巴宰 `pzh` 加私有標籤，照太魯閣
+    `trv-x-truku` ê前例，佮巴宰分會開。"""
+
+    def test_kaxabu_has_its_own_tag_under_pazeh(self):
+        self.assertEqual(languages.OTHER_GROUPS["噶哈巫"],
+                         ("Kaxabu", "pzh-x-kaxabu"))
+
+    def test_it_is_not_one_of_the_sixteen(self):
+        # 機器翻譯逐族抓一本辭典；放入 LANGUAGES 就去抓無存在ê辭典，
+        # tests/mt/test_lexicon.py 八个測試做伙倒（2026-09-24 踏著）。
+        self.assertNotIn("噶哈巫", languages.LANGUAGES)
+
+
 class TestTrukuIsNotSeediq(unittest.TestCase):
     """太魯閣佮賽德克 ISO 歸做仝一个 `trv`，毋過是無仝ê語言。
 

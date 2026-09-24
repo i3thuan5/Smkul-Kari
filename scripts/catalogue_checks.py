@@ -167,6 +167,38 @@ def orphan_problems(rows, stages):
     return problems
 
 
+def excluded_problems(rows, excluded, to_path,
+                      source_column="原始影片檔案位置"):
+    """目錄內底出現排除清單（`排除影片.csv`）列過ê檔。
+
+    `to_path` kā一條路徑換做伺服器絕對路徑：目錄寫 `home/…`、
+    `ilrdf-corpus/…`，清單寫 `/home/…`、`/docker/ilrdf-corpus/…`，
+    字串直接比會漏。素材位置是分號並列ê，逐條攏愛比。
+
+    清單本身ê逝若無寫 `同一支的保留檔`，嘛算一項——無寫，後來ê人就
+    毋知彼个時段是缺檔抑是另外有一支。
+    """
+    problems = []
+    index = {}
+    for line, entry in enumerate(excluded, start=2):
+        if not (entry.get("同一支的保留檔") or "").strip():
+            problems.append("排除影片 第 %d 逝：同一支的保留檔 空ê（%s）"
+                            % (line, entry.get("伺服器路徑", "")))
+        index[to_path(entry.get("伺服器路徑", ""))] = entry
+    for line, row in enumerate(rows, start=2):
+        for part in (row.get(source_column) or "").split(";"):
+            if not part.strip():
+                continue
+            entry = index.get(to_path(part))
+            if entry is None:
+                continue
+            problems.append(
+                "第 %d 逝：%s 佇排除影片內（%s；同一支的保留檔 %s）"
+                % (line, part.strip(), entry.get("排除原因", ""),
+                   entry.get("同一支的保留檔", "")))
+    return problems
+
+
 def header_problems(fieldnames, keys):
     """表頭ê頭幾欄愛佮別張相仝。"""
     want = head(keys)

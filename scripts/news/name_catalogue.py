@@ -30,6 +30,7 @@ import sys
 
 from scripts import catalogue_checks as checks
 from scripts.news import paths
+from scripts.news import resolve_slug
 from scripts.errors import PipelineError
 
 COLUMN = "成果檔名"
@@ -94,6 +95,19 @@ def check(rows):
     return bad
 
 
+def excluded(rows, path=None):
+    """目錄內底出現 `排除影片.csv` 列過ê檔，逐項一句。
+
+    無彼份表就無問題——《開會了》彼爿無這款表。
+    """
+    source = path or paths.EXCLUDED_STORE
+    if not os.path.exists(source):
+        return []
+    with open(source, encoding="utf-8-sig", newline="") as handle:
+        entries = list(csv.DictReader(handle))
+    return checks.excluded_problems(rows, entries, resolve_slug.server_path)
+
+
 def read(path=None):
     """(rows, column order) as the file has them."""
     source = path or paths.TRACKER_STORE
@@ -145,7 +159,12 @@ def main():
         for line, stored, wanted in bad:
             print("第%d逝 %r 應該是 %r" % (line, stored, wanted))
         print("%s：%d 逝，無合 %d 逝" % (target, len(rows), len(bad)))
-        return 1 if bad else 0
+        dropped = excluded(rows)
+        for line in dropped:
+            print(line)
+        if dropped:
+            print("排除影片：%d 項" % len(dropped))
+        return 1 if bad or dropped else 0
 
     rows, _ = read(target)
     got = rewrite(target)

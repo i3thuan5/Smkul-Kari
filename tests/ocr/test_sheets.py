@@ -228,6 +228,271 @@ class TestSlotCrop(unittest.TestCase):
         self.assertIsNone(sheets.slot_crop(self._ink(4000, 0), slots))
 
 
+class TestSlotCropStraddle(unittest.TestCase):
+    """字跨佇偏上／偏下分界頂懸ê時，裁一爿就切著字。
+
+    2022 年「文化小辭典」ê字佇 y≈770–837（帶內 48–115），跨過分界
+    787（帶內 65）。墨水大部分佇下爿，所以判做偏下、裁 59 以下，字頂
+    8–17 px 煞去予裁掉——原生圖條完整，組合圖頂懸ê字無頭。
+    """
+
+    SLOTS = {"split": 65, "pad": 6, "min_ratio": 2.0, "min_ink": 200}
+
+    def _rows(self, lo, hi, height=122, width=400):
+        mask = np.zeros((height, width), dtype=bool)
+        mask[lo:hi, 100:300] = True
+        return mask
+
+    def test_a_line_across_the_split_keeps_the_whole_band(self):
+        slots = dict(self.SLOTS, straddle=8)
+        self.assertIsNone(sheets.slot_crop(self._rows(48, 116), slots))
+
+    def test_a_few_rows_over_the_split_still_crop(self):
+        # 偏下ê字頂本底就會到 786–788，pad 6 包會牢，毋免退。
+        slots = dict(self.SLOTS, straddle=8)
+        self.assertEqual(sheets.slot_crop(self._rows(62, 116), slots),
+                         (59, 122))
+
+    def test_an_upper_line_reaching_down_across_the_split(self):
+        slots = dict(self.SLOTS, straddle=8)
+        self.assertIsNone(sheets.slot_crop(self._rows(10, 80), slots))
+
+    def test_background_noise_does_not_count_as_a_line(self):
+        # 一兩點仔亂墨毋是字：逐列攏愛有真正ê筆畫才算「連過去」。
+        mask = self._rows(70, 116)
+        mask[40:65, 5] = True
+        slots = dict(self.SLOTS, straddle=8)
+        self.assertEqual(sheets.slot_crop(mask, slots), (59, 122))
+
+    def test_without_the_setting_nothing_changes(self):
+        # 開會了、amis-titv-news 無宣告：逐畫素佮本底相仝。
+        self.assertEqual(sheets.slot_crop(self._rows(48, 116), self.SLOTS),
+                         (59, 122))
+
+
+class TestSlotCropExcludesRedRows(unittest.TestCase):
+    """紅色標題條彼幾列ê墨水毋是字幕。
+
+    2024 年紅條上緣佇 y 851／852，頂懸約 40 列是暗紅（R 30–100、
+    G=B=0）；紅條內底ê白字（族語標題、名牌）遮罩會算入去。字幕帶下緣
+    若是碰著紅條，偏上ê對白就會因為「下爿嘛有墨」判袂出來。
+    判準是「純紅」：紅明顯較懸、綠藍接近 0，毋是單看 R>150——暗紅
+    過渡列 R 才 30–100。
+    """
+
+    SLOTS = {"split": 65, "pad": 6, "min_ratio": 2.0, "min_ink": 200}
+    EXCLUDE = {"r_min": 20, "gb_max": 25, "r_minus_g": 15}
+
+    def _frame(self):
+        rgb = np.full((122, 400, 3), 20, dtype=np.uint8)
+        rgb[95:106] = (60, 0, 0)       # 暗紅過渡
+        rgb[106:122] = (180, 0, 0)     # 紅條本體
+        mask = np.zeros((122, 400), dtype=bool)
+        mask[20:40, 100:300] = True    # 偏上ê對白
+        mask[108:120, 60:380] = True   # 紅條內底ê白字
+        return rgb, mask
+
+    def test_red_rows_do_not_count_as_subtitle_ink(self):
+        rgb, mask = self._frame()
+        slots = dict(self.SLOTS, exclude=self.EXCLUDE)
+        self.assertEqual(sheets.slot_crop(mask, slots, rgb=rgb), (0, 71))
+
+    def test_without_the_setting_the_red_rows_still_count(self):
+        rgb, mask = self._frame()
+        self.assertIsNone(sheets.slot_crop(mask, self.SLOTS, rgb=rgb))
+
+    def test_a_dark_grey_row_is_not_red(self):
+        # 暗灰（R=G=B）毋是紅條，袂使因為 R>20 就排除。
+        rgb, mask = self._frame()
+        rgb[95:122] = (60, 60, 60)
+        slots = dict(self.SLOTS, exclude=self.EXCLUDE)
+        self.assertIsNone(sheets.slot_crop(mask, slots, rgb=rgb))
+
+    def test_the_rows_are_excluded_only_from_the_decision(self):
+        # 圖條畫素一點都袂使改：排除干焦影響判斷。
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        os.makedirs(os.path.join(tmp.name, "2-strips"))
+        frame = np.full((122, 400, 3), 20, dtype=np.uint8)
+        frame[95:106] = (60, 0, 0)
+        frame[106:122] = (180, 0, 0)
+        frame[20:40, 100:300] = 255
+        frame[108:120, 60:380] = 255
+        Image.fromarray(frame).save(
+            os.path.join(tmp.name, "2-strips", "a.png"))
+        manifest = {
+            "lines": [{"name": "han", "y": 0, "h": 122}],
+            "mask": {},
+            "cues": [{"index": 1, "start": 3.0, "end": 5.0,
+                      "images": {"han": os.path.join("2-strips", "a.png")}}],
+        }
+        spec = cuelib.MaskSpec.from_dict({})
+        slots = dict(self.SLOTS, exclude=self.EXCLUDE)
+        blocks, _, decided, _ = sheets._cue_blocks(tmp.name, manifest, spec,
+                                                   row_slots=slots)
+        tile = np.asarray(blocks[0][2][0])
+        self.assertEqual(decided, 1)
+        self.assertEqual(tile.shape[0], 71)
+        left = int(np.nonzero((frame[20:40] == 255).all(axis=2).any(axis=0))
+                   [0][0])
+        width = tile.shape[1]
+        # 裁出來ê每一个畫素攏是原圖彼位ê畫素。
+        found = False
+        for x0 in range(0, 400 - width + 1):
+            if np.array_equal(frame[0:71, x0:x0 + width], tile):
+                found = True
+                break
+        self.assertTrue(found)
+        self.assertLessEqual(left, 100)
+
+
+class TestOffBandCuesAreCroppedAsCentred(unittest.TestCase):
+    """帶外段落（島語時間…）重切ê cue 帶 `area`，對白是置中ê。
+
+    規集ê組合圖照字幕帶ê preset 排：置右錨定（1650）會kā右爿ê雜訊佮
+    置中ê對白做伙留，上下位置判斷會照字幕帶ê分界裁——這兩項對帶外ê
+    圖條攏毋著。
+    """
+
+    def _manifest(self, area):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        os.makedirs(os.path.join(tmp.name, "2-strips"))
+        frame = np.full((120, 1920, 3), 20, dtype=np.uint8)
+        frame[20:60, 620:1300] = 255      # 置中ê對白
+        frame[90:96, 1640:1760] = 255     # 右爿ê雜訊
+        Image.fromarray(frame).save(
+            os.path.join(tmp.name, "2-strips", "a.png"))
+        item = {"index": 1, "start": 3.0, "end": 5.0,
+                "images": {"han": os.path.join("2-strips", "a.png")}}
+        if area:
+            item["area"] = area
+        manifest = {"lines": [{"name": "han", "y": 0, "h": 120}],
+                    "mask": {}, "cues": [item]}
+        return tmp.name, manifest
+
+    def _tile(self, area):
+        work, manifest = self._manifest(area)
+        slots = {"split": 65, "pad": 6, "min_ratio": 2.0, "min_ink": 200}
+        blocks, _, _, _ = sheets._cue_blocks(
+            work, manifest, cuelib.MaskSpec.from_dict({}), row_slots=slots,
+            compare_cols=[1250, 1790], right_anchor=1650)
+        return blocks[0][2][0]
+
+    def test_an_off_band_cue_is_not_anchored_right(self):
+        tile = self._tile("島語時間")
+        self.assertLess(tile.width, 800)
+        self.assertEqual(tile.height, 120)
+
+    def test_a_band_cue_still_is(self):
+        self.assertGreater(self._tile(None).width, 1000)
+
+
+class TestTheBadgeDoesNotWinTheColumns(unittest.TestCase):
+    """2024-08 起「族語」語別牌（x 210–310）落佇字幕帶（y 840–930）內底。
+
+    欄ê裁切揀墨上濟彼段；語別牌墨比對白濟ê時，圖條干焦賰語別牌，對白
+    予人裁掉（2024-12-01 午間 cue 92「肯上來」，讀者掠原生 strip 才發
+    現）。preset 宣告 `ignore_cols` 彼幾欄毋參與揀欄。
+    """
+
+    def _tile(self, ignore):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        os.makedirs(os.path.join(tmp.name, "2-strips"))
+        frame = np.full((90, 1920, 3), 20, dtype=np.uint8)
+        frame[10:80, 210:310] = 255      # 語別牌：墨較濟
+        frame[40:60, 900:980] = 255      # 對白「肯上來」：墨較少
+        Image.fromarray(frame).save(
+            os.path.join(tmp.name, "2-strips", "a.png"))
+        manifest = {"lines": [{"name": "han", "y": 0, "h": 90}], "mask": {},
+                    "cues": [{"index": 92, "start": 3.0, "end": 5.0,
+                              "images": {"han": os.path.join("2-strips",
+                                                             "a.png")}}]}
+        blocks, _, _, _ = sheets._cue_blocks(
+            tmp.name, manifest, cuelib.MaskSpec.from_dict({}),
+            ignore_cols=ignore)
+        return np.asarray(blocks[0][2][0])
+
+    def test_without_the_setting_the_badge_wins(self):
+        tile = self._tile(None)
+        self.assertLess(tile.shape[1], 200)
+
+    def test_the_dialogue_is_kept_when_the_badge_columns_are_ignored(self):
+        tile = self._tile([0, 400])
+        lit = int((tile == 255).all(axis=2).sum())
+        self.assertGreaterEqual(lit, 20 * 80)
+
+
+class TestCentredLinesAreCroppedSymmetrically(unittest.TestCase):
+    """2024-08 起字幕置中：頭一字壓佇白底頂懸，遮罩掠無伊，欄裁切就
+    kā 伊裁掉（2024-12-03 午間 cue 450「三叉坑」賰「叉坑」）。置中ê字
+    幕對中線對稱，照另外一爿量著ê闊度對稱裁，漏掉ê彼爿嘛會包入去。
+    """
+
+    def _tile(self, centre):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        os.makedirs(os.path.join(tmp.name, "2-strips"))
+        frame = np.full((90, 1920, 3), 20, dtype=np.uint8)
+        frame[30:60, 700:1220] = 255     # 置中ê一逝字（760–1220 攏掠會著）
+        frame[30:60, 700:760] = (235, 235, 235)   # 頭一字：白底，遮罩掠無
+        Image.fromarray(frame).save(
+            os.path.join(tmp.name, "2-strips", "a.png"))
+        manifest = {"lines": [{"name": "han", "y": 0, "h": 90}], "mask": {},
+                    "cues": [{"index": 450, "start": 3.0, "end": 5.0,
+                              "images": {"han": os.path.join("2-strips",
+                                                             "a.png")}}]}
+        spec = cuelib.MaskSpec.from_dict({"white_min": 245})
+        blocks, _, _, _ = sheets._cue_blocks(tmp.name, manifest, spec,
+                                             centre=centre)
+        return blocks[0][2][0]
+
+    def test_without_the_setting_the_first_character_is_cut(self):
+        self.assertLess(self._tile(None).width, 520)
+
+    def test_the_crop_is_symmetric_about_the_centre(self):
+        tile = self._tile(960)
+        # 右爿到 1220+pad → 左爿對稱到 700−pad，頭一字包入去
+        self.assertGreaterEqual(tile.width, 520)
+
+
+class TestDataFootageLabel(unittest.TestCase):
+    """2024 年「資料畫面／畫面提供」標籤囥佇畫面倒爿、帶內偏上位
+    （y 740–792，帶內 18–70），仝時陣對白佇偏下。
+
+    判斷干焦看置右字幕比對遮罩（x 1250–1790）內底ê墨，標籤佇 x<400，
+    袂參與判斷，所以照裁偏下，對白無予裁掉。這條鎖牢，毋是新行為。
+    """
+
+    def test_the_label_does_not_decide_the_slot(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        os.makedirs(os.path.join(tmp.name, "2-strips"))
+        frame = np.full((122, 1920, 3), 20, dtype=np.uint8)
+        frame[18:70, 100:380] = 255        # 資料畫面標籤
+        frame[72:110, 1300:1740] = 255     # 對白
+        Image.fromarray(frame).save(
+            os.path.join(tmp.name, "2-strips", "a.png"))
+        manifest = {
+            "lines": [{"name": "han", "y": 0, "h": 122}],
+            "mask": {},
+            "cues": [{"index": 1, "start": 3.0, "end": 5.0,
+                      "images": {"han": os.path.join("2-strips", "a.png")}}],
+        }
+        spec = cuelib.MaskSpec.from_dict({})
+        slots = {"split": 65, "pad": 6, "min_ratio": 2.0, "min_ink": 200,
+                 "straddle": 8}
+        blocks, undecided, decided, _ = sheets._cue_blocks(
+            tmp.name, manifest, spec, row_slots=slots,
+            compare_cols=[1250, 1790], right_anchor=1650)
+        tile = np.asarray(blocks[0][2][0])
+        self.assertEqual((undecided, decided), (0, 1))
+        self.assertEqual(tile.shape[0], 122 - 59)
+        lit = int((tile == 255).all(axis=2).sum())
+        self.assertGreaterEqual(lit, 38 * 440)
+
+
 class TestUndecidedShare(unittest.TestCase):
     """How often this episode could not tell -- reported, never acted on.
 
@@ -349,6 +614,8 @@ class TestAnchorComesFromThePreset(unittest.TestCase):
         with open("scripts/news/presets.json", encoding="utf-8") as handle:
             news = json.load(handle)
         for name, preset in news.items():
+            if preset["region"][1] != 722:
+                continue      # 帶外區域：置中抑是無一定，見 test_presets
             self.assertIn("right_anchor", preset["mask"], name)
         with open("scripts/aiyalaeho/presets.json", encoding="utf-8") as fh:
             other = json.load(fh)

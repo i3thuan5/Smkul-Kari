@@ -61,7 +61,10 @@ if [[ ! -x "$PY" ]]; then
 fi
 PRESETS=$(python3 -m scripts.news.paths --var ENGINE_PRESETS)
 
-PRESET=titv-news
+# 無指定就照月份：`plan_month --preset`（presets.json 逐个 preset 宣告
+# ê `months`）。2021-11 起ê母帶紅條上緣 852，用下緣 848 ê版型。
+PRESET=
+OPENING_ONLY=
 LIMIT=0
 ONLY=
 JOBS="${FETCH_JOBS:-6}"
@@ -77,13 +80,14 @@ while [[ $# -gt 0 ]]; do
         --jobs)    JOBS="$2";    shift 2 ;;
         --threads) THREADS="$2"; shift 2 ;;
         --print-config) PRINT_CONFIG=1; shift ;;
+        --opening-only) OPENING_ONLY=1; shift ;;
         *) echo "unknown option: $1" >&2; exit 2 ;;
     esac
 done
 if [[ ! "$MONTH" =~ ^[0-9]{4}-[0-9]{2}$ ]]; then
     echo "usage: $0 <播出月份，親像 2021-01>" \
          "[--preset NAME] [--limit N] [--only REGEX]" \
-         "[--jobs N] [--threads N]" >&2
+         "[--jobs N] [--threads N] [--opening-only]" >&2
     exit 2
 fi
 if ! pool_positive_int "$JOBS"; then
@@ -98,13 +102,42 @@ fi
 LOG=$(python3 -m scripts.news.paths --log-dir "$MONTH") || exit 1
 STAGE="${STAGE:-$(python3 -m scripts.news.paths --stage-dir "$MONTH")}" || exit 1
 
+if [[ -z "$PRESET" ]]; then
+    PRESET=$(python3 -m scripts.news.plan_month "$MONTH" --preset) || exit 1
+fi
+
 if [[ -n "$PRINT_CONFIG" ]]; then
     echo "jobs=$JOBS"
     echo "threads=$THREADS"
+    echo "preset=$PRESET"
+    if [[ -n "$OPENING_ONLY" ]]; then echo "mode=opening"; else echo "mode=cut"; fi
     exit 0
 fi
 
 mkdir -p "$LOG" "$STAGE"
+
+# --- 已經切過ê集數補做片頭辨識（2021 年）-----------------------------
+# 影片早就刣掉矣，干焦抓頭尾兩段截 20／30／40 秒三格（`opening
+# grab-remote`，curl 用 ~/.netrc），毋切 cue、毋刣任何物件。
+if [[ -n "$OPENING_ONLY" ]]; then
+    opening=$(mktemp); trap 'rm -f "$opening"' EXIT
+    "$PY" -m scripts.news.plan_month "$MONTH" --opening > "$opening" || exit 1
+    echo "$(date +%H:%M:%S) $MONTH: $(wc -l < "$opening") episode(s) for the opening frames"
+    got=0
+    while IFS=$'\t' read -r slug remote <&3; do
+        dst=$(python3 -m scripts.news.paths --work-of "$slug") || continue
+        if "$PY" -m scripts.news.opening grab-remote "$remote" "$dst" \
+             > "$LOG/$slug.opening.log" 2>&1; then
+            got=$((got + 1))
+            echo "$(date +%H:%M:%S) open  $slug"
+        else
+            echo "$(date +%H:%M:%S) FAIL  opening $slug -- see $LOG/$slug.opening.log"
+        fi
+    done 3< "$opening"
+    echo "$(date +%H:%M:%S) finished: $got opening(s)"
+    echo "next: python3 -m scripts.news.opening sheet $MONTH   then the reader"
+    exit 0
+fi
 
 # --- what this month still needs ------------------------------------------
 todo=$(mktemp); trap 'rm -f "$todo"' EXIT
@@ -152,7 +185,7 @@ for line in sys.stdin:
     if len(parts) < 9:
         continue
     name = parts[8].strip()
-    if name.lower().endswith((".mp4", ".mxf")):
+    if name.lower().endswith((".mp4", ".mxf", ".mkv")):
         print(folder + "/" + name + "\t" + parts[4])
 ' "$folder"
 done > "$sizes"
@@ -163,6 +196,35 @@ finished=$(mktemp); trap 'rm -f "$todo" "$sizes" "$finished"' EXIT
 
 # One episode after its download: cut, refine, drop the transcode. Runs in
 # the background, so it reports through its own lines and `$finished`.
+# 切 cue＋精修了後、刪影片進前：片頭三格、逐秒特徵、段落表、判不準ê
+# 格、帶外補切。影片猶佇磁碟ê時一擺做煞，後壁確認毋免閣抓。
+after_cut() {
+    local slug=$1 dst=$2 local_file=$3
+    local low="nice -n 15 ionice -c 3"
+    local year lang band duration secs
+    year=$(cut -d_ -f3 <<< "$slug" | cut -c1-4)
+    lang=${slug##*_}
+    band=$("$PY" -c 'import json,sys
+r = json.load(open(sys.argv[1]))[sys.argv[2]]["region"]
+print("%d,%d" % (r[1], r[1] + r[3]))' "$PRESETS" "$PRESET") &&
+    duration=$("$PY" -c 'import json,sys
+print(json.load(open(sys.argv[1]))["duration"])' \
+        "$("$PY" -m scripts.news.paths --cues-of "$dst")") &&
+    $low "$PY" -m scripts.news.opening grab "$local_file" "$dst" &&
+    $low "$PY" -m scripts.news.shots extract "$local_file" "$dst" \
+        --year "$year" --preset "$PRESET" --threads "$THREADS" &&
+    "$PY" -m scripts.news.segments make "$dst" --language "$lang" \
+        --duration "$duration" --band "$band" &&
+    secs=$("$PY" -m scripts.news.segments pending "$dst") &&
+    { [[ -z "$secs" ]] || $low "$PY" -m scripts.news.shots judge \
+        "$local_file" "$dst" $secs; } &&
+    # 受訪者名條（段落表「受訪者語言別代號」）：影片猶佇ê時截，
+    # 2024-12 事後補，69 集攏愛重抓母帶。
+    $low "$PY" -m scripts.news.namebars grab "$dst" "$local_file" \
+        --preset "$PRESET" &&
+    $low "$PY" -m scripts.news.segment_recut "$dst" "$local_file"
+}
+
 process_episode() {
     local slug=$1 dst=$2 local_file=$3 name=$4
     local kept ncues
@@ -189,6 +251,13 @@ process_episode() {
         # has verified. Transcodes are not archived -- they are already a
         # delivery copy -- so those go now, which is what keeps peak disk at
         # `--jobs` + 1 videos.
+        echo "$(date +%H:%M:%S) segs  $slug"
+        if ! after_cut "$slug" "$dst" "$local_file" \
+             > "$LOG/$slug.segments.log" 2>&1; then
+            echo "$(date +%H:%M:%S) WARN  片頭／段落 $slug failed, video kept" \
+                 "-- see $LOG/$slug.segments.log"
+            touch "$local_file.keep"
+        fi
         kept=
         case "${name,,}" in
             *.mxf) kept=" (master kept for archiving)" ;;

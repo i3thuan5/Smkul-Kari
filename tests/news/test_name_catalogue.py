@@ -148,5 +148,37 @@ class TestRoundTrip(unittest.TestCase):
         self.assertEqual(name_catalogue.check(rows), [])
 
 
+class TestExcludedFiles(unittest.TestCase):
+    """`--check` 嘛愛擋排除清單ê檔——CLAUDE.md 規定逐擺改程式攏跑這步。
+
+    2026-09-23 大細相仝ê 4 組攏是仝一支影片囥兩个日期；排除了後若閣
+    加轉來，就是一支影片算兩集。
+    """
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.excluded = os.path.join(tmp.name, "排除影片.csv")
+        with open(self.excluded, "w", encoding="utf-8", newline="") as out:
+            out.write("伺服器路徑,排除原因,同一支的保留檔,判定依據,判定日期\n"
+                      "/home/mkv-raw/112/6月/dup.mkv,重複檔,"
+                      "/home/mkv-raw/112/6月/keep.mkv,串流雜湊相同,"
+                      "2026-09-23\n")
+
+    def test_a_row_on_the_exclusion_list_is_reported(self):
+        rows = [row(原始影片檔案位置="home/mkv-raw/112/6月/dup.mkv")]
+        problems = name_catalogue.excluded(rows, self.excluded)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("keep.mkv", problems[0])
+
+    def test_a_clean_catalogue_passes(self):
+        self.assertEqual(name_catalogue.excluded([row()], self.excluded), [])
+
+    def test_no_exclusion_list_is_no_problem(self):
+        # 《開會了》彼爿無這份表；無表毋是錯。
+        missing = self.excluded + ".none"
+        self.assertEqual(name_catalogue.excluded([row()], missing), [])
+
+
 if __name__ == "__main__":
     unittest.main()

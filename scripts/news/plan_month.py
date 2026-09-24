@@ -25,6 +25,7 @@ batch can still be published without one of them holding it open forever;
 """
 import argparse
 import collections
+import json
 import os
 import sys
 
@@ -173,6 +174,73 @@ def todo(month, entries, already_cut=already_cut):
     return out
 
 
+def opening_todo(month, entries, done=None, already_cut=already_cut):
+    """[(slug, 伺服器路徑)]：切過、猶未有片頭辨識ê集數。
+
+    猶未切ê集數毋免列：切 cue ê時影片佇磁碟，片頭就綴咧截矣。切過ê
+    （2021 年 660 集）影片早就刣掉，`opening grab-remote` 干焦抓頭尾兩
+    段補截。`done` 是 `片頭辨識.csv` 已經有ê成果檔名。
+    """
+    if done is None:
+        from scripts.news import opening
+        done = set()
+        for row in opening._read_table(paths.OPENING_STORE):
+            done.add(row["成果檔名"])
+    rows = []
+    for entry in entries:
+        if entry["播出日期"].startswith(month):
+            rows.append(entry)
+    out = []
+    for entry, (video, _problem) in zip(rows, sources.resolve(rows)):
+        if not video or entry["srt_name"] in done:
+            continue
+        if not already_cut(entry):
+            continue
+        video = _light_copy(entry, video)
+        out.append((entry["slug"], resolve_slug.server_path(video)))
+    return out
+
+
+def _light_copy(entry, chosen):
+    """片頭補抓用ê來源：切 cue 揀母帶，這爿有 mp4／mkv 轉檔就用轉檔。
+
+    2021-02 揀著 `2月原始mxf檔`：mxf 位元率懸，頭 60 MB 干焦幾秒，20／30
+    ／40 秒三格攏是片頭前ê廣告卡（63 集 62 集讀袂著）。頭尾稀疏抓對 mp4
+    有效（索引佇檔尾）。
+    """
+    if not chosen.lower().endswith(".mxf"):
+        return chosen
+    for part in (entry.get("原始影片檔案位置") or "").split(";"):
+        part = part.strip()
+        if part.lower().endswith((".mp4", ".mkv")):
+            return part
+    return chosen
+
+
+def preset_for(month, presets=None):
+    """這个月該用佗一个字幕帶 preset，照 preset 家己宣告ê `months`。
+
+    `months` 是 [頭一個月, 尾一個月]（包含）。2021 年紅條上緣 846／848
+    愛用下緣 844 ê `titv-news`，紅條落到 851／852 了後用 848 ê。無人
+    宣告、抑是兩个攏講是伊ê，攏指名擋落來，毋揣一个來用。
+    """
+    if presets is None:
+        with open(paths.ENGINE_PRESETS, encoding="utf-8") as handle:
+            presets = json.load(handle)
+    owners = []
+    for name in sorted(presets):
+        span = presets[name].get("months")
+        if span and span[0] <= month <= span[1]:
+            owners.append(name)
+    if len(owners) == 1:
+        return owners[0]
+    if not owners:
+        raise PipelineError("%s 無任何 preset 宣告（presets.json 的 months）"
+                            % month)
+    raise PipelineError("%s 有 %d 个 preset 宣告：%s"
+                        % (month, len(owners), "、".join(owners)))
+
+
 def print_report(report):
     for entry in report.added:
         print("plan  %-46s %s" % (entry["srt_name"], entry["video"]))
@@ -189,7 +257,19 @@ def main(argv=None):
                     help="干焦印出愛抓的清單（slug<TAB>路徑），予 shell 食")
     ap.add_argument("--limit", type=int, default=0,
                     help="一改干焦登記 N 集（0＝規个月）")
+    ap.add_argument("--opening", action="store_true",
+                    help="切過、猶未片頭辨識ê集數（slug<TAB>路徑）")
+    ap.add_argument("--preset", action="store_true",
+                    help="干焦印這个月該用ê字幕帶 preset")
     args = ap.parse_args(argv)
+
+    if args.preset:
+        print(preset_for(args.month))
+        return 0
+    if args.opening:
+        for slug, video in opening_todo(args.month, episodes.load()):
+            print("%s\t%s" % (slug, video))
+        return 0
 
     if args.todo:
         for slug, video in todo(args.month, episodes.load()):
@@ -199,7 +279,8 @@ def main(argv=None):
     report = plan(args.month, episodes.load(), limit=args.limit)
     print_report(report)
     if report.added:
-        print("next: bash scripts/news/fetch_sftp.sh %s" % args.month)
+        print("next: bash scripts/news/fetch_sftp.sh %s --preset %s"
+              % (args.month, preset_for(args.month)))
     return 0
 
 

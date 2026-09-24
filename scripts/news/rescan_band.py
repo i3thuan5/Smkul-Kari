@@ -31,7 +31,8 @@ matches, `ingest` still reports 100% coverage.
 
 So the arithmetic -- splice, renumber, remap -- is pure and separately
 tested (`tests/news/test_rescan_band.py`), and the I/O around it does one
-artefact at a time with the same mapping.
+artefact at a time with the same mapping. It lives in `splice.py`, shared
+with `segment_recut`, which does the same splice before anything is read.
 
 THE REGION
 ----------
@@ -52,7 +53,6 @@ import glob
 import json
 import os
 import shutil
-import subprocess
 import sys
 
 from scripts.errors import PipelineError
@@ -61,6 +61,8 @@ from scripts import lowpri
 from scripts.news import gap_sheets
 from scripts.news import episodes
 from scripts.news import paths
+from scripts.news.splice import mapping, remap_rows, splice
+from scripts.news.splice import recut as splice_recut
 from scripts.ocr import sheets
 from scripts.ocr import stripname
 
@@ -93,63 +95,6 @@ from scripts.ocr import stripname
 REGION = "420,910,1500,122"
 
 
-def splice(cues, lo, hi, replacement):
-    """`cues` with [lo, hi] (1-based, inclusive) replaced, renumbered 1..N.
-
-    Times are carried through untouched -- the replacement's own times come
-    from the re-cut and are already absolute, because `ocr-cli cues` was
-    given `--start` and keeps real seconds.
-    """
-    if lo < 1 or hi > len(cues) or hi < lo:
-        raise PipelineError("範圍 %d–%d 佮 %d 條 cue 無合" % (lo, hi, len(cues)))
-    if not replacement:
-        raise PipelineError(
-            "換入去ê是空ê。「這段無字幕」是一項結論，愛家己講出來，"
-            "袂使當做重切ê結果恬恬做出來")
-    out = []
-    for cue in cues[:lo - 1]:
-        out.append(dict(cue))
-    for cue in replacement:
-        out.append(dict(cue))
-    for cue in cues[hi:]:
-        out.append(dict(cue))
-    for number, cue in enumerate(out, 1):
-        cue["index"] = number
-    return out
-
-
-def mapping(total, lo, hi, count):
-    """{old cue number: new cue number} for the cues that survive.
-
-    Cues inside [lo, hi] are gone -- they were replaced -- so they have no
-    entry at all rather than a `None`, which makes "was it dropped?" a
-    membership test the callers cannot get subtly wrong.
-    """
-    shift = count - (hi - lo + 1)
-    out = {}
-    for old in range(1, total + 1):
-        if lo <= old <= hi:
-            continue
-        out[old] = old if old < lo else old + shift
-    return out
-
-
-def remap_rows(rows, moves):
-    """[(cue, text)] renumbered by `moves`; rows of dropped cues are gone.
-
-    Text is passed through byte for byte -- a reader's trailing space or an
-    embedded tab is what they saw on screen, and this step has no business
-    tidying it.
-    """
-    out = []
-    for cue, text in rows:
-        if cue not in moves:
-            continue
-        out.append((moves[cue], text))
-    out.sort(key=lambda row: row[0])
-    return out
-
-
 # ------------------------------------------------------------------ I/O
 
 
@@ -172,20 +117,8 @@ def write_tsv(path, rows):
 
 def recut(video, start, duration, out, region=REGION, venv=None):
     """Run the segmenter over one stretch; return its cue list."""
-    if os.path.exists(out):
-        shutil.rmtree(out)
-    python = venv or sys.executable
-    cmd = [python, "-m", "scripts.ocr.cli", "cues", video, "-o", out,
-           "--region", region, "--start", "%.3f" % start,
-           "--duration", "%.3f" % duration, "--no-sheets"]
-    env = dict(os.environ, PYTHONPATH=".")
-    with open(os.devnull) as devnull:
-        done = subprocess.run(cmd, stdin=devnull, env=env,
-                              capture_output=True, text=True)
-    if done.returncode:
-        raise PipelineError("重切失敗：%s" % done.stderr[-400:])
-    with open(os.path.join(out, "cues.json"), encoding="utf-8") as handle:
-        return json.load(handle)["cues"]
+    return splice_recut(video, start, duration, out, region=region,
+                        venv=venv)
 
 
 def move_strips(work, cues, fresh, lo, count):

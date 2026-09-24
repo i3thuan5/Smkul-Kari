@@ -9,6 +9,7 @@
 """
 import os
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -20,12 +21,12 @@ POOL = os.path.join(paths.ROOT, "scripts", "news", "jobpool.sh")
 CHECK = os.path.join(paths.ROOT, "scripts", "news", "videocheck.sh")
 
 
-def config(*args, **env):
+def config(*args, month="2021-10", **env):
     full = dict(os.environ)
     full.pop("FETCH_JOBS", None)
     full.pop("FFMPEG_THREADS", None)
     full.update(env)
-    proc = subprocess.run(["bash", FETCH, "2021-10", "--print-config"]
+    proc = subprocess.run(["bash", FETCH, month, "--print-config"]
                           + list(args),
                           capture_output=True, text=True, env=full)
     values = {}
@@ -157,6 +158,104 @@ class TestUnreadableVideo(unittest.TestCase):
         self.assertIn("videocheck.sh", text)
         self.assertLess(text.index("video_readable \"$local_file\""),
                         text.index("scripts.news.verify_band"))
+
+
+class TestRemoteListingTakesMkv(unittest.TestCase):
+    """2022–2024 新母帶佇 `/home/mkv-raw/`，全部是 .mkv。
+
+    列伺服器檔案彼段本底干焦收 .mp4／.mxf，.mkv 拄著就講「伺服器頂懸
+    無」、跳過——24 集試做是用另外一支腳本繞過去才做會落去。
+    """
+
+    def listing(self, *names):
+        lines = []
+        for name in names:
+            lines.append("-rw-r--r--    1 u g  2863094396 Jun 25 2023 "
+                         + name)
+        script = open(FETCH, encoding="utf-8").read()
+        start = script.index("import sys\nfolder = sys.argv[1]")
+        body = script[start:script.index("' \"$folder\"", start)]
+        proc = subprocess.run(
+            [sys.executable, "-c", body, "/home/mkv-raw/113/12月"],
+            input="\n".join(lines) + "\n", capture_output=True, text=True,
+            cwd=paths.ROOT)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        return proc.stdout
+
+    def test_an_mkv_gets_its_size(self):
+        out = self.listing("20241201S0800.mkv")
+        self.assertIn("/home/mkv-raw/113/12月/20241201S0800.mkv\t2863094396",
+                      out)
+
+    def test_the_old_formats_still_count(self):
+        out = self.listing("a.mp4", "b.MXF")
+        self.assertIn("a.mp4", out)
+        self.assertIn("b.MXF", out)
+
+    def test_other_files_are_left_out(self):
+        self.assertEqual(self.listing("清單.xlsx"), "")
+
+
+class TestPresetFollowsTheMonth(unittest.TestCase):
+    """無指定 `--preset` 就照月份：2021-11 起ê母帶紅條上緣 852，用 848。
+
+    本底預設 `titv-news`（844）；2024 年照預設切，羅馬字ê下伸筆畫攏
+    切去 1–5 px，閣無一个所在會報。
+    """
+
+    def test_2021_october_takes_844(self):
+        _, values = config()
+        self.assertEqual(values["preset"], "titv-news")
+
+    def test_2024_july_takes_848(self):
+        _, values = config(month="2024-07")
+        self.assertEqual(values["preset"], "titv-news-848")
+
+    def test_2024_december_takes_the_centred_layout(self):
+        # 2024-08 起字幕置中、落到 y 860–925（2026-09-24 逐月量過）。
+        _, values = config(month="2024-12")
+        self.assertEqual(values["preset"], "titv-news-2024-08")
+
+    def test_an_explicit_preset_still_wins(self):
+        _, values = config("--preset", "titv-news", month="2024-12")
+        self.assertEqual(values["preset"], "titv-news")
+
+
+class TestNameBarsWhileTheVideoIsHere(unittest.TestCase):
+    """受訪者名條愛佇影片刣掉進前截：2024-12 事後補，69 集攏愛重抓母帶。"""
+
+    def after_cut(self):
+        script = open(FETCH, encoding="utf-8").read()
+        start = script.index("after_cut() {")
+        return script[start:script.index("\n}\n", start)]
+
+    def test_name_bars_are_grabbed_after_the_shot_features(self):
+        block = self.after_cut()
+        self.assertIn("scripts.news.namebars grab", block)
+        self.assertIn('--preset "$PRESET"', block[block.index("namebars"):])
+        self.assertLess(block.index("scripts.news.shots extract"),
+                        block.index("scripts.news.namebars grab"))
+
+
+class TestOpeningOnly(unittest.TestCase):
+    """`--opening-only`：已經入庫ê集數補截片頭，毋切 cue。"""
+
+    def test_the_mode_is_reported(self):
+        _, values = config("--opening-only")
+        self.assertEqual(values["mode"], "opening")
+
+    def test_the_default_mode_cuts(self):
+        _, values = config()
+        self.assertEqual(values["mode"], "cut")
+
+    def test_opening_mode_never_calls_the_cutter(self):
+        script = open(FETCH, encoding="utf-8").read()
+        start = script.index("if [[ -n \"$OPENING_ONLY\" ]]; then\n")
+        end = script.index("\nfi\n", start)
+        block = script[start:end]
+        self.assertNotIn("scripts.ocr.cli", block)
+        self.assertIn("grab-remote", block)
+        self.assertIn("exit", block)
 
 
 if __name__ == "__main__":

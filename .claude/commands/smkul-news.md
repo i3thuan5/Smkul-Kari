@@ -81,6 +81,37 @@ band drag the summed profile's right edge out to 1792-1863 while the
 subtitle itself still ends at x~1760. All 9 episodes it stopped were
 checked by eye. See `scripts/news/README.md`.
 
+### Opening frames, segments and off-band recuts (same pass)
+
+Right after refine, while the video is still on disk, `fetch_sftp.sh` also
+grabs the 20/30/40 s opening frames, measures per-second shot features,
+writes the work dir's `0-segments.csv`, grabs the frames the pixel rules
+could not decide, and recuts the off-band stretches (島語時間, 部落信箱,
+單元片頭, 帶外專題) with their own presets — all before the video is deleted
+(log: `<月>/<slug>.segments.log`; a failure keeps the video with `.keep`).
+
+The preset follows the month when `--preset` is not given
+(`plan_month <月份> --preset`): `titv-news` for 2021-01～10, `titv-news-848`
+for 2021-11～2024-07, `titv-news-2024-08` (centred, y 840–930) from 2024-08.
+
+Two reader passes come **before** the vision pass (readers are opus):
+
+```bash
+python3 -m scripts.news.opening sheet <月份>      # 3 episodes a sheet
+python3 -m scripts.news.vision_tools.prompt --kind opening <sheet>:<name,…> --tsv <out>
+python3 -m scripts.news.opening ingest <out>      # exit 1 = badge ≠ catalogue: stop those episodes
+python3 -m scripts.news.vision_tools.prompt --kind segments <work> --tsv <out>
+python3 -m scripts.news.segments apply <work> <out>
+```
+
+An episode whose opening badge disagrees with the catalogue is **not read**
+until the catalogue is checked (6 of 24 rows were mislabelled in 2026-09).
+A new anchor is only reported — add them to `主播.csv`.
+
+For 2021 episodes already delivered, the opening frames are backfilled with
+`fetch_sftp.sh <月份> --opening-only` (curl reads only the head and tail of
+the mp4 via `~/.netrc`; nothing is cut).
+
 ## 2. Contact sheets
 
 ```bash

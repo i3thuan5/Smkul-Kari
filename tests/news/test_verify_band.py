@@ -155,6 +155,22 @@ class TestJudge(unittest.TestCase):
         self.assertEqual(self._verdict(790, None), [])
 
 
+class TestDeeperBandForTheMkvMasters(unittest.TestCase):
+    """`titv-news-848`（y 722–848）用佇紅條上緣 852 ê 2021-11 以後母帶。
+
+    2021-01～10 ê舊檔細邊佇 846：用錯 848 ê版型，細邊落入字幕帶，把關
+    愛擋。直接問 `judge`，因為兩个版型差ê干焦下緣。
+    """
+
+    def test_the_old_846_edge_is_refused_by_the_848_band(self):
+        problems = verify_band.judge(846, 800, 722, 848)
+        self.assertTrue(problems)
+        self.assertIn("inside the region", problems[0])
+
+    def test_the_new_852_edge_passes_the_848_band(self):
+        self.assertEqual(verify_band.judge(852, 800, 722, 848), [])
+
+
 class TestBackgroundTextDoesNotStopTheBatch(unittest.TestCase):
     """畫面背景的字不可以擋下一集；列位的兩項照舊把關。
 

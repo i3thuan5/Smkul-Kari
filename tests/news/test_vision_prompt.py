@@ -564,6 +564,91 @@ class TestEpisodeLookup(unittest.TestCase):
                 prompt.episode("揣無這集")
 
 
+class TestOpeningBrief(unittest.TestCase):
+    """片頭辨識ê讀者說明：讀語別牌佮主播，寫 `opening.ingest` 食ê TSV。"""
+
+    def setUp(self):
+        self.text = prompt.opening_brief(
+            [("/w/opening_001.png", ["20241201_336_晨間_Thau_邵",
+                                     "20241201_336_午間_Kanakanavu_卡那卡那富"])],
+            "/scratch/opening.tsv")
+
+    def test_every_sheet_and_episode_is_named(self):
+        self.assertIn("/w/opening_001.png", self.text)
+        self.assertIn("20241201_336_晨間_Thau_邵", self.text)
+        self.assertIn("/scratch/opening.tsv", self.text)
+
+    def test_the_badge_is_written_as_the_chinese_name(self):
+        # 目錄比ê是 `族語別(中)`；寫 Thau 抑是「邵語」就對袂著。
+        self.assertIn("中文族名", self.text)
+        self.assertIn("判不準", self.text)
+
+    def test_the_columns_are_the_ones_ingest_reads(self):
+        self.assertIn("成果檔名<TAB>秒數<TAB>語別牌<TAB>主播", self.text)
+
+    def test_no_placeholder_is_left(self):
+        self.assertIsNone(re.search(r"\{[a-z_]+\}", self.text))
+
+
+class TestSegmentsBrief(unittest.TestCase):
+    """段落確認ê讀者說明：判不準ê段逐段看截圖，回類型佮單元語別。"""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.work = os.path.join(tmp.name, "x.work")
+        from scripts.news import segments
+        rows = [
+            {"起秒": "0", "迄秒": "200", "類型": "外景新聞",
+             "單元語別": "拉阿魯哇", "字幕上緣y": "722", "字幕下緣y": "848",
+             "依據": "自動"},
+            {"起秒": "200", "迄秒": "450", "類型": "島語時間",
+             "單元語別": "拉阿魯哇", "字幕上緣y": "940",
+             "字幕下緣y": "1060", "依據": segments.PENDING},
+            {"起秒": "450", "迄秒": "600.000", "類型": "外景新聞",
+             "單元語別": "拉阿魯哇", "字幕上緣y": "722", "字幕下緣y": "848",
+             "依據": "自動"}]
+        os.makedirs(self.work)
+        segments.write(paths.segments_file(self.work), rows)
+        self.text = prompt.segments_brief(self.work, "/scratch/seg.tsv")
+
+    def test_only_the_pending_segment_is_asked(self):
+        self.assertIn("200", self.text)
+        self.assertIn("島語時間", self.text)
+        self.assertNotIn("\t0\t", self.text)
+
+    def test_the_frames_to_look_at_are_named(self):
+        self.assertIn("00201.png", self.text)
+        self.assertIn("00325.png", self.text)
+
+    def test_island_time_asks_which_language_it_teaches(self):
+        # 7/14 拉阿魯哇那集ê島語時間教泰雅語，看右上角標誌。
+        self.assertIn("島語時間／○○族語", self.text)
+
+    def test_the_answer_columns_are_the_ones_apply_reads(self):
+        self.assertIn("起秒<TAB>類型<TAB>單元語別", self.text)
+        from scripts.news import segments
+        for kind in segments.TYPES:
+            self.assertIn(kind, self.text)
+
+    def test_the_red_bar_language_is_not_a_segment_language(self):
+        self.assertIn("紅條", self.text)
+
+    def test_no_placeholder_is_left(self):
+        self.assertIsNone(re.search(r"\{[a-z_]+\}", self.text))
+
+
+class TestMainBriefKnowsOffBandCues(unittest.TestCase):
+    """讀字ê讀者說明愛講：帶 `area` ê cue 是帶外字幕；紅條族語毋收。"""
+
+    def test_the_brief_says_so(self):
+        with open(prompt.BRIEF, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("帶外", text)
+        self.assertIn("島語時間", text)
+        self.assertIn("紅條", text)
+
+
 if __name__ == "__main__":
     unittest.main()
 

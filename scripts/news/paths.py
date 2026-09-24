@@ -146,6 +146,28 @@ def cue_keyed(work, srt_name):
     }
 
 
+# work dir 內底 news 家己ê層，接佇 `5-transcripts/` 後壁（前五層是引擎
+# 寫ê，定義佇 `scripts.datadirs`）。段落表是 `0-`：比時間軸較早定。
+OPENING_STAGE = "6-opening"
+SHOTS_STAGE = "7-shots"
+SEGMENTS_FILE = "0-segments.csv"
+
+
+def opening_dir(work):
+    """片頭 20／30／40 秒三格截圖。"""
+    return os.path.join(work, OPENING_STAGE)
+
+
+def shots_dir(work):
+    """逐秒畫面特徵，佮判不準彼幾格ê原圖（`judge/`）。"""
+    return os.path.join(work, SHOTS_STAGE)
+
+
+def segments_file(work):
+    """這集ê段落表，讀者確認了後由 publish 送入 store。"""
+    return os.path.join(work, SEGMENTS_FILE)
+
+
 def timeline_is_refined(path):
     """Does this one timeline file record that the refine pass ran?
 
@@ -313,9 +335,33 @@ WHISPER_DIR = os.path.join(NEWS_STORE, "2-asr-whisper")
 SAPOLITA_SRT = os.path.join(WHISPER_DIR, "1-srt-sapolita")
 SAPOLITA_LOG = os.path.join(SAPOLITA_SRT, "辨識紀錄.csv")
 
+# 族華平行語料：sapolita 段落配華語字幕，一集一檔，加一張凍結的
+# 校正基準。內容契約見 whisper-parallel-corpus spec。
+PAIRS_DIR = os.path.join(WHISPER_DIR, "2-平行語料")
+PAIRS_CALIBRATION = os.path.join(PAIRS_DIR, "校正基準.csv")
+
+# 官方族語辭典（16 族 xlsx）與蒸餾的詞庫。不入 store：放 kithann，
+# 缺檔就從 SFTP 抓（使用者裁定 2026-09-24，SFTP 保證有辭典）。
+LEXICON_KITHANN = os.path.join(KITHANN, "族語辭典")
+LEXICON_REMOTE = "/docker/族語辭典_單詞與例句"
+
+# 調合併門檻時裁判的請求與回覆。交付物不依賴它，所以不入 store。
+TUNING_WORK = os.path.join(KITHANN, "out", "mt", "調參")
+
 # 一位主播一列，跟 smkul.csv 同一層——是節目本身的資料，跟辨識引擎
 # 無關。
 ANCHORS_STORE = os.path.join(NEWS_STORE, "主播.csv")
+
+# 查過、確定不收ê原始影片（重複檔、已經接做一支ê分段檔），加目錄進前
+# 先提這份排除；`name_catalogue --check` 驗目錄內底無這份ê檔。
+EXCLUDED_STORE = os.path.join(NEWS_STORE, "排除影片.csv")
+
+# 片頭 20／30／40 秒讀著ê語別牌佮主播，一集一逝。
+OPENING_STORE = os.path.join(OCR_STORE, "片頭辨識.csv")
+
+# 逐集段落表（佗一段是啥物畫面、字幕佇佗、講啥物語），照月份分層，
+# 行 stage_path()。編號 0：伊比時間軸較早定，帶外補切愛照伊切。
+SEGMENTS_STORE = os.path.join(OCR_STORE, "0-segments")
 
 # The speech side's stages, in production order: whole-episode recognition
 # (1-words) -> the two-line deliverable (2-srt-raw) -> the analysis renders

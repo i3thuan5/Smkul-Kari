@@ -71,6 +71,10 @@
       "white_min": 185
     },
     "match": "NL00",
+    "months": [
+      "2021-01",
+      "2021-10"
+    ],
     "note": "TITV 族語新聞. Chinese dialogue subtitle painted onto the footage, so the dark-outline test is required. Measured row profiles agree across both deliveries: the 1080i MPEG-2 masters (2月原始mxf檔) and the h264 mp4s of every other month both put the text plateau at y=788..844 with a sharp spike at y=848 -- the top edge of the red lower-third, which carries the indigenous-language headline and interviewee name supers and must not be read as dialogue. SELECT THIS BY FOLDER, not by file name: pass `--preset titv-news` for anything under 族語新聞/. File names in this corpus are not a reliable signal (魯凱語-霧台…, 賽德克-…, 排灣-… all name the same programme), which is why `match` below only covers the mxf batch and is a convenience, not the contract. 切 cue ê遮罩：`scale` 2（半解析，每格 17.62→3.67 ms，四集ê切割品質三个指標攏佇雜訊範圍內）；`compare_cols` 1250–1790 是「置右字幕比對遮罩」——27 集量ê墨水右緣中位數 1735–1737、標準差 31–70 px（左緣是 460–470），所以只比字真正khiā ê彼塊，重覆對降 44–69% 而且吞句同時降；`compare_rows` 4–114 kā帶頂尾ê留白剪掉。`sheet.row_slots` 是「字幕上下位置判斷法」：分界列 65、pad 6，兩位墨水比細過 2.0 就退轉去全高——彼條退路防ê毋是「兩列攏是字幕」（掃 3,339 條無這款），是畫面家己ê字（布條、報紙、圖卡）佮字幕搶仝一條圖條。",
     "region": [
       0,
@@ -80,11 +84,298 @@
     ],
     "sheet": {
       "row_slots": {
+        "exclude": {
+          "gb_max": 25,
+          "r_min": 20,
+          "r_minus_g": 15
+        },
         "min_ink": 200,
         "min_ratio": 2.0,
         "pad": 6,
-        "split": 65
+        "split": 65,
+        "straddle": 6
+      }
+    },
+    "shots": {
+      "red_rows": [
+        852,
+        912
+      ]
+    }
+  },
+  "titv-news-2024-08": {
+    "lines": [
+      {
+        "h": 90,
+        "lang": "chi_tra",
+        "name": "han",
+        "ocr_scale": 1,
+        "y": 0
+      }
+    ],
+    "mask": {
+      "compare_cols": [
+        560,
+        1360
+      ],
+      "compare_rows": [
+        4,
+        86
+      ],
+      "dark_max": 95,
+      "max_spread": 45,
+      "outline": true,
+      "outline_size": 9,
+      "scale": 2,
+      "white_min": 185
+    },
+    "months": [
+      "2024-08",
+      "2024-12"
+    ],
+    "note": "TITV 族語新聞 2024-08 起的新版型（2026-09-24 逐月抽 2 集量：2024-08～12 十集對白平台都在 y 880–889，2024-07 以前都在 799–838）。字幕改成置中、一行，墨水平台 y 860–925（2024-12-01 晚間卑南 399 格：字頂中位數 860、字底 915–925）；y 932 一條白細邊，938 起是紅色標題條（條內族語標題 950–1005），左下角「族語」框在 y 940–1020。區域 840–930：下緣停在白細邊上面。置中所以比對欄改 560–1360、不錨右；只有一個位置，沒有 row_slots。`shots.red_rows` 是這個版型紅條的列（逐秒畫面分類用）。",
+    "region": [
+      0,
+      840,
+      1920,
+      90
+    ],
+    "sheet": {
+      "centre": 1064,
+      "ignore_cols": [
+        0,
+        400
+      ]
+    },
+    "shots": {
+      "badge": false,
+      "box": false,
+      "name_rule": {
+        "gb_max": 25,
+        "r_min": 20,
+        "r_minus_g": 15
+      },
+      "red_rows": [
+        938,
+        1010
+      ],
+      "red_rule": {
+        "r_minus_b": 40,
+        "r_minus_g": 40
       }
     }
+  },
+  "titv-news-848": {
+    "lines": [
+      {
+        "h": 126,
+        "lang": "chi_tra",
+        "name": "han",
+        "ocr_scale": 1,
+        "y": 0
+      }
+    ],
+    "mask": {
+      "compare_cols": [
+        1250,
+        1790
+      ],
+      "compare_rows": [
+        4,
+        114
+      ],
+      "dark_max": 95,
+      "max_spread": 45,
+      "outline": true,
+      "outline_size": 9,
+      "right_anchor": 1650,
+      "scale": 2,
+      "white_min": 185
+    },
+    "months": [
+      "2021-11",
+      "2024-07"
+    ],
+    "note": "TITV 族語新聞，2021-11 起 /home/mkv-raw 的母帶。跟 titv-news 只差字幕帶下緣：844 → 848。這批紅色標題條上緣在 y 852（純紅判準：R>20、G<25、B<25、R−G>15，逐月抽 2 集實測），上方約 40 列是暗紅過渡；偏下字幕羅馬字的下伸筆畫（g j p q y）與括號到 845–850，844 會切掉 1–5 px。放到 850 就碰到過渡列，所以停在 848。2021-01～10 的舊檔紅條上緣在 846／848，不能用這個。沒有 match：兩個 preset 搶同一種檔名，一定要照月份用 --preset 指定（plan_month 會印建議）。 `sheet.row_slots.straddle`：墨水越過分界超過 6 列（＝pad）就留整條高，2022 文化小辭典 y 770–837 跨分界 787 會被切掉字頂；`exclude`：純紅背景的列不算字幕墨水，只影響判斷，不改圖條畫素。",
+    "region": [
+      0,
+      722,
+      1920,
+      126
+    ],
+    "sheet": {
+      "row_slots": {
+        "exclude": {
+          "gb_max": 25,
+          "r_min": 20,
+          "r_minus_g": 15
+        },
+        "min_ink": 200,
+        "min_ratio": 2.0,
+        "pad": 6,
+        "split": 65,
+        "straddle": 6
+      }
+    },
+    "shots": {
+      "red_rows": [
+        852,
+        912
+      ]
+    }
+  },
+  "titv-news-island": {
+    "lines": [
+      {
+        "h": 120,
+        "lang": "chi_tra",
+        "name": "han",
+        "ocr_scale": 1,
+        "y": 0
+      }
+    ],
+    "mask": {
+      "compare_cols": [
+        560,
+        1360
+      ],
+      "compare_rows": [
+        4,
+        116
+      ],
+      "dark_max": 95,
+      "max_spread": 45,
+      "outline": true,
+      "outline_size": 9,
+      "scale": 2,
+      "white_min": 185
+    },
+    "note": "2024 年「島語時間」單元：棚內族語教學，對白置中白字 y≈960–1050、x≈620–1300，約 15–20 分鐘。字幕帶的置右字幕比對遮罩（1250–1790）看不到置中的字，所以比對欄改置中 560–1360。只用在段落表標成島語時間的那幾段（segment_recut 重切），不整集用。帶內的單字卡、花字、卡拉 OK 諺語卡不收。",
+    "region": [
+      0,
+      940,
+      1920,
+      120
+    ]
+  },
+  "titv-news-mailbox": {
+    "lines": [
+      {
+        "h": 380,
+        "lang": "chi_tra",
+        "name": "han",
+        "ocr_scale": 1,
+        "y": 0
+      }
+    ],
+    "mask": {
+      "compare_rows": [
+        4,
+        376
+      ],
+      "dark_max": 95,
+      "max_spread": 45,
+      "outline": true,
+      "outline_size": 9,
+      "scale": 2,
+      "white_min": 185
+    },
+    "note": "2024 年「部落信箱」單元：說書人旁白 y 913–967；詩句族語 y 608–640、華語斜體 y 663–703，三行版的第三行 y 712–752 跨過字幕帶上緣。區域從 600 到 980 全包，左右不定所以全寬比對、不錨右。高 380：組合圖一張 4 條（4×392＝1568，上限 1876）。只用在段落表標成部落信箱的那幾段。",
+    "region": [
+      0,
+      600,
+      1920,
+      380
+    ]
+  },
+  "titv-news-montage": {
+    "lines": [
+      {
+        "h": 190,
+        "lang": "chi_tra",
+        "name": "han",
+        "ocr_scale": 1,
+        "y": 0
+      }
+    ],
+    "mask": {
+      "compare_rows": [
+        4,
+        186
+      ],
+      "dark_max": 95,
+      "max_spread": 45,
+      "outline": true,
+      "outline_size": 9,
+      "scale": 2,
+      "white_min": 185
+    },
+    "note": "島語時間等單元的開場蒙太奇：斜體字 y≈705–838，一行或兩行，靠左或靠右都有，底下有白色底線，背景是搖移的照片框。區域抓寬（690–880），全寬比對、不錨右。只用在段落表標成單元片頭的那幾段。",
+    "region": [
+      0,
+      690,
+      1920,
+      190
+    ]
+  },
+  "titv-news-offband": {
+    "lines": [
+      {
+        "h": 122,
+        "lang": "chi_tra",
+        "name": "han",
+        "ocr_scale": 1,
+        "y": 0
+      }
+    ],
+    "mask": {
+      "compare_rows": [
+        4,
+        118
+      ],
+      "dark_max": 95,
+      "max_spread": 45,
+      "outline": true,
+      "outline_size": 9,
+      "scale": 2,
+      "white_min": 185
+    },
+    "note": "2021 年帶外專題（白色恐怖／二二八系列等 15 集）：對白 y≈940–1010，受訪者名牌反而壓進字幕帶。x 392 起避開左邊的語別牌與天氣框／午間新聞框（兩種框右緣都在 x 391，18 集量過；整幅寬度下框內輪播的白字會切出 26 條不到半秒的 cue，限縮後只剩 7 條）。本底沿用 rescan_band 的 420，會切到 20210719_200 午間 cue 340 頭一字的黑邊（x 414），2026-09-24 改 392，高 122 是組合圖一張裝得下 4 條以上的上限。只用在段落表標成帶外專題的那幾段。",
+    "region": [
+      392,
+      910,
+      1528,
+      122
+    ]
+  },
+  "titv-news-offband-high": {
+    "lines": [
+      {
+        "h": 122,
+        "lang": "chi_tra",
+        "name": "han",
+        "ocr_scale": 1,
+        "y": 0
+      }
+    ],
+    "mask": {
+      "compare_rows": [
+        4,
+        118
+      ],
+      "dark_max": 95,
+      "max_spread": 45,
+      "outline": true,
+      "outline_size": 9,
+      "scale": 2,
+      "white_min": 185
+    },
+    "note": "2021 年族語戲劇段（`20210301_060_晚間_Amis_阿美` 1938–2023 秒）：族語一逝 y 878–935、華語一逝 939–989，兩逝置中。`titv-news-offband`（910 起）會切掉族語彼逝，所以區域提懸到 868 起；x 392 起、高 122 佮 offband 仝款。干焦 offband_backfill 用。",
+    "region": [
+      392,
+      868,
+      1528,
+      122
+    ]
   }
 }

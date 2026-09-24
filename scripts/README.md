@@ -52,6 +52,16 @@ aiyalaeho，依賴ê方向就顛倒去（這馬是 aiyalaeho → news），所�
 `rebuild --verify` 對伊ê把關換做這幾條：成果檔名規格佮唯一性、佮識別欄
 互推、`語言別代號` 值域、族語別中英一對一、素材位置非空、列序、孤兒檔。
 
+## lexicon/——官方族語辭典（頂層，兩側共用）
+
+原語會 16 族官方族語辭典（SFTP `/docker/族語辭典_單詞與例句/` ê xlsx）ê讀取佮比對。本底蹛佇 `aiyalaeho/langcheck/`，族語新聞ê平行語料嘛愛用，若叫 news 去 import aiyalaeho，依賴ê方向就顛倒去——理由佮 `languages.py` 仝一條：兩爿攏用著，兩爿攏無擁有伊。內容無改，干焦徙位。
+
+| 檔 | 做什麼 |
+|---|---|
+| `dictionary.py` | xlsx → 詞庫：標準函式庫讀（`zipfile`＋`xml.etree`，無 openpyxl）、欄位靠表頭名、取 `單字`／`詞根`／`例句原文` 三欄、撇號正規化 |
+| `script.py` | 字元分類（Unicode 類別，毋是 ASCII 範圍；注音毋算漢字）佮切詞——詞庫佮字幕用仝一支尺 |
+| `vocab.py` | 逐族詞庫命中率、上倚ê族、方言別正音（南勢阿美 u→o、b→f、v→f，加法毋是取代） |
+
 ## ocr/——影像側引擎（燒印字幕抽取）
 
 | 檔 | 做什麼 |
@@ -101,15 +111,27 @@ aiyalaeho，依賴ê方向就顛倒去（這馬是 aiyalaeho → news），所�
 | `asrmt_batch.py` | 語音側（kaldi）整批：逐集 抓音檔→解碼→投影＋render→刪音檔 |
 | `asrmt_run.py` | 語音側（kaldi）單集步驟（預設 words→raw；翻譯佮品質判斷 `--step` 指名） |
 | `whisper_run.py` | 語音側（whisper／sapolita）逐集佮整批：取音檔→查語別碼（`新聞語言別代號.csv`）→辨識→原樣存 SRT→寫辨識紀錄→刪暫存音檔；一次一集、可續跑（SRT 佮紀錄兩者都在才算做完） |
+| `lexicon_fetch.py` | 官方族語辭典：`kithann/族語辭典/` 無就對 SFTP 抓（位元組數比對、族名對檔名讀、16 族欠一族指名停），蒸餾做詞庫快取 |
+| `pairs_run.py` | 族華平行語料整批：2021-01～10、兩爿攏有ê集數 → `2-asr-whisper/2-平行語料/<年-月>/<成果檔名>.csv`；`--recalibrate` 才重算校正基準；無叫任何模型 |
+| `pairs_tune.py` | 調合併門檻：`--sample` 對新聞抽樣寫裁判請求（一批四个 50 組ê檔）、`--ingest NN` 收回覆、`--report` 出各格比例表佮選值；攏囥 `kithann/out/mt/調參/`，毋入 Kari-SRT |
 | `anchors_ami.json` | 阿美語錨點表（數詞＋借詞專名，拼法對照模型 lexicon） |
 | `plan_month.py` | 一批＝一个播出月份：揀來源、出跳過報告（**唯讀**，無寫任何檔）|
 | `sources.py` | 一集配一支檔的規則（母帶優先→時段相符→同名不同夾→一檔一集） |
 | `episodes.py`／`resolve_slug.py` | 節目目錄讀出來ê逐集條目（`slug`／`file`／`pending` 攏是推導ê）；目錄索引與命名 |
 | `fetch_sftp.sh`／`run_cues.sh`／`sftp.sh`／`sftp-askpass.sh` | 影像側抓檔與切 cue（吃播出月份，清單對節目目錄提；密碼只以檔案存在；`sftp.sh` 收動詞＋獨立參數，路徑不進指令字串） |
+| `cut_months.py` | 一個月接一個月跑 `fetch_sftp.sh`（預設 2021-11～2024-11）；每月開始前看磁碟，不夠就等；每月一列寫 `logs/cut-progress.tsv` |
+| `namebars.py` | 受訪者名條 → 段落表「受訪者語言別代號」：`grab` 照逐秒 `name` 特徵逐擺名條截一格、裁右爿、仝款ê歸組；`apply` 讀者答案（族名）換代號寫入 |
 | `refine_cues.py`／`verify_band.py` | cue 邊界精修（一集一支 ffmpeg、原生格率；**愛 `--preset`／`--presets`**，精修愛佮切 cue 用仝一款判準，無講就拒絕走）、字幕帶前驗（順紲驗欄方向：字幕ê右緣有無猶佇比對遮罩內底） |
 | `ocr/stripname.py` | Strip ê檔名：用 cue ê起始時間，因為序號會綴重新編號走 |
 | `blank_runs.py` | 掠 vision TSV 內底ê長連紲空白：字幕印佇帶外ê段會規段變空白 |
-| `rescan_band.py` | 用改正ê帶重切一段，接轉原本ê cue 排、規集重新編號 |
+| `rescan_band.py` | 用改正ê帶重切一段，接轉原本ê cue 排、規集重新編號（讀字了後ê補救；重切接回ê算術佇 `splice.py`） |
+| `splice.py` | 重切一段、接轉時間軸ê純算術（照號碼、照秒數）佮重切本身；`rescan_band` 佮 `segment_recut` 公家 |
+| `opening.py` | 片頭辨識：切 cue 時截 20／30／40 秒三格（已入庫ê集數用 curl 抓頭尾兩段補截）、組合圖、讀者 TSV → `1-ocr/片頭辨識.csv`，語別佮目錄無仝就擋 |
+| `shots.py` | 影片 → 逐秒畫面特徵（160×90 縮圖：節目框在毋在、紅條、棚內參考格、語別牌、單元標誌），截判不準ê原圖；參考格佇 `shot_refs/<年>/` |
+| `segments.py` | 逐秒特徵 → 段落表（兩層判法）、讀者確認、段落表ê把關（`publish` 佮 `rebuild --verify` 攏用） |
+| `relabel.py` | 片頭辨識查出目錄語別標毋著：改目錄那一列（族語別、代號、成果檔名、備註），store 內佮語別無關ê檔改名、用毋著語言做ê（whisper、平行語料、kaldi）刪掉等重跑 |
+| `offband_backfill.py` | 已經讀完字ê集數補切一段帶外字幕（2021 帶外專題）：`prepare` 重切、精修、照時間算新編號、干焦為新 cue 出組合圖；`apply` 照時間徙 store ê TSV 編號、收讀者 TSV、時間軸佮 SRT 入庫 |
+| `segment_recut.py` | 段落表上帶外ê段（島語時間、部落信箱…）用家己ê preset 重切、精修，讀字進前接轉時間軸，cue 記 `area` |
 | `split_cue.py` | 佇量出來ê時間點kā一條 cue 剖做兩條，後壁ê重新編號 |
 | `migrate_strips.py` | Strip ê檔名對 cue 序號換做起始時間（照磁碟頂ê檔案走，毋是照 cue）|
 | `redump_store.py` | 店面ê JSON 重排做人讀有ê形（縮排、鍵排序、漢字免跳脫）；JSONL 一逝一筆免縮排。干焦改排版，內容無動 |
@@ -153,11 +175,31 @@ aiyalaeho，依賴ê方向就顛倒去（這馬是 aiyalaeho → news），所�
 | `blobs.py` | 連通元件（8-連通ê `label`／`boxes`，佮「族語逝ê墨底」ê `deepest_bottom`）——環境無 scipy，讀者逐擺家己重寫就逐擺無仝，收做一支才免 |
 | `brief.md` | 視覺辨識讀者判準ê**正本**（逐批ê提示攏對這份提，判準才袂逐批走鐘） |
 | `text/oledoc.py`／`decode.py`／`parse.py`／`lang.py`／`split.py`／`pairs.py` | 上字文稿（001–045，無影片、佮上面攏無關）轉族華平行語料：OLE2 讀取、副檔名分派解碼、排版判定、語言代號、多重分隔符 AI 判讀、組出 `1-句對.csv`；詳見 [Kari-SRT/aiyalaeho/text/README.md](../Kari-SRT/aiyalaeho/text/README.md) |
-| `langcheck/script.py`／`dictionary.py`／`vocab.py`／`mark.py`／`report.py` | 交付 SRT 逐條ê語言判定：字元分類（Unicode 類別，毋是 ASCII 範圍）、官方族語辭典 xlsx 蒸餾做詞庫（標準函式庫讀，無 openpyxl）、逐族詞庫命中率佮方言別正音、逐條標記、兩張 CSV。**干焦讀 `3-srt/`**，離線、無叫模型；詳見 [Kari-SRT/aiyalaeho/1-ocr/4-語言檢查/README.md](../Kari-SRT/aiyalaeho/1-ocr/4-語言檢查/README.md) |
+| `langcheck/mark.py`／`report.py` | 交付 SRT 逐條ê語言判定：逐條標記、兩張 CSV。辭典彼爿（讀 xlsx、切詞、命中率）用頂層 `lexicon/`。**干焦讀 `3-srt/`**，離線、無叫模型；詳見 [Kari-SRT/aiyalaeho/1-ocr/4-語言檢查/README.md](../Kari-SRT/aiyalaeho/1-ocr/4-語言檢查/README.md) |
 
 news 有而遮無ê四支：`fetch_sftp.sh`（素材已經佇本機）、`plan_month.py`
 （無月份批次，登記併入 `catalogue.py`）、`gap_sheets.py`（無 `.work`
 彼層歷史）、`batches.py`（`ocr.cli pending` 就會列未讀ê sheet）。
+
+## mt/——族語新聞 → 機器翻譯訓練語料（計算引擎）
+
+sapolita 族語辨識段落配華語燒印字幕，
+做段落級ê族華平行語料，《開會了》雙列字幕當標準答案。只 import
+`srtlib/`、`lexicon/`；路徑、範圍、入庫攏佇 `news/`。詳見 [scripts/mt/README.md](mt/README.md)。
+
+| 檔 | 做什麼 |
+|---|---|
+| `load.py` | 讀兩側：sapolita SRT → 段落（真實 VAD 邊界）；store ê `1-cues`＋`2-vision` 走仝一條組裝鏈 → 字幕條目（帶真實窗、保留併掉ê cue 編號） |
+| `overlap.py` | 時間重疊分組：每條字幕歸予重疊上濟ê段，字幕真跨兩段（兩爿攏佔合併門檻以上）才合併 |
+| `textsim.py` | 華語側字元 n-gram F1、chrF；族語側切詞（撇號、長音記號統一）、編輯距離詞相似度 |
+| `hallucination.py` | 只靠文字ê幻覺旗標：重複 n-gram、譯文數字串、辭典命中率；16 族辭典判「這段其實是別族ê語言」 |
+| `goldalign.py` | 《開會了》真值：ASR 詞對附近字幕ê族語列做局部對齊（Smith-Waterman），毋靠時間軸 |
+| `evaluate.py` | 一組對真值ê精確率／召回（按 cue 詞數加權）、strict／lax、AUC、門檻掃描 |
+| `features.py` | 一組ê信心特徵，攏是新聞頂懸（無標準答案）算會出ê：chrF、辭典命中率、旗標、時間覆蓋率、長度比、每秒詞數、壓縮比 |
+| `calibration.py` | 校正基準：逐族主播開場（前 90 秒、≥5 詞）辭典命中率ê中位數；表凍結，干焦 `--recalibrate` 重算；查無族語別指名停，袂退預設值 |
+| `tier.py` | 分層：高信心／中信心／不採用＋不採用原因（幻覺＞別族語言＞詞數不足＞命中率不足）；規條線ê門檻攏佇遮，合併門檻嘛是 |
+| `pairs.py` | 一集ê組 → 交付 CSV 字串（欄位順序照使用者指定、SRT 時間戳、UTF-8 無 BOM、LF） |
+| `tuning.py`／`judge_prompt_paragraph.md` | 調合併門檻ê算法：分格（字幕佇兩段中較少彼爿佔偌濟）、固定種子抽樣、合併／拆開三組、分批（兩版袂仝批）、整批收件、Wilson 95% 區間、選值（分不出取較低ê門檻）；佮裁判ê判準 |
 
 ## transcode/
 
@@ -189,3 +231,4 @@ ffmpeg 共來源全部聲軌攏紮入去封存，順紲算出**逐條來源聲�
 | --- | --- |
 | `cuescore/score.py` | 一份時間軸對 store ê視覺辨識文字評分：**重覆對／吞句／漏切**三个數字，毋免影片。動任何切割參數（門檻、比對遮罩、解析度）了後就用這支量——`rebuild --verify` 掠袂著切割ê回歸，因為伊從頭到尾無碰遮罩 |
 | `measure/`、`mxf2mkv/` | 影片壓縮量測、mxf→mkv 轉檔 |
+| `mtgold/sapolita_aiyalaeho.py`、`mtgold/sweep.py` | 開會了送 sapolita 辨識（結果放 `kithann/out/mt/aiyalaeho-sapolita/`，毋入 Kari-SRT），佮佇開會了標準答案頂懸掃合併門檻——開會了干焦提供正確答案，毋產平行語料 |

@@ -515,5 +515,37 @@ class TestWhisperPaths(unittest.TestCase):
         self.assertFalse(paths.NEWS_VARIETIES.startswith(paths.KARI))
 
 
+class TestSegmentsLayout(unittest.TestCase):
+    """段落表、片頭辨識、排除清單：store 佮 work dir 各一个所在。
+
+    work dir 已經用到 `5-transcripts/`，新ê兩層照產出順序接落去；
+    段落表是 `0-`，因為伊比時間軸較早定——補切愛照伊切。
+    """
+
+    def test_the_exclusion_list_sits_beside_the_catalogue(self):
+        self.assertEqual(paths.EXCLUDED_STORE,
+                         os.path.join(paths.NEWS_STORE, "排除影片.csv"))
+
+    def test_the_opening_table_is_one_file_for_every_episode(self):
+        self.assertEqual(paths.OPENING_STORE,
+                         os.path.join(paths.OCR_STORE, "片頭辨識.csv"))
+
+    def test_segments_are_stage_zero_of_the_picture_side(self):
+        self.assertEqual(paths.SEGMENTS_STORE,
+                         os.path.join(paths.OCR_STORE, "0-segments"))
+        name = "20241201_336_晨間_Thau_邵"
+        self.assertEqual(paths.stage_path(paths.SEGMENTS_STORE, name, ".csv"),
+                         os.path.join(paths.SEGMENTS_STORE, "2024-12",
+                                      name + ".csv"))
+
+    def test_the_work_dir_layers_follow_the_transcripts(self):
+        work = os.path.join(tempfile.gettempdir(), "x.work")
+        self.assertEqual(paths.opening_dir(work),
+                         os.path.join(work, "6-opening"))
+        self.assertEqual(paths.shots_dir(work), os.path.join(work, "7-shots"))
+        self.assertEqual(paths.segments_file(work),
+                         os.path.join(work, "0-segments.csv"))
+
+
 if __name__ == "__main__":
     unittest.main()

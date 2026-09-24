@@ -17,8 +17,8 @@
 import collections
 
 from scripts.aiyalaeho import make_srt
-from scripts.aiyalaeho.langcheck import script
-from scripts.aiyalaeho.langcheck import vocab
+from scripts.lexicon import script
+from scripts.lexicon import vocab
 
 # 四个標籤，封閉字彙。使用者裁定 2026-09-10。
 #

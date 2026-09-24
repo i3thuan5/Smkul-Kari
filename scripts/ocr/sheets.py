@@ -153,7 +153,7 @@ def _grow(lit, lo, hi):
         lo, hi = grown_lo, grown_hi
 
 
-def slot_crop(mask, slots):
+def slot_crop(mask, slots, rgb=None):
     """Which of the band's two slots this line is in, as (lo, hi) rows.
 
     None means "cannot tell, keep the whole band" -- the behaviour before
@@ -166,6 +166,20 @@ def slot_crop(mask, slots):
     banners, newspaper pages, full-screen graphic cards. Those come out
     white-on-dark exactly like a subtitle and the mask cannot tell them
     apart, so when both slots carry comparable ink the strip is left whole.
+
+    Two optional settings, each off unless the preset declares it, so that a
+    layout which does not ask for them is cropped exactly as before:
+
+    - `straddle`: a line whose strokes run more than this many rows past the
+      split is in neither slot, and either crop cuts it. 2022's 文化小辭典
+      sits at y 770-837 across the split at 787; judged "lower" by its ink,
+      it lost the top 8-17 px of every character.
+    - `exclude`: rows whose background is this colour are not subtitle, so
+      their ink does not count (`rgb` is the strip the mask came from). The
+      2024 red title bar starts at y 851/852 under ~40 rows of dark red
+      (R 30-100, G=B=0), and the white text on it -- headlines, name
+      supers -- lights the mask like dialogue. It changes the decision
+      only: the strip's pixels are cropped, never recoloured.
     """
     if not slots:
         return None
@@ -177,6 +191,9 @@ def slot_crop(mask, slots):
     ratio = float(slots.get("min_ratio", 2.0))
     floor = int(slots.get("min_ink", 200))
     rows = mask.sum(axis=1)
+    rule = slots.get("exclude")
+    if rule and rgb is not None:
+        rows = np.where(colour_rows(rgb, rule, ignore=mask), 0, rows)
     upper = int(rows[:split].sum())
     lower = int(rows[split:].sum())
     if upper + lower < floor:
@@ -184,9 +201,68 @@ def slot_crop(mask, slots):
     big, small = max(upper, lower), min(upper, lower)
     if big < ratio * max(small, 1):
         return None
+    straddle = int(slots.get("straddle", 0))
+    if straddle and _overhang(rows, split, upper > lower) > straddle:
+        return None
     if upper > lower:
         return (0, min(split + pad, height))
     return (max(split - pad, 0), height)
+
+
+# A row is a stroke of the line, not a speck of background, when it carries
+# at least this share of the busiest row's ink (and never fewer than
+# `STRONG_INK` pixels). One lit pixel per row down a stone wall must not
+# read as a line reaching across the split.
+OVERHANG_SHARE = 0.1
+
+
+def _overhang(rows, split, upper_wins):
+    """How many rows the winning slot's line runs past the split."""
+    floor = max(STRONG_INK, OVERHANG_SHARE * float(rows.max()))
+    strong = rows >= floor
+    count = 0
+    if upper_wins:
+        index = split
+        while index < len(rows) and strong[index]:
+            count += 1
+            index += 1
+    else:
+        index = split - 1
+        while index >= 0 and strong[index]:
+            count += 1
+            index -= 1
+    return count
+
+
+# A row is the excluded colour when at least this share of its background
+# is -- background being the pixels the text mask did not light, so that a
+# long headline on the bar cannot talk its row out of being red.
+COLOUR_ROW_SHARE = 0.5
+
+
+def colour_rows(rgb, rule, ignore=None):
+    """Rows of `rgb` whose background is the colour `rule` describes.
+
+    `ignore` is the text mask: those pixels are the text, not the
+    background, and are left out of the share.
+
+    `rule` is pure red as the presets declare it: `r_min` (R above it),
+    `gb_max` (G and B below it) and `r_minus_g` (R at least this much above
+    G). "Pure" matters: R above a threshold alone misses the dark red rows
+    above the bar (R 30-100) and would take a grey wall for red.
+    """
+    pixels = np.asarray(rgb).astype(np.int16)
+    red, green, blue = pixels[..., 0], pixels[..., 1], pixels[..., 2]
+    match = ((red > int(rule.get("r_min", 20)))
+             & (green < int(rule.get("gb_max", 25)))
+             & (blue < int(rule.get("gb_max", 25)))
+             & (red - green >= int(rule.get("r_minus_g", 15))))
+    background = np.ones(match.shape, dtype=bool)
+    if ignore is not None:
+        background = ~np.asarray(ignore, dtype=bool)
+    seen = background.sum(axis=1)
+    hits = (match & background).sum(axis=1)
+    return (seen > 0) & (hits >= COLOUR_ROW_SHARE * np.maximum(seen, 1))
 
 
 def undecided_share(undecided, decided, blank=0):
@@ -235,7 +311,8 @@ def layout_height(lines, gap):
 
 
 def _cue_blocks(workdir, manifest, spec, row_slots=None,
-                compare_cols=None, right_anchor=None):
+                compare_cols=None, right_anchor=None, ignore_cols=None,
+                centre=None):
     """(blocks, undecided, decided, blank) -- one block per cue with a strip.
 
     Columns are cropped as they always were, to wherever there is ink. Rows
@@ -254,17 +331,38 @@ def _cue_blocks(workdir, manifest, spec, row_slots=None,
     undecided = decided = blank = 0
     for cue in manifest["cues"]:
         found = []
+        # 帶外段落重切ê cue（`area`，見 `scripts.news.segment_recut`）毋是
+        # 置右ê字幕帶：對白置中抑是左右無一定，錨定佮上下位置判斷攏
+        # 是字幕帶ê規矩，用落去會kā右爿ê雜訊留咧、閣照毋著ê分界裁。
+        off_band = bool(cue.get("area"))
         for line in manifest["lines"]:
             rel = cue["images"].get(line["name"])
             if not rel:
                 continue
             img = Image.open(os.path.join(workdir, rel)).convert("RGB")
             mask = cuelib.text_mask(np.asarray(img), spec)
-            box = _ink_columns(mask, anchor=anchor)
+            if ignore_cols:
+                # 版面固定ê字（2024-08 起帶內倒爿ê「族語」語別牌）毋參與
+                # 揀欄：伊墨若較濟，圖條就干焦賰伊、對白予人裁掉。
+                mask = mask.copy()
+                mask[:, int(ignore_cols[0]):int(ignore_cols[1])] = False
+            box = _ink_columns(mask, anchor=None if off_band else anchor)
+            if centre is not None and box is not None and not off_band:
+                # 置中ê字幕對中線對稱：一爿ê字若遮罩掠無（白底頂懸ê頭一
+                # 字，2024-12-03 午間 cue 450），另一爿量著ê闊度共伊包轉來。
+                reach = max(int(centre) - box[0], box[1] - int(centre))
+                box = (max(int(centre) - reach, 0),
+                       min(int(centre) + reach, mask.shape[1]))
+            if off_band:
+                found.append((line, img, box, None))
+                continue
             narrow = mask
+            pixels = np.asarray(img)
             if compare_cols:
-                narrow = mask[:, int(compare_cols[0]):int(compare_cols[1])]
-            rows = slot_crop(narrow, row_slots)
+                window = slice(int(compare_cols[0]), int(compare_cols[1]))
+                narrow = mask[:, window]
+                pixels = pixels[:, window]
+            rows = slot_crop(narrow, row_slots, rgb=pixels)
             if row_slots:
                 if rows is not None:
                     decided += 1
@@ -434,7 +532,8 @@ def _by_width(blocks, gap):
 
 
 def build_sheets(workdir, manifest, row_slots=None,
-                 compare_cols=None, right_anchor=None):
+                 compare_cols=None, right_anchor=None, ignore_cols=None,
+                 centre=None):
     """Tile cue strips into a few big images for a vision model to read.
 
     Reading 800 separate crops costs 800 round trips; reading 40 sheets costs
@@ -455,7 +554,8 @@ def build_sheets(workdir, manifest, row_slots=None,
 
     index_map = {}
     blocks, undecided, decided, blank = _cue_blocks(
-        workdir, manifest, spec, row_slots, compare_cols, right_anchor)
+        workdir, manifest, spec, row_slots, compare_cols, right_anchor,
+        ignore_cols, centre)
     if row_slots:
         print("row slots: %d cropped, %d could not be told (%.1f%%), "
               "%d blank" % (decided, undecided,

@@ -247,6 +247,46 @@ class TestTodoGivesServerPaths(unittest.TestCase):
                          ["/docker/" + JUL + "21NL005_122晨間族語新聞.mp4"])
 
 
+class TestOpeningTodo(TestTodoGivesServerPaths):
+    """`--opening`：已經切過ê集數，補做片頭辨識愛抓佗一支。
+
+    2021 年 660 集攏入庫矣，`--todo` 一集都袂列（切過就毋免影片）；片頭
+    辨識是另外一个問題：切過、猶未有片頭辨識ê集數。
+    """
+
+    def _opening(self, month, done=(), cut=True):
+        entries = episodes.load(self.table, srt_dir=set())
+        return dict(plan_month.opening_todo(
+            month, entries, done=set(done),
+            already_cut=lambda entry: cut))
+
+    def test_a_cut_episode_without_an_opening_is_listed(self):
+        found = self._opening("2021-05")
+        self.assertEqual(list(found.values()),
+                         ["/docker/" + JUL + "21NL005_122晨間族語新聞.mp4"])
+
+    def test_an_episode_already_read_is_not(self):
+        name = "20210502_122_晨間_Hla'alua_拉阿魯哇"
+        self.assertEqual(self._opening("2021-05", done=[name]), {})
+
+    def test_the_mp4_copy_is_preferred_over_the_mxf_master(self):
+        # 2021-02 揀著 `2月原始mxf檔` ê母帶：mxf 位元率懸，頭 60 MB 干焦
+        # 幾秒，20／30／40 秒三格攏是片頭前ê廣告卡（63 集 62 集讀袂著）。
+        # 仝一集 7 月資料夾有 mp4 轉檔，頭尾稀疏抓對 mp4 有效。
+        master = "ilrdf-corpus/族語新聞/110.1-110.10/2月原始mxf檔/21NL003_35午間族語新聞.mxf"
+        copy = JUL + "21NL003_35午間族語新聞.mp4"
+        with open(self.table, "a", encoding="utf-8-sig", newline="") as out:
+            writer = csv.DictWriter(out, fieldnames=HEAD)
+            writer.writerow(row("35", "2021-02-04", "午間", "Truku", "太魯閣",
+                                "trv-x-truku", [master, copy]))
+        found = self._opening("2021-02")
+        self.assertEqual(list(found.values()), ["/docker/" + copy])
+
+    def test_an_uncut_episode_is_left_to_the_normal_fetch(self):
+        # 猶未切ê集數切 cue ê時就會截片頭，毋免另外抓。
+        self.assertEqual(self._opening("2021-05", cut=False), {})
+
+
 class TestAlreadyCut(unittest.TestCase):
     """「這集敢做好矣」——work dir 抑是 Kari-SRT 有精修過ê時間軸。"""
 
@@ -318,6 +358,42 @@ class TestAlreadyCut(unittest.TestCase):
         work = paths.work_dir(entry["slug"], self.root)
         self._write(paths.coarse_cues(work), {"cues": [], "refined": True})
         self.assertFalse(self._cut(entry))
+
+
+class TestPresetForMonth(unittest.TestCase):
+    """逐月該用佗一个字幕帶 preset：照 preset 家己宣告ê `months`。
+
+    2021 年紅條上緣 846／848，愛用下緣 844；紅條落到 851／852 了後用
+    848。揀錯 fetch_sftp 前ê帶位把關會擋，毋過一个月切一半才擋就了工。
+    """
+
+    PRESETS = {
+        "titv-news": {"months": ["2021-01", "2021-12"]},
+        "titv-news-848": {"months": ["2022-01", "2024-12"]},
+        "titv-news-island": {},
+        "amis-titv-news": {},
+    }
+
+    def test_2024_december_takes_848(self):
+        self.assertEqual(plan_month.preset_for("2024-12", self.PRESETS),
+                         "titv-news-848")
+
+    def test_2021_takes_the_old_one(self):
+        self.assertEqual(plan_month.preset_for("2021-03", self.PRESETS),
+                         "titv-news")
+
+    def test_a_month_nobody_covers_is_refused(self):
+        with self.assertRaises(PipelineError) as caught:
+            plan_month.preset_for("2025-01", self.PRESETS)
+        self.assertIn("2025-01", str(caught.exception))
+
+    def test_two_presets_claiming_a_month_is_refused(self):
+        both = dict(self.PRESETS)
+        both["other"] = {"months": ["2024-06", "2025-06"]}
+        with self.assertRaises(PipelineError) as caught:
+            plan_month.preset_for("2024-12", both)
+        self.assertIn("titv-news-848", str(caught.exception))
+        self.assertIn("other", str(caught.exception))
 
 
 if __name__ == "__main__":

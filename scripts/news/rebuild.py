@@ -29,10 +29,14 @@ import sys
 import tempfile
 
 from scripts import datadirs
+from scripts.mt import calibration
 from scripts.news import coaxial
 from scripts.news import episodes
+from scripts.news import lexicon_fetch
 from scripts.news import make_srt
+from scripts.news import pairs_run
 from scripts.news import paths
+from scripts.news import segments
 from scripts.errors import PipelineError
 
 
@@ -192,6 +196,94 @@ def _delivered_count(entries):
     return count
 
 
+def _stage_files(base, suffix):
+    names = set()
+    for path in glob.glob(os.path.join(base, "*", "*" + suffix)):
+        names.add(os.path.basename(path)[:-len(suffix)])
+    return names
+
+
+def pairs_containment():
+    """2-平行語料 ⊆ 3-srt and ⊆ 1-srt-sapolita (both, not a chain)."""
+    pairs = _stage_files(paths.PAIRS_DIR, ".csv")
+    problems = datadirs.stage_problems(
+        [("3-srt", _stage_files(paths.SRT_DIR, ".srt")),
+         ("2-平行語料", pairs)])
+    problems.extend(datadirs.stage_problems(
+        [("1-srt-sapolita", _stage_files(paths.SAPOLITA_SRT, ".srt")),
+         ("2-平行語料", pairs)]))
+    return problems
+
+
+def _first_difference(stored, rebuilt):
+    left = stored.split("\n")
+    right = rebuilt.split("\n")
+    for number, (a, b) in enumerate(zip(left, right), 1):
+        if a != b:
+            return "第 %d 行無仝：交付 %r、重建 %r" % (number, a, b)
+    return "行數無仝：交付 %d 行、重建 %d 行" % (len(left), len(right))
+
+
+def pairs_problems(load_lexicons=None):
+    """2-平行語料 files the store cannot rebuild byte for byte.
+
+    The dictionaries are loaded only when the layer has a file at all,
+    and a failure to get them stops the check: passing by skipping the
+    layer would say "rebuilt" about files nobody rebuilt.
+    """
+    names = sorted(_stage_files(paths.PAIRS_DIR, ".csv"))
+    if not names:
+        return []
+    load_lexicons = load_lexicons or lexicon_fetch.lexicons
+    try:
+        lexicons = load_lexicons()
+    except PipelineError as error:
+        raise PipelineError("2-平行語料 重建要用辭典，辭典取不到：%s"
+                            % error)
+    table = calibration.read(paths.PAIRS_CALIBRATION)
+    by_name = {}
+    for entry in episodes.load():
+        by_name[entry["srt_name"]] = entry
+    problems = []
+    for name in names:
+        with open(pairs_run.output_path(name), encoding="utf-8",
+                  newline="") as handle:
+            stored = handle.read()
+        try:
+            rebuilt = pairs_run.episode_csv(by_name[name], lexicons, table)
+        except (PipelineError, KeyError, OSError) as error:
+            problems.append("%s 2-平行語料：重建袂出來——%s" % (name, error))
+            continue
+        if stored != rebuilt:
+            problems.append("%s 2-平行語料：%s"
+                            % (name, _first_difference(stored, rebuilt)))
+    return problems
+
+
+def segment_problems(names, base=None, cues_base=None):
+    """store 內底ê段落表：孤兒檔、驗袂過ê，一項一句。
+
+    無段落表毋是缺件（2021 年大部分集數無）；有ê就愛佮目錄對會著、
+    驗會過（到影片長度，長度對時間軸來）。
+    """
+    base = base or paths.SEGMENTS_STORE
+    cues_base = cues_base or paths.KARI_CUES
+    problems = []
+    for path in sorted(glob.glob(os.path.join(base, "*", "*.csv"))):
+        name = os.path.basename(path)[:-len(".csv")]
+        if name not in names:
+            problems.append("0-segments 有 %s，節目目錄查無彼逝" % name)
+            continue
+        timeline = paths.stage_path(cues_base, name, ".json")
+        if not os.path.exists(timeline):
+            problems.append("0-segments 有 %s，1-cues 無時間軸" % name)
+            continue
+        with open(timeline, encoding="utf-8") as handle:
+            duration = json.load(handle).get("duration") or 0.0
+        problems.extend(segments.check(segments.read(path), name, duration))
+    return problems
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--verify", action="store_true",
@@ -204,10 +296,20 @@ def main():
     # 彼份交付物重建袂出來。頂懸行頭前是正常ê（分階段入庫），下跤
     # 超過頂懸才是錯。
     containment = datadirs.stage_problems(stage_names())
+    containment.extend(pairs_containment())
     if containment:
         for line in containment:
             print("STAGE:", line)
         raise PipelineError("%d 項階段對袂起來" % len(containment))
+
+    names = set()
+    for entry in entries:
+        names.add(entry["srt_name"])
+    tables = segment_problems(names)
+    if tables:
+        for line in tables:
+            print("SEGMENTS:", line)
+        raise PipelineError("%d 項段落表對袂起來" % len(tables))
 
     problems = check_inputs(entries)
     if problems:
@@ -237,6 +339,14 @@ def main():
             "（`asrmt_run <集名> --step raw`）；若是講快取內底無彼條，"
             "彼份檔毋是對 store 產出來ê，愛查" % len(drifted))
 
+    pairs_drift = pairs_problems()
+    if pairs_drift:
+        for line in pairs_drift:
+            print("REBUILD DIFFERS:", line)
+        raise PipelineError(
+            "%d 集平行語料對 store 重建袂出來——重跑 "
+            "`python3 -m scripts.news.pairs_run <成果檔名>`" % len(pairs_drift))
+
     mismatched = _mismatches(tmp, entries)
     if mismatched:
         # 留咧予人 diff：這時陣正是需要看輸出ê時陣，刣掉就無通比
@@ -247,6 +357,8 @@ def main():
     shutil.rmtree(tmp)
     print("\nOK: %d SRTs rebuilt byte-identical from Kari-SRT"
           % _delivered_count(entries))
+    print("OK: %d 集平行語料逐 byte 相同"
+          % len(_stage_files(paths.PAIRS_DIR, ".csv")))
 
 
 if __name__ == "__main__":

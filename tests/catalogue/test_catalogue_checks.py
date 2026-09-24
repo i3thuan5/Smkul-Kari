@@ -182,5 +182,80 @@ class TestHeader(unittest.TestCase):
                                    checks.EPISODE_KEYS), [])
 
 
+def excluded_row(**over):
+    row = {"伺服器路徑": "/home/mkv-raw/112/6月/23NL004_174_族語晚間新聞_Paiwan.mkv",
+           "排除原因": "重複檔",
+           "同一支的保留檔":
+               "/home/mkv-raw/112/6月/23NL004_175_族語晚間新聞_Paiwan.mkv",
+           "判定依據": "檔案大小相同、影音串流雜湊相同",
+           "判定日期": "2026-09-23"}
+    row.update(over)
+    return row
+
+
+def server_path(path):
+    # 用正式ê換算，毋家己寫一份：目錄寫法 `home/…`、`ilrdf-corpus/…`
+    # 佮排除清單 `/home/…`、`/docker/ilrdf-corpus/…` 愛換做仝一个。
+    from scripts.news import resolve_slug
+    return resolve_slug.server_path(path)
+
+
+class TestExcludedFiles(unittest.TestCase):
+    """`排除影片.csv` 列過ê檔（重複檔、分段檔）袂使閣入目錄。
+
+    2026-09-23：大細相仝ê 4 組整檔 sha256 攏無仝，影音串流雜湊煞攏相仝，
+    是仝一支影片囥佇兩个日期。排除了後若是有人照清單閣加轉來，就是
+    kā仝一支影片算做兩集。
+    """
+
+    def test_a_duplicate_added_back_is_named_with_its_reason(self):
+        row = news_row(原始影片檔案位置=(
+            "home/mkv-raw/112/6月/23NL004_174_族語晚間新聞_Paiwan.mkv"))
+        problems = checks.excluded_problems([row], [excluded_row()],
+                                            server_path)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("第 2 逝", problems[0])
+        self.assertIn("重複檔", problems[0])
+        self.assertIn("23NL004_175", problems[0])
+
+    def test_the_catalogue_spelling_without_a_slash_still_matches(self):
+        # 目錄欄位去掉開頭斜線；清單寫伺服器絕對路徑。字串直接比會漏。
+        row = news_row(原始影片檔案位置=(
+            "home/mkv-raw/112/6月/23NL004_176_族語晚間新聞_卑南_A.mkv"))
+        gone = excluded_row(
+            伺服器路徑="/home/mkv-raw/112/6月/23NL004_176_族語晚間新聞_卑南_A.mkv",
+            排除原因="分段檔（已接成一支）")
+        self.assertEqual(len(checks.excluded_problems([row], [gone],
+                                                      server_path)), 1)
+
+    def test_the_old_corpus_root_shorthand_is_expanded(self):
+        row = news_row(原始影片檔案位置="ilrdf-corpus/族語新聞/11月/x.mp4")
+        gone = excluded_row(
+            伺服器路徑="/docker/ilrdf-corpus/族語新聞/11月/x.mp4")
+        self.assertEqual(len(checks.excluded_problems([row], [gone],
+                                                      server_path)), 1)
+
+    def test_every_path_in_a_semicolon_list_is_checked(self):
+        # 63 逝目錄ê素材位置是分號並列；干焦看頭一條會漏後壁彼條。
+        row = news_row(原始影片檔案位置=(
+            "ilrdf-corpus/族語新聞/2月/a.mxf;"
+            "home/mkv-raw/112/6月/23NL004_174_族語晚間新聞_Paiwan.mkv"))
+        self.assertEqual(len(checks.excluded_problems([row], [excluded_row()],
+                                                      server_path)), 1)
+
+    def test_a_clean_catalogue_passes(self):
+        self.assertEqual(checks.excluded_problems([news_row()],
+                                                  [excluded_row()],
+                                                  server_path), [])
+
+    def test_an_exclusion_without_the_kept_file_is_named(self):
+        # 無寫保留彼支，後來ê人就毋知彼个時段是缺檔抑是有另外一支。
+        problems = checks.excluded_problems(
+            [news_row()], [excluded_row(同一支的保留檔=" ")], server_path)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("排除影片", problems[0])
+        self.assertIn("同一支的保留檔", problems[0])
+
+
 if __name__ == "__main__":
     unittest.main()

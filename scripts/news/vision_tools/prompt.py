@@ -399,7 +399,80 @@ def _brief(slug, pick, tsvname, asked=None):
     return text
 
 
+OPENING_BRIEF = os.path.join(os.path.dirname(__file__), "brief_opening.md")
+SEGMENTS_BRIEF = os.path.join(os.path.dirname(__file__),
+                              "brief_segments.md")
+
+
+def _fill(path, fill):
+    with open(path, encoding="utf-8") as handle:
+        text = handle.read()
+    for key, value in fill.items():
+        text = text.replace("{%s}" % key, str(value))
+    return text
+
+
+def opening_brief(sheets, tsv):
+    """片頭辨識ê讀者說明；`sheets` 是 [(組合圖, [成果檔名…])]。"""
+    lines = []
+    for path, names in sheets:
+        lines.append("- `%s`：%s" % (path, "、".join(_quoted(names))))
+    count = 0
+    for _path, names in sheets:
+        count += len(names)
+    return _fill(OPENING_BRIEF, {"sheet_list": "\n".join(lines),
+                                 "tsv": tsv, "episodes": count,
+                                 "rows": count * 3})
+
+
+def segments_brief(work, tsv):
+    """段落確認ê讀者說明：判不準ê段逐段列起訖、候選類型、愛看ê截圖。"""
+    from scripts.news import segments
+    from scripts.news import shots
+    table = paths.segments_file(work)
+    rows = segments.read(table)
+    judge = shots.judge_dir(work)
+    lines = []
+    for row in rows:
+        if row["依據"] != segments.PENDING:
+            continue
+        frames = []
+        for second in segments.judge_seconds([row]):
+            frames.append("`%05d.png`" % second)
+        lines.append("- 起秒 %s、迄秒 %s，像素規則判做「%s」（單元語別 %s）；"
+                     "看 %s" % (row["起秒"], row["迄秒"], row["類型"],
+                               row["單元語別"], "、".join(frames)))
+    sheets = []
+    if lines:
+        for path, starts in segments.judge_sheets(work, rows):
+            sheets.append("- `%s`（起秒 %s）" % (path, "、".join(starts)))
+    return _fill(SEGMENTS_BRIEF, {
+        "sheets": "\n".join(sheets) or "（無）",
+        "work": work, "table": table, "judge": judge, "tsv": tsv,
+        "pending": "\n".join(lines) or "（無）",
+        "types": "、".join(segments.TYPES)})
+
+
 if __name__ == "__main__":
+    # 片頭辨識、段落確認ê讀者說明：
+    #     prompt.py --kind opening <組合圖>:<成果檔名,…> … --tsv <path>
+    #     prompt.py --kind segments <work dir> --tsv <path>
+    if "--kind" in sys.argv:
+        kind = sys.argv[sys.argv.index("--kind") + 1]
+        out = sys.argv[sys.argv.index("--tsv") + 1]
+        rest = []
+        for arg in sys.argv[1:]:
+            if arg not in ("--kind", kind, "--tsv", out):
+                rest.append(arg)
+        if kind == "segments":
+            print(segments_brief(rest[0], out))
+            sys.exit(0)
+        pairs = []
+        for arg in rest:
+            path, _, names = arg.partition(":")
+            pairs.append((path, names.split(",")))
+        print(opening_brief(pairs, out))
+        sys.exit(0)
     # 重切了後ê提示：批次號碼無意義矣，講 cue 範圍。
     #     prompt.py <slug> --cues 292-444 --name b05.tsv
     if "--cues" in sys.argv:

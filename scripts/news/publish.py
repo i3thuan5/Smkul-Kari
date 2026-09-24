@@ -29,25 +29,53 @@ from scripts import datadirs
 from scripts.news import episodes
 from scripts.news import paths
 from scripts.news import redump_store
+from scripts.news import segments
 from scripts.errors import PipelineError
 
 WORK = paths.WORK
 
 
-def publishable(entry):
+def publishable(entry, cues_dir=None):
     """(source work dir, reason it cannot be published).
 
     A reason only holds back this one episode. An already-delivered episode
     whose work dir has been cleared away is simply nothing to do: its inputs
     are in the store, which is exactly why the work dir was safe to delete.
+
+    A work dir older than the store is held back too. `offband_backfill
+    apply` splices a re-cut stretch straight into the store and leaves the
+    work dir as it was, so publishing from it would put the pre-splice
+    timeline and table back -- silently, as happened to 20241209_344.
     """
     work = paths.work_dir(entry["slug"], WORK)
     # Asked through the helper, so every layout the timeline can arrive in
     # counts. Spelling `<work>/cues.json` out here reads a staged work dir
     # as uncut, and the batch is then held back for the wrong reason.
-    if paths.cues_to_read(work) is None:
+    source = paths.cues_to_read(work)
+    if source is None:
         return "", "尚未切cue"
+    missing = areas_only_in_store(entry, source, cues_dir)
+    if missing:
+        return "", ("Kari-SRT 時間軸有 work dir 無ê區域（%s），work dir "
+                    "較舊，莫提來蓋" % "、".join(missing))
     return work, ""
+
+
+def areas_only_in_store(entry, source, cues_dir=None):
+    """Re-cut areas the store timeline has and the work dir's lacks."""
+    target = paths.stage_path(cues_dir or paths.KARI_CUES,
+                              entry["srt_name"], ".json")
+    if not os.path.exists(target):
+        return []
+    with open(target, encoding="utf-8") as handle:
+        stored = json.load(handle).get("areas") or {}
+    with open(source, encoding="utf-8") as handle:
+        local = json.load(handle).get("areas") or {}
+    missing = []
+    for name in sorted(stored):
+        if name not in local:
+            missing.append(name)
+    return missing
 
 
 def months_of(entries):
@@ -136,6 +164,43 @@ def publish_one(entry, work, cues_dir=None):
     return [os.path.basename(folder)]
 
 
+def publish_segments(entry, work, folder=None, cues_dir=None):
+    """段落表綴時間軸入 store：'write'、'same'、'none'、'wait：<因由>'。
+
+    段落表干焦驗會過（逐段確認過、首尾相接、到影片長度）才入；猶有判
+    不準ê段，就講等啥，時間軸照常入——時間軸毋免等讀者。
+
+    Work dir 比 store 舊（store 有補切ê區域）就毋寫：彼份是補切進前ê
+    表，寫落去「帶外專題」彼逝就無去（20241209_344 踏過兩擺）。
+    """
+    source = paths.segments_file(work)
+    if not os.path.exists(source):
+        return "none"
+    timeline = paths.cues_to_read(work)
+    missing = areas_only_in_store(entry, timeline, cues_dir)
+    if missing:
+        return "wait：Kari-SRT 時間軸有 work dir 無ê區域（%s），work dir 較舊" \
+            % "、".join(missing)
+    with open(timeline, encoding="utf-8") as handle:
+        duration = json.load(handle).get("duration")
+    rows = segments.read(source)
+    problems = segments.check(rows, entry["srt_name"], duration or 0.0)
+    if problems:
+        return "wait：" + problems[0]
+    target = paths.stage_path(folder or paths.SEGMENTS_STORE,
+                              entry["srt_name"], ".csv")
+    with open(source, encoding="utf-8") as handle:
+        body = handle.read()
+    if os.path.exists(target):
+        with open(target, encoding="utf-8") as handle:
+            if handle.read() == body:
+                return "same"
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    with open(target, "w", encoding="utf-8") as handle:
+        handle.write(body)
+    return "write"
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--check", action="store_true",
@@ -175,6 +240,9 @@ def main(argv=None):
             print("write %s" % entry["srt_name"])
         else:
             print("same  %s" % entry["srt_name"])
+        table = publish_segments(entry, work)
+        if table != "none":
+            print("      段落表 %s" % table)
 
     print("\n%d 集ê時間軸入庫（%d 集內容相仝，無重寫）"
           % (written, len(ready) - written))
