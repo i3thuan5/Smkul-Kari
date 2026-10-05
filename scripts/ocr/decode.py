@@ -141,7 +141,9 @@ def stream_region(path, region, fps, start=0.0, duration=None):
     chain = "fps=%s,%s" % (fps, crop_chain((x, y, w, h), "format=rgb24"))
     args += ["-vf", chain, "-f", "rawvideo", "-"]
 
-    proc = subprocess.Popen(args, stdout=subprocess.PIPE,
+    # stdin closed: ffmpeg reads it as keyboard commands otherwise.
+    proc = subprocess.Popen(args, stdin=subprocess.DEVNULL,
+                            stdout=subprocess.PIPE,
                             stderr=subprocess.DEVNULL)
     nbytes = w * h * 3
     index = 0
@@ -293,6 +295,9 @@ def _consume(parser, text, found, lines, failed):
                 found.put(pts)
         except RuntimeError as exc:
             failed.append(exc)
+            # The frame side waits on `found` for each frame's pts; with no
+            # more coming it would wait while ffmpeg blocks on a full stdout.
+            found.put(None)
     for line in re.split(r"[\r\n]+", text):
         if line and "pts_time:" not in line and "showinfo" not in line:
             lines.append(line)
@@ -341,7 +346,11 @@ def stream_frames(path, region, windows=None, threads=DEFAULT_THREADS,
              "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
 
     try:
-        proc = subprocess.Popen(args, stdout=subprocess.PIPE,
+        # stdin closed: ffmpeg reads an inherited stdin as keyboard
+        # commands -- `c` waits for a line, `q` quits -- and a caller
+        # feeding a `while read` loop lost both its list and the run.
+        proc = subprocess.Popen(args, stdin=subprocess.DEVNULL,
+                                stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE)
         found = queue.Queue()
         lines = []

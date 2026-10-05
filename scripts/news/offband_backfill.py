@@ -155,7 +155,7 @@ def _row(rows, lo, hi, kind, basis, rows_y=None):
         top, bottom = str(rows_y[0]), str(rows_y[1])
     return {"起秒": _stamp(lo), "迄秒": _stamp(hi), "類型": kind,
             "單元語別": language, "字幕上緣y": top, "字幕下緣y": bottom,
-            "依據": basis, segments.INTERVIEWEE: ""}
+            "依據": basis, segments.INTERVIEWEE: "", segments.SPEECH: ""}
 
 
 # ------------------------------------------------------------ I/O
@@ -333,7 +333,7 @@ def apply(name, reader):
     else:
         dest = paths.stage_path(paths.SEGMENTS_STORE, name, ".csv")
         os.makedirs(os.path.dirname(dest), exist_ok=True)
-        shutil.copy2(table_path, dest)
+        segments.write_store(dest, table_rows)
     print("%s：%d 份 TSV 改編號，新增 %s（%d 逝）"
           % (name, len(existing), os.path.basename(target), len(rows)))
 

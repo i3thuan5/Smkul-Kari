@@ -234,6 +234,19 @@ class TestOffBandAreas(unittest.TestCase):
         self.assertLessEqual(lo, 620)
         self.assertGreaterEqual(hi, 1300)
 
+    def test_the_sunken_2021_dictionary_is_taken_whole(self):
+        # 2021「文化小辭典」子母畫面ê字幕沉到 y≈803–885（20210219_050
+        # 晚間 803–857、20211101_305 晚間 815–870），靠右、佇粉紅框內
+        # （框內畫面到 x≈1730）。頂懸試過 1920 闊、722–880 懸：框內ê
+        # 竹葉予遮罩食入去，969–975 秒三句切做一條；x 600–1740 就切會開。
+        top, bottom = self.rows("titv-news-dict-2021")
+        self.assertLessEqual(top, 800)
+        self.assertGreaterEqual(bottom, 890)
+        lo, hi = self.cols("titv-news-dict-2021")
+        self.assertLessEqual(lo, 800)
+        self.assertGreaterEqual(hi, 1730)
+        self.assertLessEqual(hi, 1760)
+
     def test_the_mailbox_takes_the_third_line_across_the_band_top(self):
         top, bottom = self.rows("titv-news-mailbox")
         self.assertLessEqual(top, 600)

@@ -100,10 +100,48 @@ def _refine_boundaries(video, manifest, duration, preset=None,
     return new_start, new_end, kept, shifts, problems
 
 
-def _check_result(result, cues, problems):
+def _squeezed(cues, new_start, new_end):
+    """精修共一條 cue 擠做 0 長度（抑是頭尾交叉）→ 彼條標 dropped。
+
+    2021-11-27 晨間 cue 478、11-28 午間 cue 529：短 cue ê頭尾精修著仝
+    一格（1351.601），本底規集精修攏擋落來、一條都無寫。看圖條，彼是
+    鏡頭切換時頂一句字幕閣切一擺，毋是新ê字。使用者裁定 2026-09-25：
+    時間傷短彼句就丟掉。頭尾合做一个時間點，共邊界ê前後條接佇遐，
+    精修ê時間照用。回傳丟掉ê cue 位置。
+    """
+    dropped = []
+    for i, cue in enumerate(cues):
+        start = new_start.get(i, cue["start"])
+        end = new_end.get(i, cue["end"])
+        if round(start, 3) < round(end, 3) or not cue["start"] < cue["end"]:
+            continue
+        point = round((start + end) / 2, 3)
+        new_start[i] = new_end[i] = point
+        if i and cues[i - 1]["end"] == cue["start"]:
+            new_end[i - 1] = point
+        if i + 1 < len(cues) and cues[i + 1]["start"] == cue["end"]:
+            new_start[i + 1] = point
+        dropped.append(i)
+    return dropped
+
+
+def _shifts(cues, new_start, new_end):
+    """逐个有精修ê邊界移偌濟；相接ê兩條共用一个邊界，干焦算一擺。"""
+    out = []
+    for i in sorted(new_start):
+        out.append(new_start[i] - cues[i]["start"])
+    for i in sorted(new_end):
+        joint = (i + 1 < len(cues) and i + 1 in new_start
+                 and cues[i + 1]["start"] == cues[i]["end"])
+        if not joint:
+            out.append(new_end[i] - cues[i]["end"])
+    return out
+
+
+def _check_result(result, cues, problems, dropped=()):
     """Atomicity gate: starts before ends, no overlap, or nothing moves."""
     for i, (start, end) in enumerate(result):
-        if start >= end:
+        if start >= end and i not in dropped:
             problems.append("cue %s: start %.3f >= end %.3f"
                             % (cues[i]["index"], start, end))
         if i and result[i - 1][1] > start + 1e-9:
@@ -162,6 +200,8 @@ def refine_episode(video, cues_path, preset=None, dry_run=False,
     except RuntimeError as exc:
         raise PipelineError("%s：精修讀影片失敗，時間軸無寫：%s"
                             % (episode, exc))
+    dropped = _squeezed(cues, new_start, new_end)
+    shifts = _shifts(cues, new_start, new_end)
     refined = len(shifts)
     kept_total = kept[refine.NO_FRAMES] + kept[refine.UNCLEAR]
 
@@ -170,7 +210,7 @@ def refine_episode(video, cues_path, preset=None, dry_run=False,
         start = new_start.get(i, cue["start"])
         end = new_end.get(i, cue["end"])
         result.append((round(start, 3), round(end, 3)))
-    _check_result(result, cues, problems)
+    _check_result(result, cues, problems, dropped)
 
     stats = {
         "episode": episode,
@@ -183,6 +223,7 @@ def refine_episode(video, cues_path, preset=None, dry_run=False,
         "mean_shift": (round(sum(map(abs, shifts)) / len(shifts), 3)
                        if shifts else 0.0),
         "duration": round(duration, 3),
+        "dropped": len(dropped),
     }
 
     if problems:
@@ -194,6 +235,8 @@ def refine_episode(video, cues_path, preset=None, dry_run=False,
     if not dry_run:
         for i, cue in enumerate(cues):
             cue["start"], cue["end"] = result[i]
+            if i in dropped:
+                cue["dropped"] = True
         manifest["refined"] = True
         manifest["duration"] = round(duration, 3)
         write_refined(cues_path, manifest)

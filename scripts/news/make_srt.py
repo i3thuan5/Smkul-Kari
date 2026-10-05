@@ -45,6 +45,9 @@ def build(work):
     for cue in manifest["cues"]:
         got = texts.get(str(cue["index"]))
         text = got.get("han", "") if isinstance(got, dict) else ""
+        if cue.get("dropped"):
+            # 精修擠做 0 長度ê cue（鏡頭切換時頂一句閣切一擺）：丟掉。
+            text = ""
         records.append({
             "index": cue["index"],
             "start": cue["start"],

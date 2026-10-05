@@ -114,8 +114,9 @@ def recut(video, start, duration, out, region=None, presets=None,
         cmd += ["--presets", presets, "--preset", preset]
     env = dict(os.environ, PYTHONPATH=".")
     with open(os.devnull) as devnull:
+        # 輸出干焦是記錄：中文字切一半ê位元組換做替代字元，毋通規段倒。
         done = runner(cmd, stdin=devnull, env=env, capture_output=True,
-                      text=True)
+                      text=True, errors="replace")
     if done.returncode:
         raise PipelineError("重切失敗：%s" % done.stderr[-400:])
     with open(datadirs.coarse_cues(out), encoding="utf-8") as handle:

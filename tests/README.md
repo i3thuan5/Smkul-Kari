@@ -53,6 +53,7 @@ tests-e2e/        fixture.py  test_roundtrip  test_mxf2mkv_roundtrip
 | cue-timing | 原生格率逐格餵狀態機，`min_stable=2` 只剩 0.067 秒，一句中間兩格雜訊就被切成兩條；每 0.2 秒取一格再餵，各種相位都不會 | `ocr/test_segmenter.py` |
 | cue-timing | `cues` 不可再走 `fps` 濾鏡（挑到的格比標記時間晚約 0.067 秒）；`--start` 重切一段時間仍是真實秒數；時間軸記 `sampling`，新舊切法分得出來 | `ocr/test_cues_native.py` |
 | cue-timing | 精修一集一支 ffmpeg；以原生格距（0.033 秒）判斷、不重取樣到 25；邊界在 0.1 秒、視窗被檔頭截短時沿用並記「取不到畫面」，與「無法分辨」分開計數；解碼中途失敗整集不寫、指名集數 | `news/test_refine.py` |
+| cue-timing | 鏡頭切換時同一句字幕被多切一條極短 cue，精修把它頭尾找到同一格（2021-11-27 晨間 cue 478：1351.601＝1351.601），原本整集精修擋下、後續步驟全倒；改成那條標 `dropped`、前後條接在同一點，組 SRT 時丟掉（使用者裁定 2026-09-25） | `news/test_refine.py`、`news/test_make_srt.py` |
 | cue-timing | 批次切 cue 前驗證字幕帶（紅帶低位通過／侵入擋下）；背景報紙字把欄剖面右緣拉到 1863、字幕本身停在 1760 的一集不可擋下（刪掉右緣檢查前，9 集全被這樣擋錯）；對白高原落在帶外照樣擋 | `news/test_verify_band.py` |
 | cue-timing | 切 cue ê遮罩會使裁到帶頂：無指定就佮逐畫素仝款、指定了帶外逐列攏空；`--band-rows` 用絕對列傳入，寫入 manifest ê是 region 內ê偏移 | `ocr/test_cuelib_band_rows.py`、`ocr/test_band_rows_option.py` |
 | subtitle-text-source | 指定 preset 每個入口都生效／名稱錯誤中止 | `ocr/test_presets.py`、`ocr/test_auto_options.py` |

@@ -154,9 +154,14 @@ class TestSheetCrop(unittest.TestCase):
     def test_the_anchor_name_bar_is_inside_the_crop(self):
         self.assertLessEqual(opening.CROP_TOP, 650)
 
+    def test_the_older_studio_name_bar_is_inside_too(self):
+        # 2021-11 起舊攝影棚「主播 Ohay Sewana」「主播 Pani Kanapaniana」
+        # 名條佇 y≈600–670；裁 640 起，43 集內底 29 集主播讀袂出。
+        self.assertLessEqual(opening.CROP_TOP, 590)
+
     def test_the_sheet_is_still_a_crop_not_the_whole_frame(self):
         # 名條以上是主播半身佮棚景，讀者用袂著；提傷懸組合圖就變大。
-        self.assertGreaterEqual(opening.CROP_TOP, 600)
+        self.assertGreaterEqual(opening.CROP_TOP, 540)
 
 
 class TestIngest(unittest.TestCase):

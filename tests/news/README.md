@@ -60,6 +60,8 @@
 | cue-timing | 補切的那段沒精修就接回，store 會收到粗切的邊界——拒絕、時間軸不動 | `test_segment_recut.py` |
 | cue-timing | `rescan_band` 重切後讀 `<out>/cues.json`，分階段後那個檔永遠不存在（在 `1-cues/`），2021 帶外專題重切會倒 | `test_segment_recut.py` |
 | cue-timing | 帶外段落重切出零條：原本照字幕帶切的（單字卡、花字）也要拿掉 | `test_segment_recut.py` |
+| cue-timing | 2021 文化小辭典字幕沉到帶下，沉多低每集不同（305 晚間 y 815–870、328 晚間 779–829）；比對列照 305 定死，328 只看到字的下緣，一條 cue 31.2 秒吞掉兩句——重切前先量字在哪幾列，照量到的列寫這段專用的 preset | `test_segment_recut.py` |
+| cue-timing | 量字的列時只算白點，日頭照的樹葉（白點比例 0.04–0.06，字才 0.09–0.12）整條帶都過門檻——要算「白點旁邊有黑框」 | `test_segment_recut.py` |
 
 ## 入庫、目錄與流程（`publish.py`、`rebuild.py`、`plan_month.py`、`fetch_sftp.sh`、`name_catalogue.py`）
 
@@ -68,9 +70,11 @@
 | srt-data-store | 段落表確認完才跟時間軸入庫到 `0-segments/<年-月>/`；內容相同不重寫；還有待確認段落的不入庫、時間軸照入 | `test_publish_gate.py` |
 | srt-data-store | `0-segments/` 有目錄查不到的孤兒檔、或驗不過的段落表，`rebuild --verify` 要抓到；2021 年大部分集數沒有段落表不算缺件 | `test_publish_gate.py` |
 | srt-data-store | 帶外補切直接改 Kari-SRT，work dir 還是補切前的；publish 不可拿 work dir 蓋回去（1209 晚間 729 條被 575 條蓋掉、「帶外專題」段落不見，publish 沒報錯，rebuild 才抓到）——Kari-SRT 時間軸有 work dir 沒有的區域就跳過並講原因；段落表也一樣（同一集第二次踩到：名條腳本直接呼叫 `publish_segments`，繞過 `publishable()` 的把關） | `test_publish_gate.py` |
+| srt-data-store | `cut_months` 正在精修的集數只有粗切時間軸，`publishable()` 放行、`publish_one` 才 raise，整輪 publish 倒掉，排在後面的集數都入不了（20230703_184 晚間）——在 `publishable()` 就講「時間軸猶未精修」跳過 | `test_publish_gate.py` |
 | news-segments | 新聞包裡還有節目框的電話訪問卡、公文、統計圖，讀者分成「外景新聞」「其他」兩派；另立「全螢幕圖卡」（有旁白字幕，不算無字幕的「其他」） | `test_segments.py` |
 | news-segments | 一集 work dir 約 345 MB、一個月約 24 GB，剩下的月份全切完放不下（2026-09-24 只剩 42 GB）；逐月切之前看磁碟，不夠就等；整月已切完的不下載；倒一個月不擋後面、記進 `cut-progress.tsv`；fetch 回 0 但還有集數沒切不可記成「切完」 | `test_cut_months.py` |
 | news-segments | 單元語別看語別牌，受訪者可能是別族（邵語那集名條標 Cou、排灣那集標 Atayal）；「受訪者語言別代號」空＝還沒查、「無」＝查過沒名條，舊表沒這欄照樣讀；不認得的代號要指名 | `test_segments.py` |
+| news-segments | 名條只說受訪者是哪一族，講族語還是華語看不出來：有族別代號的段「受訪者說話語言」標「族語或華語」，之後用華語 ASR 判；只接受空、無、族語或華語、族語、華語 | `test_segments.py`、`test_namebars.py` |
 | news-segments | 名條飛入約 1 秒，要等字到位才截；主播段標題條偏粉（0.24–0.43）不是名條；同一人講幾次名條就出現幾次（1228 晨間 47 次只有 24 人），同款的只讀一次；沒黃字的紅條不可跟別張併在一起；漢人、外國受訪者沒族名不加代號但那段仍是「查過」 | `test_namebars.py` |
 | news-segments | 2021-11～2024-07 舊版型名條是白字：上排小字職稱（y 860–900）、下排人名＋族別（y 930–1000）；大字新聞標題只佔下排、職稱排是空的；亮背景沒有紅條——三個一起判（20211101_305 晚間量：名條職稱 2100–2800、人名 1–1.3 萬；標題 0／3.5 萬） | `test_namebars.py` |
 | news-segments | 名條要在影片刪掉前截（2024-12 事後補，69 集都得重抓母帶）；新版型要用 `shots extract` 算的特徵，所以排在它後面 | `test_fetch_sftp_config.py` |

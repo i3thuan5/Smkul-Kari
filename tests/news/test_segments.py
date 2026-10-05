@@ -316,6 +316,12 @@ class TestCheck(unittest.TestCase):
         rows[0][segments.INTERVIEWEE] = "tsu bnn"
         rows[1][segments.INTERVIEWEE] = segments.NONE_SEEN
         self.assertEqual(segments.check(rows, self.NAME, 3281.0), [])
+        rows[0][segments.SPEECH] = segments.UNSURE
+        rows[1][segments.SPEECH] = "華語"
+        self.assertEqual(segments.check(rows, self.NAME, 3281.0), [])
+        rows[1][segments.SPEECH] = "英語"
+        self.assertEqual(len(segments.check(rows, self.NAME, 3281.0)), 1)
+        rows[1][segments.SPEECH] = ""
         rows[1][segments.INTERVIEWEE] = "Cou"
         problems = segments.check(rows, self.NAME, 3281.0)
         self.assertEqual(len(problems), 1)
@@ -385,7 +391,26 @@ class TestFile(unittest.TestCase):
     def test_the_columns_are_the_ones_the_spec_names(self):
         self.assertEqual(segments.COLUMNS,
                          ("起秒", "迄秒", "類型", "單元語別", "字幕上緣y",
-                          "字幕下緣y", "依據", "受訪者語言別代號"))
+                          "字幕下緣y", "依據", "受訪者語言別代號",
+                          "受訪者說話語言"))
+
+    def test_the_store_copy_has_no_basis_column(self):
+        # 使用者裁定 2026-09-25：Kari-SRT 段落表刪「依據」欄——判法已經
+        # 攏是 Claude Vision，分五種值無意義。work dir 猶原留「待確認」
+        # 做內部記號，入庫進前擋；入庫ê彼份無這欄。
+        self.assertNotIn("依據", segments.STORE_COLUMNS)
+        rows = segments.classify(Episode(120).anchor(10, 50).features(),
+                                 "泰雅", 120.0)
+        text = segments.store_text(rows)
+        self.assertEqual(text.splitlines()[0],
+                         ",".join(segments.STORE_COLUMNS))
+        with tempfile.TemporaryDirectory() as work:
+            path = os.path.join(work, "x.csv")
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(text)
+            back = segments.read(path)
+        self.assertNotIn("依據", back[0])
+        self.assertEqual(segments.check(back, "x", 120.0), [])
 
     def test_a_table_written_before_the_interviewee_column_still_reads(self):
         # 2026-09-24 以前入庫ê表無這欄；讀入來當做「猶未查」（空ê）。
@@ -396,6 +421,7 @@ class TestFile(unittest.TestCase):
                              "0,60.000,攝影棚,邵,722,848,自動\n")
             rows = segments.read(path)
         self.assertEqual(rows[0][segments.INTERVIEWEE], "")
+        self.assertEqual(rows[0][segments.SPEECH], "")
         self.assertEqual(segments.check(rows, "x", 60.0), [])
 
 

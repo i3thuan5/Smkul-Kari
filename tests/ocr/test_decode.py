@@ -312,6 +312,71 @@ class TestFailure(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "Error while decoding"):
             run([frame_bytes(1), frame_bytes(2)], err, returncode=183)
 
+    def test_a_bad_timestamp_while_ffmpeg_is_still_running_does_not_hang(self):
+        # 2026-09-25 補切 20211101_305 午間文化小辭典：showinfo 讀出一筆壞
+        # 時間戳，讀 stderr ê執行緒就毋閣推時間戳，畫面彼爿佇
+        # found.get() 等規暝；ffmpeg 嘛寫袂出 stdout，兩爿攏卡 futex，
+        # 82 分鐘 CPU 無振動。愛隨時報錯。
+        import threading
+
+        class StillRunning(FakeProc):
+            def __init__(self, frames, stderr):
+                super().__init__(frames, stderr)
+                self.killed = threading.Event()
+                text = self.stderr.read()
+
+                class Stream:
+                    sent = False
+
+                    def read1(inner, size):
+                        if not inner.sent:
+                            inner.sent = True
+                            return text
+                        self.killed.wait()
+                        return b""
+
+                    def close(inner):
+                        pass
+                self.stderr = Stream()
+
+            def kill(self):
+                self.killed.set()
+
+        err = CONFIG + ("[Parsed_showinfo_1 @ 0x55d] n:   0 pts:NOPTS "
+                        "pts_time:NOPTS duration: 1001\n")
+        proc = StillRunning([frame_bytes(1), frame_bytes(2)], err)
+        outcome = []
+
+        def go():
+            with mock.patch.object(decode.subprocess, "Popen",
+                                   return_value=proc):
+                try:
+                    list(decode.stream_frames("ep.mp4", REGION))
+                except RuntimeError as exc:
+                    outcome.append(str(exc))
+
+        worker = threading.Thread(target=go, daemon=True)
+        worker.start()
+        worker.join(5)
+        proc.killed.set()
+        self.assertFalse(worker.is_alive() and not outcome, "卡牢矣")
+        self.assertTrue(outcome and "NOPTS" in outcome[0], outcome)
+
+    def test_ffmpeg_never_reads_the_callers_stdin(self):
+        # 2026-09-25 文化小辭典重切：腳本用 `while read … done < 清單` 餵
+        # 集數，ffmpeg 繼承 stdin，kā 清單當做互動鍵盤（c 等命令、q 結束），
+        # 一擺卡死、一擺 kā 賰ê集數食去，迴圈做一集就煞。
+        seen = {}
+        proc = FakeProc([frame_bytes(1)], CONFIG + showinfo(0, 0.0))
+
+        def spawn(args, **kwargs):
+            seen.update(kwargs)
+            return proc
+
+        with mock.patch.object(decode.subprocess, "Popen", side_effect=spawn):
+            list(decode.stream_frames("ep.mp4", REGION))
+        self.assertIs(seen.get("stdin"), decode.subprocess.DEVNULL)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -54,6 +54,10 @@ def publishable(entry, cues_dir=None):
     source = paths.cues_to_read(work)
     if source is None:
         return "", "尚未切cue"
+    # 精修猶未煞（cut_months 當咧走）是這集家己ê代誌：佇遮講出來，莫等
+    # `refined_timeline` raise 共規輪 publish 拍倒（20230703_184 晚間）。
+    if not paths.timeline_is_refined(source):
+        return "", "時間軸猶未精修"
     missing = areas_only_in_store(entry, source, cues_dir)
     if missing:
         return "", ("Kari-SRT 時間軸有 work dir 無ê區域（%s），work dir "
@@ -189,8 +193,7 @@ def publish_segments(entry, work, folder=None, cues_dir=None):
         return "wait：" + problems[0]
     target = paths.stage_path(folder or paths.SEGMENTS_STORE,
                               entry["srt_name"], ".csv")
-    with open(source, encoding="utf-8") as handle:
-        body = handle.read()
+    body = segments.store_text(rows)
     if os.path.exists(target):
         with open(target, encoding="utf-8") as handle:
             if handle.read() == body:

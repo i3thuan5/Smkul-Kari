@@ -43,6 +43,32 @@ class TestEntriesFrom(unittest.TestCase):
                          [(0.0, 1.0, "有字")])
 
 
+class TestDroppedCues(unittest.TestCase):
+    """精修共擠做 0 長度ê cue 標 dropped（鏡頭切換時頂一句閣切一擺），
+    讀者猶原讀著字，組 SRT ê時袂使出現（使用者裁定 2026-09-25）。"""
+
+    def test_a_dropped_cue_is_left_out_even_with_text(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        work = os.path.join(tmp, "x.work")
+        timeline = paths.refined_cues(work)
+        os.makedirs(os.path.dirname(timeline))
+        cues = [{"index": 1, "start": 1.0, "end": 5.12},
+                {"index": 2, "start": 5.12, "end": 5.12, "dropped": True},
+                {"index": 3, "start": 5.12, "end": 8.0}]
+        with open(timeline, "w", encoding="utf-8") as handle:
+            json.dump({"cues": cues, "refined": True}, handle)
+        texts = {"1": {"han": "我們很少聊天"}, "2": {"han": "我們很少聊天"},
+                 "3": {"han": "很少交談"}}
+        with mock.patch.object(make_srt, "load_transcripts",
+                               return_value=texts):
+            _manifest, records = make_srt.build(work)
+        got = []
+        for start, end, text in make_srt.entries_from(records):
+            got.append(text)
+        self.assertEqual(got, ["我們很少聊天", "很少交談"])
+
+
 class TestNoQcSummaryFile(unittest.TestCase):
     """組裝了後 SRT 邊仔無仝名ê .qc.json。
 

@@ -8,6 +8,8 @@ kā `refined` 設 True。
 """
 import json
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -242,6 +244,30 @@ class TestRecutReadsTheCoarseStage(unittest.TestCase):
                                keep=True)
         self.assertEqual(len(got), 1)
 
+    def test_output_that_is_not_utf8_does_not_crash(self):
+        # 2023-11 305 午鄒族紀錄片段試切：切 cue 子程序ê輸出有一个 0xe5
+        # 後壁無接續位元組（UTF-8 中文字切一半），`text=True` 解碼就
+        # UnicodeDecodeError，cue 已經切好也提袂著。輸出干焦是記錄，袂當
+        # 為著一个字元倒規段。
+        with tempfile.TemporaryDirectory() as out:
+            target = datadirs.coarse_cues(out)
+            script = (
+                "import json, os, sys\n"
+                "os.makedirs(os.path.dirname(%r), exist_ok=True)\n"
+                "json.dump({'cues': [{'start': 5.0, 'end': 7.0}]},"
+                " open(%r, 'w'))\n"
+                "sys.stdout.buffer.write(b'\\xe5x')\n"
+                "sys.stderr.buffer.write(b'\\xe5x')\n" % (target, target))
+
+            def runner(cmd, **kwargs):
+                return subprocess.run([sys.executable, "-c", script],
+                                      **kwargs)
+
+            got = splice.recut("v.mkv", 0.0, 10.0, out,
+                               region="0,940,1920,120", runner=runner,
+                               keep=True)
+        self.assertEqual(len(got), 1)
+
 
 class TestSpliceByTime(unittest.TestCase):
 
@@ -264,3 +290,117 @@ class TestSpliceByTime(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def sunken_work(test, name):
+    table = [row("0", "200", "外景新聞"),
+             row("200", "400", "文化小辭典"),
+             row("400", "600.000", "外景新聞")]
+    w = Work(test, band(30), table)
+    renamed = os.path.join(os.path.dirname(w.work), name + ".work")
+    os.rename(w.work, renamed)
+    w.work = renamed
+    w.timeline = paths.refined_cues(renamed)
+    return w
+
+
+class TestSunkenDictionary2021(unittest.TestCase):
+    """2021 年「文化小辭典」規个節目縮做子母畫面，字幕沉到 y≈803–885，
+    字幕帶（722–848）干焦切著頂懸一截：20211101_305 晚間 889–1107 秒
+    讀者愛逐條抽原生格才讀會完整，cue 275（969.5–975.0）內底換三句字幕
+    切袂開，干焦寫著頭一句。2022 起字幕轉去帶內（y 770–837），免重切；
+    分界看播出年，毋是 preset——2021-11 佮 2022-01 仝款用 titv-news-848。
+    """
+
+    def work(self, name):
+        return sunken_work(self, name)
+
+    def test_a_2021_dictionary_is_recut_low(self):
+        w = self.work("2021_305_2021-11-01_晚間_Amis_阿美")
+        w.run()
+        self.assertEqual(w.calls, [(200.0, 200.0, "titv-news-dict-2021")])
+        areas = []
+        for item in w.read()["cues"]:
+            if item.get("area"):
+                areas.append(item["area"])
+        self.assertEqual(set(areas), {"文化小辭典"})
+
+    def test_a_2022_dictionary_stays_in_the_band(self):
+        w = self.work("2022_007_2022-01-07_午間_Rukai_魯凱")
+        before = w.raw()
+        w.run()
+        self.assertEqual(w.calls, [])
+        self.assertEqual(w.raw(), before)
+
+
+class TestSunkenRowsFollowTheText(unittest.TestCase):
+    """2021-11 文化小辭典ê字幕高低逐集無仝：20211101_305 晚間 y 815–870，
+    20211124_328 晚間 780–825。比對列若照 305 定死（810–880），328
+    干焦比著字ê下緣一屑仔，三句切做一條 31 秒ê cue。重切進前先量彼段
+    ê字佇佗幾列：背景一直變、字ê位置無變，逐列白點取中位數就看會出。
+    """
+
+    def frames(self, top, bottom, count=9, seed=1):
+        import numpy as np
+        rng = np.random.default_rng(seed)
+        out = []
+        for index in range(count):
+            frame = rng.integers(0, 150, size=(180, 300, 3), dtype=np.uint8)
+            # 背景有時真光（白衫、天），但逐格位置無仝
+            spot = rng.integers(0, 150)
+            frame[spot:spot + 25, :] = 235
+            left = 20 + 7 * index
+            frame[top:bottom, left:left + 200:3] = 250
+            out.append(frame)
+        return out
+
+    def test_the_text_rows_are_found_under_a_moving_background(self):
+        top, bottom = segment_recut.text_rows(self.frames(70, 105))
+        self.assertLessEqual(abs(top - 70), 2)
+        self.assertLessEqual(abs(bottom - 105), 2)
+
+    def test_a_steady_sunlit_background_is_not_text(self):
+        # 20211124_328 晚間：日頭照ê樹葉逐格攏光，白點比例 0.04–0.06，
+        # 字才 0.09–0.12；干焦算白點，規條帶攏予人當做字。字有烏框，
+        # 光ê樹葉無。
+        frames = self.frames(70, 105)
+        for frame in frames:
+            frame[120:170, :] = 240
+        top, bottom = segment_recut.text_rows(frames)
+        self.assertLessEqual(abs(top - 70), 2)
+        self.assertLessEqual(abs(bottom - 105), 2)
+
+    def test_no_steady_text_gives_nothing(self):
+        import numpy as np
+        rng = np.random.default_rng(3)
+        frames = []
+        for _ in range(9):
+            frames.append(rng.integers(0, 150, size=(180, 300, 3),
+                                       dtype=np.uint8))
+        self.assertIsNone(segment_recut.text_rows(frames))
+
+    def test_the_recut_region_is_moved_to_the_measured_rows(self):
+        w = sunken_work(self, "2021_328_2021-11-24_晚間_Sakizaya_撒奇萊雅")
+        seen = {}
+
+        def recut(video, start, duration, out, preset, presets=None):
+            with open(presets, encoding="utf-8") as handle:
+                seen["layout"] = json.load(handle)[preset]
+            return w.recut(video, start, duration, out, preset)
+
+        def refine(video, coarse, preset, presets=None):
+            return w.refine(video, coarse, preset)
+
+        def probe(video, lo, hi):
+            return self.frames(40, 90)
+
+        segment_recut.run(w.work, "v.mkv", recut=recut, refine=refine,
+                          probe=probe)
+        region = seen["layout"]["region"]
+        rows = seen["layout"]["mask"]["compare_rows"]
+        top = region[1] + rows[0]
+        bottom = region[1] + rows[1]
+        self.assertLessEqual(abs(top - (segment_recut.PROBE_TOP + 40)), 3)
+        self.assertLessEqual(abs(bottom - (segment_recut.PROBE_TOP + 90)), 3)
+        self.assertLessEqual(region[1], top)
+        self.assertGreaterEqual(region[1] + region[3], bottom)

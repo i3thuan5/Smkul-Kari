@@ -205,6 +205,32 @@ class TestRefineEpisode(unittest.TestCase):
         self.assertEqual(manifest["cues"][0]["end"], 5.08)
         self.assertEqual(manifest["cues"][1]["start"], 5.08)
 
+    def test_a_cue_squeezed_to_nothing_is_dropped(self):
+        # 2021-11-27 晨間 cue 478、11-28 午間 cue 529：短 cue ê頭尾兩个
+        # 邊界精修著仝一格（1351.601 = 1351.601），規集精修攏擋落來、
+        # 一條都無寫，後壁ê片頭、段落、名條嘛綴咧倒。看圖條，彼兩條攏
+        # 是鏡頭切換時頂一句字幕閣切一擺（「這只是現代科技製作使用的」
+        # 「我們很少聊天」），毋是新ê字。使用者裁定 2026-09-25：時間傷
+        # 短彼句就丟掉——前後條照精修ê時間相接，彼條標 dropped。
+        cues = [{"index": 1, "start": 1.0, "end": 5.0},
+                {"index": 2, "start": 5.0, "end": 5.2},
+                {"index": 3, "start": 5.2, "end": 8.0}]
+        stats, manifest = self._run([0.96, 5.12, 5.12, 8.04], cues=cues)
+        got = []
+        for cue in manifest["cues"]:
+            got.append((cue["start"], cue["end"], cue.get("dropped", False)))
+        self.assertEqual(got, [(0.96, 5.12, False), (5.12, 5.12, True),
+                               (5.12, 8.04, False)])
+        self.assertTrue(manifest["refined"])
+        self.assertEqual(stats["dropped"], 1)
+
+    def test_a_lone_cue_squeezed_to_nothing_is_dropped_too(self):
+        cues = [{"index": 1, "start": 10.0, "end": 10.2},
+                {"index": 2, "start": 14.0, "end": 16.0}]
+        stats, manifest = self._run([10.1, 10.1, 13.88, 16.12], cues=cues)
+        self.assertTrue(manifest["cues"][0]["dropped"])
+        self.assertEqual(manifest["cues"][1]["start"], 13.88)
+
 
 if __name__ == "__main__":
     unittest.main()

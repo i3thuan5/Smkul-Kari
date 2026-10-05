@@ -58,6 +58,96 @@ OTHER_GROUPS = {
     #     文教協會理事長）、974 秒 周珈萱、1685 秒 潘雅綺（名條寫中文）
     #   20241228_363_晨間_Thau_邵  592 秒 黃美玉、662 秒 周珈萱
     "噶哈巫": ("Kaxabu", "pzh-x-kaxabu"),
+    # 使用者裁定 2026-09-25：ISO 639-3 查 SIL 代碼表（含別名索引）。
+    # 畢甘布：澳洲原住民，Bigambal／Bigambul／Pikambul，名條寫「Pikangcu」
+    #   「畢甘布族」（20241207_342 午間、20241213_348 午間，莉亞·金-史密斯）。
+    "畢甘布": ("Bigambul", "xbe"),
+    # 西拉雅：名條寫「Silaya(西拉雅族)」「西拉雅族」（20241215_350 晚間、
+    #   晨間，李淑媛）。
+    "西拉雅": ("Siraya", "fos"),
+    # 馬卡道：ISO 639-3 查無（Makatao／Makattao／Makatau／Makataw 攏無），
+    #   代號就寫漢字（使用者裁定）。名條寫「Makataw(馬卡道族)」「Makatao」
+    #   「Makatau」（20241222_357 晚間、20241224_359 晚間、20241229_364
+    #   午間，林勝賢）。
+    "馬卡道": ("Makatao", "馬卡道"),
+    # 使用者裁定 2026-09-25：16 族以外ê族名毋免先問，查 SIL 代碼表寫入，
+    # 收尾報告才列。
+    # 道卡斯：SIL 代碼表查無 Taokas，比照馬卡道寫漢字。名條寫「Tawkase」
+    #   （20211124_328 晚間 2439 秒）、「Taukat」（20211127_331 晨間 2734
+    #   秒），攏是劉新苗。
+    "道卡斯": ("Taokas", "道卡斯"),
+    # 外國族群。毛利：20211113_317 晚間 2004、2039 秒名條「Māori」。
+    "毛利": ("Māori", "mri"),
+    # 彝：20211112_316 晚間 2637 秒名條「彝族」。ISO 無「彝語」總稱，
+    #   `iii` 是 Nuosu（四川彝語），彝族上濟人講ê彼種。
+    "彝": ("Yi", "iii"),
+    # 多爾干：俄國泰梅爾，20220103 午間 2702、2779 秒名條「Dolgan」。
+    "多爾干": ("Dolgan", "dlg"),
+    # 祖魯：南非，20230622 2472 秒名條「祖魯族」。
+    "祖魯": ("Zulu", "zul"),
+    # 巴宰：20230701 前後名條「潘英傑 Pacay」。噶哈巫用 pzh 加私有標籤，
+    #   巴宰本身就是 pzh。
+    "巴宰": ("Pazeh", "pzh"),
+    # 桑人（南非 San）：名條「Katrina Esau San」（2023-07 2240 秒）。桑人
+    #   是好幾種語言ê族群，ISO 無單一代號，比照馬卡道寫漢字。Katrina
+    #   Esau 本人講 Nǁng（ngh）。
+    "桑": ("San", "桑"),
+    # 大武壠：名條「潘鄔奈 大武壠族」（2022-01）。SIL 有 Taivoan。
+    "大武壠": ("Taivoan", "tvx"),
+    # 加拿大 Nlaka'pamux：名條「Dion Kaszas Nlaka'pamux」（2022-01）。
+    #   SIL 是 Thompson River Salish。無通行漢譯，鍵照原文，莫家己翻。
+    "Nlaka'pamux": ("Nlaka'pamux", "thp"),
+    # 2023-07／08 名條ê外國族群，SIL 代碼表查；無通行漢譯ê鍵照原文。
+    #   加拿大 Cree（Scott Wabano）、智利 Mapuche（Carmen・Montupil・
+    #   Curin）、復活節島 Rapa Nui（Pepe・Pakarati；名條欄用空白分族名，
+    #   鍵寫 SIL 名 Rapanui）、巴西 Tembé（Sergio Muti）、澳洲 Garingbal
+    #   （Melissa Mills）。
+    "Cree": ("Cree", "cre"),
+    "Mapuche": ("Mapuche", "arn"),
+    "Rapanui": ("Rapanui", "rap"),
+    "Tembé": ("Tembé", "tqb"),
+    "Garingbal": ("Garingbal", "xgi"),
+    # 拍瀑拉：平埔族群，名條「張麗盆 拍瀑拉族」（2023-07-02 晚間 442 秒）。
+    "拍瀑拉": ("Papora", "ppu"),
+    # 蓋亞那 Carib：名條「Orin Fernandes Carib」等三人（2023-07）。SIL
+    #   Galibi Carib `car` 是一般講 Carib 語彼種。
+    "Carib": ("Carib", "car"),
+    # 2023-08 名條ê外國族群，SIL 代碼表查。美國納瓦霍：「Jayne Sandoval
+    #   納瓦霍族」（2023-08-27 晚間 2113 秒）。澳洲 Ngardi、Wiradjuri：
+    #   「Dale Huddleston, Ngardi/Wiradjuri」（2023-08-28 晚間 2762 秒），
+    #   一人兩族，名條欄干焦會當記一个，記頭一个。
+    "納瓦霍": ("Navajo", "nav"),
+    "Ngardi": ("Ngardi", "rxd"),
+    "Wiradjuri": ("Wiradjuri", "wrh"),
+    # 2023-09 名條。美國 Shoshone：「Gary McKinney Shoshone-Paiute」
+    #   （20230916_259 午間 288 秒），一人兩族記頭一个，SIL 是 Shoshoni。
+    #   印度／緬甸 Kuki：「Nengjahat Kuki」「Ngaineikim Kuki」（20230917_260
+    #   晨間 2621、2792 秒），Kuki-Chin 一群語言，SIL 無單一代號，比照桑
+    #   代號寫族名；無通行漢譯，鍵照原文。
+    "Shoshone": ("Shoshone", "shh"),
+    "Kuki": ("Kuki", "Kuki"),
+    # 肯亞 Maasai：「Ole Iguanani Maasai」（20230920 前後 837 秒），SIL Masai。
+    #   澳洲 Wakka Wakka：「Corey Appo Wakka Wakka」（20230922_265 晚間
+    #   1151 秒），SIL Wakawaka；族名本身有空白。
+    "Maasai": ("Maasai", "mas"),
+    "Wakka Wakka": ("Wakka Wakka", "wkw"),
+    # 加拿大 Nisga'a：「Sim'oogit Ni'isjoohl Nisga'a」（2023-09 名條第 65 批
+    #   b65-s004 第 5 列，1070 秒），SIL Nisga'a；族名有撇號。
+    "Nisga'a": ("Nisga'a", "ncg"),
+    # 巴西 Tembé：「Sergio Muti Tembé  Tembé /Tenetehara」（2023-10 名條第
+    #   66 批 b66-s006 第 18 列，2655 秒），SIL Tembé；Tenetehara 是別稱，
+    #   別名寫佇 namebars.ALIASES。
+    "Tembé": ("Tembé", "tqb"),
+    # 玻利維亞 Aymara：「Marcelina Choque Aymara」「Maria Choque Aymara」
+    #   （2024-02 名條第 70 批 b70-s070、s071），SIL 總稱 `aym`；仝兩人
+    #   另一則印「Aymara cuku」，別名寫佇 namebars.ALIASES。
+    "艾馬拉": ("Aymara", "aym"),
+    # 2024-03 名條第 71 批ê外國族群。日本愛努：「富菜栄子 愛努族」「熊谷
+    #   カネ 愛努族」（b71-s032、s040），SIL Ainu (Japan) `ain`。挪威薩米：
+    #   「Mariela Idivuoma 薩米族」（b71-s079 1300 秒，NRK Sápmi 總編輯），
+    #   ISO 639-3 無薩米總稱，比照彝用上濟人講ê北薩米 `sme`。
+    "愛努": ("Ainu", "ain"),
+    "薩米": ("Sami", "sme"),
 }
 
 # 語言別（族語別下底ê變體）：族語別 -> {字樣: 代號}

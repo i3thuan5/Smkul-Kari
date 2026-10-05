@@ -34,6 +34,7 @@
 """
 import argparse
 import csv
+import io
 import math
 import os
 import sys
@@ -43,14 +44,27 @@ from scripts.news import paths
 from scripts.errors import PipelineError
 
 COLUMNS = ("起秒", "迄秒", "類型", "單元語別", "字幕上緣y", "字幕下緣y",
-           "依據", "受訪者語言別代號")
+           "依據", "受訪者語言別代號", "受訪者說話語言")
 
 # 受訪者名條尾ê族名（「莊良賢(pasuya) Cou」）換做語言別代號，一段有幾
 # 族就空白隔開。空ê＝猶未查；查過、彼段無受訪者名條寫「無」。單元語別
 # 看語別牌，這欄才講受訪者本身是佗一族——講ê毋一定是本集ê族語（使用
 # 者裁定 2026-09-24 愛另外標）。
+# Kari-SRT 彼份無「依據」欄（使用者裁定 2026-09-25）：判法攏是 Claude
+# Vision，分五種值無意義。work dir 彼份猶原有，「待確認」是內部記號，
+# 入庫進前擋（`check`）。
+STORE_COLUMNS = ("起秒", "迄秒", "類型", "單元語別", "字幕上緣y", "字幕下緣y",
+                 "受訪者語言別代號", "受訪者說話語言")
+
 INTERVIEWEE = "受訪者語言別代號"
 NONE_SEEN = "無"
+
+# 名條干焦講受訪者是佗一族，講族語抑是華語看袂出來：有別族受訪者ê段
+# 先標「族語或華語」，後壁用華語 ASR 判做「族語」抑是「華語」（使用
+# 者裁定 2026-09-25）。空ê＝猶未查；「無」＝查過無受訪者名條。
+SPEECH = "受訪者說話語言"
+UNSURE = "族語或華語"
+SPEECHES = ("", NONE_SEEN, UNSURE, "族語", "華語")
 
 TYPES = ("攝影棚", "主播外景", "外景新聞", "全螢幕圖卡", "文化小辭典",
          "島語時間", "部落信箱", "帶外專題", "他族插播", "單元片頭", "其他")
@@ -254,7 +268,7 @@ def classify(feats, language, duration, band=(722, 844)):
                     "迄秒": "%.3f" % duration if last else str(end),
                     "類型": kind, "單元語別": language,
                     "字幕上緣y": top, "字幕下緣y": bottom, "依據": why,
-                    INTERVIEWEE: ""})
+                    INTERVIEWEE: "", SPEECH: ""})
     return out
 
 
@@ -356,12 +370,16 @@ def check(rows, name, duration):
                             % (name, line, row["類型"], "、".join(TYPES)))
         if not row["單元語別"].strip():
             problems.append("%s 第 %d 逝：單元語別 空ê" % (name, line))
-        if row["依據"] not in BASES:
+        if "依據" in row and row["依據"] not in BASES:
             problems.append("%s 第 %d 逝：依據 %r 毋是 %s"
                             % (name, line, row["依據"], "、".join(BASES)))
         for code in _unknown_codes(row.get(INTERVIEWEE, "")):
             problems.append("%s 第 %d 逝：%s %r 毋是語言別代號"
                             % (name, line, INTERVIEWEE, code))
+        if row.get(SPEECH, "") not in SPEECHES:
+            problems.append("%s 第 %d 逝：%s %r 毋是 %s"
+                            % (name, line, SPEECH, row[SPEECH],
+                               "、".join(SPEECHES[1:])))
     if abs(float(rows[-1]["迄秒"]) - float(duration)) > 0.0005:
         problems.append("%s 第 %d 逝：迄秒 %s，上尾一段愛到影片長度 %.3f"
                         % (name, len(rows) + 1, rows[-1]["迄秒"],
@@ -377,13 +395,30 @@ def write(path, rows):
             writer.writerow(row)
 
 
+def store_text(rows):
+    """入 Kari-SRT ê彼份：無「依據」欄。"""
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, STORE_COLUMNS, lineterminator="\n",
+                            extrasaction="ignore")
+    writer.writeheader()
+    for row in rows:
+        writer.writerow(row)
+    return buffer.getvalue()
+
+
+def write_store(path, rows):
+    with open(path, "w", encoding="utf-8", newline="") as handle:
+        handle.write(store_text(rows))
+
+
 def read(path):
     """段落表；2026-09-24 以前ê表無受訪者欄，讀做空ê（猶未查）。"""
     with open(path, encoding="utf-8", newline="") as handle:
         rows = list(csv.DictReader(handle))
     for row in rows:
-        if row.get(INTERVIEWEE) is None:
-            row[INTERVIEWEE] = ""
+        for column in (INTERVIEWEE, SPEECH):
+            if row.get(column) is None:
+                row[column] = ""
     return rows
 
 

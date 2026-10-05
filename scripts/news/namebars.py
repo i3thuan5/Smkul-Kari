@@ -36,6 +36,39 @@ ALIASES = {
     "Ruaki": "Rukai",                    # 2024-12-08 午間伍麗華等 4 人
     "Pinuyummayan": "Pinuyumayan",       # 2024-12-08 晚間陳瑩
     "Aims": "Amis",                      # 2024-12-23 午間舒米·如妮
+    "Pikangcu": "Bigambul",              # 畢甘布（Pikambul）轉寫走樣
+    "Silaya": "Siraya",
+    "Makataw": "Makatao", "Makatau": "Makatao",
+    "Kanakanvu": "Kanakanavu",           # 2021-11-04 晚間 217 秒
+    "Seeidq": "Seediq",                  # 2021-11 Walis Pawan
+    "Seetiq": "Seediq",                  # 2022-01 2537 秒
+    "Bunu": "Bunun",                     # 2023-06-23 午間 342 秒
+    "Tawkase": "Taokas", "Taukat": "Taokas",   # 道卡斯，劉新苗
+    "Maori": "Māori",
+    "Pacay": "Pazeh",                    # 2023-07 潘英傑
+    "Pacaicu": "Pazeh",                  # 2023-09-23 午間愛蘭教會，巴宰族語自稱
+    "Maulii": "Māori",                   # 2023-09 毛利族語拼法
+    "Paipulacu": "拍瀑拉",               # 2023-10 拍瀑拉族羅馬字
+    "Tenetehara": "Tembé",               # 2023-10 巴西 Tembé 別稱
+    "kahabu": "Kaxabu",                  # 2023-07 潘正浩，小寫
+    "Kahabu": "Kaxabu",                  # 2023-07 黃子豪等 3 人
+    "Dawulong": "Taivoan",               # 大武壠音譯，2023-08-10 小林 3 人
+    "Paiwang": "Paiwan",                 # 2023-08-24 午間蔡靜婷
+    "Paywang": "Paiwan",                 # 2023-11 第 68 批 s091
+    "Rukay": "Rukai",                    # 2023-11 第 68 批 s090
+    "Tao/Yami": "Yami",                  # 2023-11 第 68 批 s092
+    "Makadaw": "Makatao",                # 2023-11 潘信州，馬卡道
+    "kebalan": "Kavalan", "Kebalan": "Kavalan",   # 噶瑪蘭自稱，2023-07 小寫
+    "Aatayal": "Atayal",                 # 2023-12 第 69 批 s082
+    "Paiawn": "Paiwan",                  # 2023-12 第 69 批 s103
+    "Paypula": "拍瀑拉",                 # 2023-12 潘明燈
+    "Taukas": "Taokas",                  # 2023-12 王商益，道卡斯
+    "Seejiq": "Seediq",                  # 2023-12 賽德克自稱
+    "Seejiq Truku": "Seediq",            # 2023-12 Awi Walis，一人一族名
+    "Aymara cuku": "Aymara",             # 2024-02 第 70 批，cuku＝卡語「族」
+    "Puyuma": "Pinuyumayan",             # 2024-03 第 71 批林志興、潘調志
+    "Ta'urung": "Taivoan",               # 2024-03 李文瑞，仝人另一條「大武壠族」
+    "makataw": "Makatao",                # 2024-03 潘玉燕，小寫
 }
 
 
@@ -169,7 +202,9 @@ def code_of(word):
     word = word.strip()
     if not word:
         return ""
-    # 名條ê寫法：「布農族」「Thau(邵族)」「Silaya(西拉雅族)」。
+    # 名條ê寫法：「布農族」「Thau(邵族)」「Silaya(西拉雅族)」「Yami(達悟)族」。
+    if word.endswith(")族"):
+        word = word[:-1]
     forms = [ALIASES.get(word, word)]
     if word.endswith(")") and "(" in word:
         outer, inner = word[:-1].split("(", 1)
@@ -197,7 +232,13 @@ def _lookup(word):
 
 
 def codes_of(answer):
-    """讀者答案（VS 名條兩人就兩个族名，空白隔開）→ 代號清單。"""
+    """讀者答案（VS 名條兩人就兩个族名，空白隔開）→ 代號清單。
+
+    族名本身有空白（「Wakka Wakka」）就先整个查，查無才切做兩人。
+    """
+    whole = answer.strip()
+    if " " in whole and _lookup(ALIASES.get(whole, whole)):
+        return [_lookup(ALIASES.get(whole, whole))]
     out = []
     for word in answer.split():
         code = code_of(word)
@@ -220,6 +261,8 @@ def assign(rows, seen):
                 if code not in codes:
                     codes.append(code)
         row[segments.INTERVIEWEE] = " ".join(codes) or segments.NONE_SEEN
+        # 講族語抑是華語，名條看袂出來：先標未定，後壁用華語 ASR 判。
+        row[segments.SPEECH] = segments.UNSURE if codes else segments.NONE_SEEN
         out.append(row)
     return out
 
@@ -231,10 +274,21 @@ def folder(work):
     return os.path.join(work, "8-namebars")
 
 
+def _frames(stream, size):
+    """Pipe 一格一格讀出來；無夠一格就結束。"""
+    while True:
+        chunk = stream.read(size)
+        if len(chunk) < size:
+            return
+        yield chunk
+
+
 def scan_old(video, threads=2):
     """舊版型逐秒（職稱字量, 人名字量, 紅條比例）。
 
-    `threads` 照 fetch_sftp.sh ê慣例：6 集同齊走，ffmpeg 預設食規台。
+    一格一格讀、算了就放掉：本底規支讀入記憶體（一集 3 GB 原始資料，
+    閣轉 int16），切 cue 六集同齊走，2026-09-25 早起食了記憶體、VS Code
+    予 OOM 刣。`threads` 照 fetch_sftp.sh ê慣例：6 集同齊走。
     """
     import subprocess
     top, height = OLD_SCAN
@@ -242,21 +296,28 @@ def scan_old(video, threads=2):
            "-i", video, "-vf",
            "fps=1,crop=1920:%d:0:%d" % (height, top),
            "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
-    raw = subprocess.run(cmd, capture_output=True, check=True).stdout
-    size = 1920 * height * 3
-    frames = np.frombuffer(raw[:len(raw) // size * size], np.uint8)
-    frames = frames.reshape(-1, height, 1920, 3).astype(np.int16)
     lo, hi = OLD_COLS
-    bright = frames.min(axis=-1) > 200
-    red = ((frames[..., 0] > 110) & (frames[..., 0] - frames[..., 1] > 60)
-           & (frames[..., 0] - frames[..., 2] > 50))
-    rows = OLD_TITLE_ROWS
-    title = bright[:, rows[0]:rows[1], lo:hi].sum(axis=(1, 2))
-    rows = OLD_NAME_ROWS
-    name = bright[:, rows[0]:rows[1], lo:hi].sum(axis=(1, 2))
-    rows = OLD_RED_ROWS
-    share = red[:, rows[0]:rows[1], lo:hi].mean(axis=(1, 2))
-    return title, name, share
+    titles, names, reds = [], [], []
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+    try:
+        for chunk in _frames(proc.stdout, 1920 * height * 3):
+            frame = np.frombuffer(chunk, np.uint8).reshape(height, 1920, 3)
+            frame = frame[:, lo:hi].astype(np.int16)
+            bright = frame.min(axis=-1) > 200
+            red = ((frame[..., 0] > 110)
+                   & (frame[..., 0] - frame[..., 1] > 60)
+                   & (frame[..., 0] - frame[..., 2] > 50))
+            rows = OLD_TITLE_ROWS
+            titles.append(int(bright[rows[0]:rows[1]].sum()))
+            rows = OLD_NAME_ROWS
+            names.append(int(bright[rows[0]:rows[1]].sum()))
+            rows = OLD_RED_ROWS
+            reds.append(float(red[rows[0]:rows[1]].mean()))
+    finally:
+        proc.stdout.close()
+        if proc.wait() != 0:
+            raise PipelineError("名條掃描讀影片失敗：%s" % video)
+    return np.array(titles), np.array(names), np.array(reds)
 
 
 def grab(work, video, style="new"):

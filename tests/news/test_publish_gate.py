@@ -165,10 +165,10 @@ DEC = "20241201_336_晨間_Thau_邵"
 def segment_rows(basis="自動"):
     return [{"起秒": "0", "迄秒": "100", "類型": "攝影棚", "單元語別": "邵",
              "字幕上緣y": "722", "字幕下緣y": "848", "依據": "自動",
-             segments.INTERVIEWEE: ""},
+             segments.INTERVIEWEE: "", segments.SPEECH: ""},
             {"起秒": "100", "迄秒": "600.000", "類型": "島語時間",
              "單元語別": "泰雅", "字幕上緣y": "940", "字幕下緣y": "1060",
-             "依據": basis, segments.INTERVIEWEE: ""}]
+             "依據": basis, segments.INTERVIEWEE: "", segments.SPEECH: ""}]
 
 
 class TestSegmentsGoWithTheTimeline(unittest.TestCase):
@@ -197,8 +197,11 @@ class TestSegmentsGoWithTheTimeline(unittest.TestCase):
                          "write")
         self.assertTrue(self.target.endswith(
             os.path.join("0-segments", "2024-12", DEC + ".csv")))
-        self.assertEqual(segments.read(self.target),
-                         segment_rows("Claude Vision 確認"))
+        stored = segments.read(self.target)
+        expected = segment_rows("Claude Vision 確認")
+        for row in expected:
+            del row["依據"]
+        self.assertEqual(stored, expected)
 
     def test_the_same_content_is_not_rewritten(self):
         self.publish(segment_rows("Claude Vision 確認"))
@@ -336,6 +339,19 @@ class TestStaleWorkDir(unittest.TestCase):
         work, reason = self.judge()
         self.assertEqual(reason, "")
         self.assertTrue(work)
+
+    def test_a_timeline_still_being_refined_holds_back_only_itself(self):
+        # 2026-09-25：cut_months 當咧精修 20230703_184 晚間，work dir
+        # 干焦有粗切。publishable() 放伊過，publish_one 才 raise，規輪
+        # publish 倒去——排佇伊後壁ê集攏入袂去。
+        from scripts import datadirs
+        path = datadirs.coarse_cues(self.work)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump({"cues": [], "duration": 600.0}, handle)
+        work, reason = self.judge()
+        self.assertEqual(work, "")
+        self.assertIn("精修", reason)
 
 
 if __name__ == "__main__":
