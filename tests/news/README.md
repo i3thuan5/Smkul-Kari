@@ -56,6 +56,7 @@
 |---|---|---|
 | cue-timing | 島語時間對白置中（x≈620–1300），字幕帶的置右比對遮罩（1250–1790）切不出來——照段落表用島語時間的 preset 重切 | `test_segment_recut.py` |
 | cue-timing | 補切放在讀字之後會重新編號、TSV 對到別條 cue——已讀字的集數拒跑、指名改用 `rescan_band` | `test_segment_recut.py` |
+| cue-timing | 切 cue 程序先出組合圖、上尾才補切：補切重新編號後舊組合圖的號碼對到別條 cue（2021-12 十集，340 午間舊 827 條→新 824 條），ingest 不會發現——補切完把舊組合圖刪掉，讓 gap_sheets 照新號碼重做 | `test_segment_recut.py` |
 | cue-timing | 時間軸要記哪條 cue 是哪個區域切的（`areas`、`area`），沒有帶外段落的集數時間軸逐 byte 不變 | `test_segment_recut.py` |
 | cue-timing | 補切的那段沒精修就接回，store 會收到粗切的邊界——拒絕、時間軸不動 | `test_segment_recut.py` |
 | cue-timing | `rescan_band` 重切後讀 `<out>/cues.json`，分階段後那個檔永遠不存在（在 `1-cues/`），2021 帶外專題重切會倒 | `test_segment_recut.py` |

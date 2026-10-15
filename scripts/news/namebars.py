@@ -33,6 +33,9 @@ SAME = 0.85          # 黃字遮罩 Jaccard 超過這个算仝一張名條
 # 名條外號佮播出端錯字 → 節目目錄ê拼法（名條實際印過ê）。
 ALIASES = {
     "Tao": "Yami", "Yami(Tao)": "Yami", "Yami/Tao": "Yami",
+    "tao": "Yami",                       # 2022-08 b105-s060「Yami/tao」小寫
+    "Paiwna": "Paiwan",                  # 2022-08 b105-s040，wa 顛倒
+    "Apaci": "Apache",                   # 2022-08 b105-s084 Littlefeather
     "Ruaki": "Rukai",                    # 2024-12-08 午間伍麗華等 4 人
     "Pinuyummayan": "Pinuyumayan",       # 2024-12-08 晚間陳瑩
     "Aims": "Amis",                      # 2024-12-23 午間舒米·如妮
@@ -69,6 +72,52 @@ ALIASES = {
     "Puyuma": "Pinuyumayan",             # 2024-03 第 71 批林志興、潘調志
     "Ta'urung": "Taivoan",               # 2024-03 李文瑞，仝人另一條「大武壠族」
     "makataw": "Makatao",                # 2024-03 潘玉燕，小寫
+    "Mawri": "Māori",                    # 2024-05 第 73 批 s103
+    "Paipura": "拍瀑拉",                 # 2024-05 白俊忠
+    "Piawan": "Paiwan",                  # 2024-04 達比烏蘭·古勒勒
+    "SaySiyta": "SaySiyat",              # 2024-05 第 73 批 s008
+    "Sámi": "Sami",                      # 2024-05 Mariela Idivuoma
+    "Taulong": "Taivoan",                # 2024-05 楊山樟，大武壠
+    "嘎哈巫族": "Kaxabu", "嘎哈巫": "Kaxabu",   # 2024-07 第 75 批 s013
+    "Daukas": "Taokas",                  # 2024-07 劉新苗、劉秋雲，道卡斯
+    "Kwukasu": "Taokas",                 # 2024-07 仝兩人，頂排印 Twukasu
+    "Eastern Kuku Yalanji": "Kuku Yalanji",   # 2021-12 第 76 批 s016
+    "Ivatan族": "Ivatan",                 # 2024-08 第 78 批 s027
+    "Taulun": "Taivoan",                 # 2024-08 小林村王民亮，仝人別條「大武壠族」
+    "Ta`ulung": "Taivoan",               # 2024-08-10 晨間，反引號
+    "Tgdaya": "Seediq",                  # 2024-08 郭明正，德固達雅語群
+    "Paiwn": "Paiwan",                   # 2024-08 第 78 批 s026
+    "Pinuyunayan": "Pinuyumayan",        # 2024-08 陳豪毅
+    "Thao": "Thau",                      # 2024-08 高淑真，仝人別條 Thau
+    "Papura": "拍瀑拉",                  # 2024-08 羅義惇「klgan Papura」
+    "Ruki": "Rukai",                     # 2024-09 柯浩軒，仝人別條 Rukai
+    "Kahau": "Kaxabu",                   # 2024-09「Kahau(噶哈巫族)」
+    "Sakilaya": "Sakizaya",              # 2024-10-20 晚間「Sakilaya(撒奇萊雅族)」
+    "Papula": "拍瀑拉",                  # 2024-10-23 晚間 3 人
+    "Kaitakorangcu": "凱達格蘭",         # 2024-11-16 午間潘正育
+    "Kaitakʉran": "凱達格蘭",            # 2024-11-24 午間，ʉ
+    "Metis": "Métis",                    # 2024-11-05 午間，無重音符
+    "Gullah Geechee": "Gullah",          # 2021-12-17 晚間 3 人，族名有空白
+    "Samoya": "薩摩亞",                  # 2022-01-05 晚間 b85-s009
+    "Paiwani": "Paiwan",                 # 2022-01-16 晨間 b87-s005 白惠蘭
+    "paypolacu": "拍瀑拉",               # 2022-01-22 午間 b88-s006 白俊忠
+    "Rukia": "Rukai",                    # 2022-06-08 午間 b100-s006 陳小姐
+    "Pacai": "Pazeh",                    # 2022-06-26 午間 b100-s065 平埔專題 3 人
+    "SaySiyal": "SaySiyat",              # 2022-06-26 晚間 b100-s066，t 印做 l
+    "SaySiat": "SaySiyat",               # 2022-07 b102-s001，掉一个 y
+    "Naabeehó": "Navajo",                # 2022-07 b103-s019，Navajo 族語自稱
+    "Kevalan": "Kavalan",                # 2022-01-25 午間 b90-s013 潘靜英
+    "Bunum": "Bunun",                    # 2022-01-30 晚間 b90-s033 田春梅
+    "大滿族": "Taivoan",                 # 大武壠別稱，2024-06 潘資洲「大滿族」
+    "Ta'urong": "Taivoan",               # 2022-03 第 94 批王民亮，仝人別條「Taulun」
+    "Paiwa": "Paiwan",                   # 2022-02 第 93 批 giyu(郭復明)，播出端漏 n
+    "Pinuyumayyan": "Pinuyumayan",       # 2022-03 第 94 批洪志彰、呂蓓蒂，雙 y
+    "SaySyat": "SaySiyat",               # 2022-03 第 94 批 b94-s062，漏 i
+    "Kvalan": "Kavalan",                 # 2022-04 第 95 批 b95-s007，漏 a
+    "Pajay": "巴宰",                     # 2022-04-28 午間愛蘭教會，巴宰音譯
+    "Pajiay": "巴宰",                    # 仝彼則 b95-s085，閣拼一款
+    "Paiouia": "拍瀑拉",                 # 2022-04 b95-s017 白俊忠，96 批印拍瀑拉族
+    "Rapa Nui": "Rapanui",               # 2022-05 b96-s015 Veronica Tuqui，有空白
 }
 
 
@@ -240,7 +289,8 @@ def codes_of(answer):
     if " " in whole and _lookup(ALIASES.get(whole, whole)):
         return [_lookup(ALIASES.get(whole, whole))]
     out = []
-    for word in answer.split():
+    # 「Pinuyumayan/Amis」：一人兩族用斜線隔開。
+    for word in answer.replace("/", " ").split():
         code = code_of(word)
         if code and code not in out:
             out.append(code)

@@ -100,6 +100,15 @@ def run(src_root, dst_root, work_dir, report_root, stamp, one_file,
         current.log("== %s" % job.relative)
         try:
             entry = one_file(job, current.log)
+        # Ctrl+C 毋是檔案歹，是人欲規个停：記落來、收對照表，閣擲出去，
+        # 莫予下跤彼條「記落來、行下一支」吞去。
+        except KeyboardInterrupt:
+            current.log("中斷：%s 做到一半予人喝停，無上傳，後壁ê無做"
+                        % job.relative)
+            entries.append({"src": job.relative, "結果": "中斷"})
+            failed.append(job.relative)
+            current.close(entries, work_dir)
+            raise
         # 掠規類 Exception 是刁工ê：這位ê規矩就是「毋管按怎倒，
         # 記落來、行下一支」。若干焦掠家己知影ê幾种，一个無拍算
         # ê錯誤就會共規批停掉，彼正正是這條愛避免ê代誌。

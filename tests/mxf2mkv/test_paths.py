@@ -105,6 +105,18 @@ class TestScan(unittest.TestCase):
     def test_empty_folder(self):
         self.assertEqual(walk.scan(self.tmp), [])
 
+    def test_apple_double_sidecars_are_skipped(self):
+        """macOS 寫去 exFAT／FAT 隨身硬碟ê時，逐支檔案會伴生一个
+        `._檔名` ê資源分支 metadata，副檔名照抄所以會通過 .mxf ê篩選，
+        毋過內容毋是影片，送去 encode 一定編碼失敗（0925-2210 這批
+        111.01-111.05 ê 232 支失敗攏是這款）。"""
+        self.touch("a.mxf")
+        self.touch("._a.mxf")
+        self.touch("夜間/b.mxf")
+        self.touch("夜間/._b.mxf")
+        got = walk.scan(self.tmp)
+        self.assertEqual(got, ["a.mxf", "夜間/b.mxf"])
+
 
 if __name__ == "__main__":
     unittest.main()

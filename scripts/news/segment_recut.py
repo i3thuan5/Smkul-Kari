@@ -235,6 +235,11 @@ def run(work, video, recut=_recut, refine=_refine, presets=None,
     book["areas"] = areas
     with open(timeline, "w", encoding="utf-8") as handle:
         json.dump(book, handle, ensure_ascii=False, indent=2, sort_keys=True)
+    # 組合圖是照重切進前ê號碼排ê，留咧會予讀者照舊號寫（2021-12 十集）。
+    # 刣掉，gap_sheets 會照新號碼重做。
+    stale = datadirs.sheets_dir(work)
+    if os.path.isdir(stale):
+        shutil.rmtree(stale)
     return len(targets)
 
 

@@ -40,7 +40,7 @@ class TestParseStandardNames(unittest.TestCase):
     def test_the_video_path_is_corpus_root_relative(self):
         got = parse("082-阿美語-雙語字幕.mp4")
         self.assertEqual(got["video"],
-                         "ilrdf-corpus/族語節目/開會了/082-阿美語-雙語字幕.mp4")
+                         "族語節目-aiyalaeho開會了/082-阿美語-雙語字幕.mp4")
         self.assertEqual(got["file"], "082-阿美語-雙語字幕.mp4")
 
     def test_the_programme_name_is_recorded(self):

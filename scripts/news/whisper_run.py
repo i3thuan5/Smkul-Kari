@@ -9,6 +9,7 @@ Per episode: take the audio (`scripts.news.audio`, shared with kaldi),
 （`scripts.asrmt.sapolita`），把伺服器回傳的文字**原樣**存做 SRT，寫
 一列辨識紀錄，刪暫存音檔。一次只送一集——伺服器不可平行。
 
+OCR SRT 猶未入庫的集一律毋送（OCR 了後才確認會著語言別）。
 沒有名字時做整批，跳過已經做完的集（SRT 佮辨識紀錄兩者都在才算做
 完）；帶名字時只做那幾集，即使已經做完也重做（讓使用者能挑出特定
 集數重跑）。
@@ -169,10 +170,24 @@ def is_done(srt_name, srt_dir=None, log_path=None):
     return srt_name in _read_log(log_path)
 
 
-def todo(entries, srt_dir=None, log_path=None):
+def ocr_done(srt_name, ocr_dir=None):
+    """OCR SRT 入庫了才算 OCR 做完。
+
+    使用者 2026-10-05：whisper 愛等 OCR 做完才送——OCR 了後才確認會著
+    語言別，袂使先送。
+    """
+    path = paths.stage_path(ocr_dir or paths.SRT_DIR, srt_name, ".srt")
+    return os.path.exists(path)
+
+
+def todo(entries, srt_dir=None, log_path=None, ocr_dir=None):
+    """整批模式欲送的集：OCR 做完、whisper 猶未做完。"""
     out = []
     for entry in entries:
-        if not is_done(entry["srt_name"], srt_dir, log_path):
+        name = entry["srt_name"]
+        if not ocr_done(name, ocr_dir):
+            continue
+        if not is_done(name, srt_dir, log_path):
             out.append(entry)
     return out
 
@@ -192,16 +207,20 @@ def _audio_tmp_path(srt_name, work_dir=None):
 
 def run_episode(entry, server, recognize=None, audio_get=None,
                 vision_dir=None, variety_path=None, srt_dir=None,
-                log_path=None, work_dir=None, now=None):
-    """一集：取音檔 → 查語別碼 → 辨識 → 原樣存 SRT → 寫紀錄 → 刪暫存。
+                log_path=None, work_dir=None, now=None, ocr_dir=None):
+    """一集：確認 OCR 做完 → 取音檔 → 查語別碼 → 辨識 → 原樣存 SRT →
+    寫紀錄 → 刪暫存。
 
-    失敗（伺服器出錯、語別碼查無）時 SHALL NOT 留下 SRT 或紀錄列；
+    OCR SRT 猶未入庫就中止，啥物攏毋送。失敗（伺服器出錯、語別碼查無）時 SHALL NOT 留下 SRT 或紀錄列；
     暫存音檔不論成敗都清掉。
     """
     recognize = recognize or sapolita.recognize
     audio_get = audio_get or audio.get_audio
     now = now or _now_cst
     name = entry["srt_name"]
+    if not ocr_done(name, ocr_dir):
+        raise PipelineError(
+            "%s：OCR SRT 猶未入庫，語言別猶未確認，袂使送 whisper" % name)
     code = code_for(entry, variety_path)
     mp3 = _audio_tmp_path(name, work_dir)
     os.makedirs(os.path.dirname(mp3), exist_ok=True)

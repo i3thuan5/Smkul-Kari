@@ -48,9 +48,11 @@ class Env(unittest.TestCase):
         self.vision_dir = os.path.join(root, "2-vision")
         self.variety_path = os.path.join(root, "新聞語言別代號.csv")
         self.work_dir = os.path.join(root, "work")
+        self.ocr_dir = os.path.join(root, "3-srt")
         os.makedirs(self.srt_dir)
         os.makedirs(self.vision_dir)
         os.makedirs(self.work_dir)
+        os.makedirs(self.ocr_dir)
         self._write_varieties([
             ("邵", "ssf", "", "單一語別"),
             ("賽德克", "trv-x-tgdy", "德固達雅", "使用者保底"),
@@ -65,6 +67,13 @@ class Env(unittest.TestCase):
             writer.writerow(["族語別(中)", "語言別代號", "語言別", "依據"])
             for row in rows:
                 writer.writerow(row)
+
+    def _write_ocr(self, srt_name):
+        """這集 OCR 做完了：交付的 OCR SRT 在 3-srt。"""
+        path = paths.stage_path(self.ocr_dir, srt_name, ".srt")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("1\n00:00:00,000 --> 00:00:01,000\n我是Kurali\n")
 
     def _write_vision(self, srt_name, lines):
         folder = paths.stage_path(self.vision_dir, srt_name)
@@ -224,20 +233,64 @@ class TestResume(Env):
         whisper_run.write_srt(done["srt_name"], "x", srt_dir=self.srt_dir)
         whisper_run.record_row(done["srt_name"], "dru-x-ngdr", "不明",
                                "s", "d", 1.0, 1, log_path=self.log_path)
+        self._write_ocr(done["srt_name"])
+        self._write_ocr(pending["srt_name"])
         queue = whisper_run.todo([done, pending], srt_dir=self.srt_dir,
-                                 log_path=self.log_path)
+                                 log_path=self.log_path,
+                                 ocr_dir=self.ocr_dir)
         self.assertEqual([e["srt_name"] for e in queue],
                          [pending["srt_name"]])
 
 
+class TestOcrFirst(Env):
+    """使用者 2026-10-05：whisper 要等 OCR 做完才送——OCR 之後才確認
+    得了語言別。整批模式（不帶集名）以前照節目目錄全部送，還沒 OCR
+    的集也會被送出去。
+    """
+
+    def test_todo_leaves_out_episodes_whose_ocr_srt_is_not_in_yet(self):
+        read = _entry(srt_name="20210227_058_晨間_Thau_邵")
+        unread = _entry(srt_name="20210228_059_晨間_Thau_邵")
+        self._write_ocr(read["srt_name"])
+        queue = whisper_run.todo([read, unread], srt_dir=self.srt_dir,
+                                 log_path=self.log_path,
+                                 ocr_dir=self.ocr_dir)
+        self.assertEqual([e["srt_name"] for e in queue],
+                         [read["srt_name"]])
+
+    def test_naming_an_episode_without_ocr_srt_sends_nothing(self):
+        # 帶集名重跑也一樣要擋：不取音檔、不送伺服器、不留 SRT 或紀錄列
+        touched = []
+
+        def recognize(server, audio_path, code):
+            touched.append("recognize")
+            return "1\n00:00:00,000 --> 00:00:01,000\n族語：a\n華語：b"
+
+        def audio_get(entry, out):
+            touched.append("audio")
+            open(out, "wb").close()
+
+        with self.assertRaises(PipelineError) as caught:
+            whisper_run.run_episode(
+                _entry(), "https://x/sapolita", recognize=recognize,
+                audio_get=audio_get, vision_dir=self.vision_dir,
+                variety_path=self.variety_path, srt_dir=self.srt_dir,
+                log_path=self.log_path, work_dir=self.work_dir,
+                ocr_dir=self.ocr_dir)
+        self.assertIn("20210227_058_晨間_Thau_邵", str(caught.exception))
+        self.assertEqual(touched, [])
+        self.assertFalse(os.path.exists(self.log_path))
+
+
 class TestRunEpisode(Env):
     def _run(self, entry, recognize, audio_get=None, when=None):
+        self._write_ocr(entry["srt_name"])
         return whisper_run.run_episode(
             entry, "https://x/sapolita", recognize=recognize,
             audio_get=audio_get or (lambda e, out: open(out, "wb").close()),
             vision_dir=self.vision_dir, variety_path=self.variety_path,
             srt_dir=self.srt_dir, log_path=self.log_path,
-            work_dir=self.work_dir, now=when)
+            work_dir=self.work_dir, now=when, ocr_dir=self.ocr_dir)
 
     def test_a_successful_run_writes_srt_then_the_log_row(self):
         order = []
@@ -301,12 +354,14 @@ class TestBatch(Env):
             _entry(srt_name="20210227_058_晨間_Thau_邵")]
         entries[0]["族語別(中)"] = "邵"  # 借邵語代號，避免另開一族
         entries[1]["族語別(中)"] = "邵"
+        for entry in entries:
+            self._write_ocr(entry["srt_name"])
         done, failed = whisper_run.run_batch(
             entries, "https://x/sapolita", recognize=recognize,
             audio_get=lambda e, out: open(out, "wb").close(),
             vision_dir=self.vision_dir, variety_path=self.variety_path,
             srt_dir=self.srt_dir, log_path=self.log_path,
-            work_dir=self.work_dir)
+            work_dir=self.work_dir, ocr_dir=self.ocr_dir)
         self.assertEqual(seen, ["start", "end"] * 2)
         want = []
         for entry in entries:
@@ -326,13 +381,15 @@ class TestBatch(Env):
         first["族語別(中)"] = "邵"
         second = dict(_entry(srt_name="20210228_059_晨間_Thau_邵"))
         second["族語別(中)"] = "邵"
+        self._write_ocr(first["srt_name"])
+        self._write_ocr(second["srt_name"])
 
         done, failed = whisper_run.run_batch(
             [first, second], "https://x/sapolita", recognize=recognize,
             audio_get=lambda e, out: open(out, "wb").close(),
             vision_dir=self.vision_dir, variety_path=self.variety_path,
             srt_dir=self.srt_dir, log_path=self.log_path,
-            work_dir=self.work_dir)
+            work_dir=self.work_dir, ocr_dir=self.ocr_dir)
         self.assertEqual(done, [second["srt_name"]])
         self.assertEqual(len(failed), 1)
         self.assertEqual(failed[0][0], first["srt_name"])

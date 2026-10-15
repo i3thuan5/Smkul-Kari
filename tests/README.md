@@ -103,6 +103,7 @@ tests-e2e/        fixture.py  test_roundtrip  test_mxf2mkv_roundtrip
 | srt-data-store | `2-asr` 改名後 Kari-SRT 與工作目錄兩處都是 `2-asr-kaldi`，whisper 另有一組平行的路徑常數 | `news/test_paths.py` |
 | whisper-asr-srt／asr-bilingual-srt | 有封存 mkv 就不向 SFTP 要；暫存區裡切 cue 留下的原檔不用（kaldi 以前會先看它）；whisper 不看 kaldi 工作目錄的 `audio.mp3`；自 SFTP 抓來的原檔抽完音軌就刪、位元組數不符要指名該集中止 | `news/test_audio.py` |
 | whisper-asr-srt | SRT 原樣存：「族語：／華語：」兩行、片尾幻覺、檔尾不補換行都不動、不加 0.5 秒留白——存下的檔和伺服器回的逐 byte 相同；smkul.csv 7 族只記族語別要換成新聞語言別代號.csv 的語別碼、查族用 `族語別(中)` 不用代號前綴、表上查不到要中止指名；主播名取 OCR 字幕前 15 條第一個「我是」，取不到寫「不明」不留空；續跑以 SRT 與紀錄列都在為做完；整批一次一集、一集失敗不擋下一集，失敗的集不留 SRT 或紀錄列 | `news/test_whisper_run.py` |
+| whisper-asr-srt | OCR SRT 還沒入庫的集不可以送 whisper（使用者 2026-10-05：OCR 之後才確認得了語言別）——整批模式以前照節目目錄全部送，3066 集裡還沒 OCR 的也會被送出去；帶集名重跑也要擋，連音檔都不取 | `news/test_whisper_run.py` |
 | subtitle-text-source | 文稿不供字／中間產物不擋交付 | `news/test_make_one.py`、`news/test_make_srt.py` |
 | asr-bilingual-srt | 音檔時長不符指名中止／續跑跳過已完成步驟 | `news/test_asrmt_run.py` |
 | —（工作流防線） | 不覆蓋已校讀 work dir、批次 sheet 歸屬、TSV 整批拒收 | `news/test_gap_guard.py`、`news/test_batches.py`、`news/test_ingest.py` |
@@ -148,6 +149,7 @@ tests-e2e/        fixture.py  test_roundtrip  test_mxf2mkv_roundtrip
 | episode-catalogue | 節目目錄ê共同欄位佮不變量（播出時段對節目名稱推、集數補三碼、成果檔名佮識別欄互推、重複、列序、素材位置非空、語言欄值域、孤兒檔）——11 逝ê對照表佇 `catalogue/README.md` | `catalogue/test_catalogue_checks.py` |
 | aiyalaeho-language-check | 逐條語言判定ê規組（逐條標記、兩張 CSV）——對照表佇 `aiyalaeho/langcheck/README.md` | `aiyalaeho/langcheck/*.py` |
 | aiyalaeho-language-check | 官方族語辭典（字元分類、辭典蒸餾、詞庫比對、方言別正音）——13 逝ê對照表佇 `lexicon/README.md` | `lexicon/*.py` |
+| mxf2mkv | 轉到一半停掉的短檔袂使上傳：ffmpeg 收著 Ctrl+C／q 會好好收尾，封存佮音軌指紋（仝一擺 ffmpeg 算ê）仝款短、照樣「逐位元相符」——2026-10-06 查著 8 支 0.7 秒到 23 分 53 秒ê mkv 傳起去矣（正常 48 分鐘）；上傳前比母帶時長（差 2 秒以上就擋）、離開碼 255／130／-SIGINT 當做中斷規批停（毋是「記落來、行下一支」）、中斷了指紋檔嘛愛清、`-nostdin` 予 ffmpeg 袂讀鍵盤 | `mxf2mkv/test_interrupt.py`、`transcode/test_encode_master.py` |
 | subtitle-text-source | 兩逝一 cue ê TSV：列名毋著／cue 無佇 sheet 頂懸／仝一 cue 兩批攏有——規批拒收 | `aiyalaeho/test_ingest.py` |
 | srt-data-store | store 版面（`aiyalaeho/1-ocr/{1-cues,2-vision,3-srt}`、不分層）；inventory 欄位宣告 | `aiyalaeho/test_paths.py` |
 | —（成本防線） | preset ê列懸度愛予一張 sheet 囥會落四條 cue（1.10 MP 預算；超過就恬恬加三成閱讀量） | `aiyalaeho/test_paths.py` |

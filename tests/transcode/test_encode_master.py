@@ -76,6 +76,16 @@ class TestOneFfmpegPass(EncodeMasterDryRun):
         out = self.run_dry(tracks=2)
         self.assertNotIn("checking whether", out)
 
+    def test_ffmpeg_does_not_read_the_terminal(self):
+        """終端機頂懸按著 q，ffmpeg 會好好收尾、離開碼 0。
+
+        彼款短檔連指紋都仝款短，2026-10-06 查著 8 支短 mkv 傳起去矣
+        （0.7 秒到 23 分 53 秒，正常 48 分鐘）。-nostdin 予 ffmpeg
+        根本袂讀鍵盤。
+        """
+        out = self.run_dry(tracks=2)
+        self.assertIn("-nostdin", out.split())
+
 
 class TestTrackMaps(EncodeMasterDryRun):
     def test_single_track(self):

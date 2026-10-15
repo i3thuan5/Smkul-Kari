@@ -128,8 +128,11 @@ done
 # A batch of these runs for hours in the background; nice/ionice it down
 # so it does not steal CPU/disk from whatever else is running on the box
 # (使用者裁定 -- CPU 影響到其他工作).
+# -nostdin: a stray `q` on the terminal makes ffmpeg close every output
+# cleanly and exit 0 -- a short archive with a short fingerprint that
+# still "matches" (8 such mkv reached the server, found 2026-10-06).
 cmd=(nice -n 15 ionice -c 3
-     ffmpeg -v error -stats -i "$SRC" "${maps[@]}"
+     ffmpeg -nostdin -v error -stats -i "$SRC" "${maps[@]}"
      -c:v libx264 -preset medium -pix_fmt "$PIX" -crf "$CRF"
      "${audio_args[@]}" "$ARCHIVE"
      "${md5_outputs[@]}")

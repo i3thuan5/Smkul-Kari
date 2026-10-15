@@ -94,6 +94,12 @@ OTHER_GROUPS = {
     "桑": ("San", "桑"),
     # 大武壠：名條「潘鄔奈 大武壠族」（2022-01）。SIL 有 Taivoan。
     "大武壠": ("Taivoan", "tvx"),
+    # 2024-08 名條第 78 批。凱達格蘭：08-23 晚間 3 人印「凱達格蘭族」，SIL
+    #   Ketangalan `kae`。Ivatan：菲律賓巴丹島（08-06 晚間、08-29 午間），
+    #   SIL `ivv`，無通行漢譯，鍵照原文。Xakriabá：巴西（08-21 午間），SIL `xkr`。
+    "凱達格蘭": ("Ketagalan", "kae"),
+    "Ivatan": ("Ivatan", "ivv"),
+    "Xakriabá": ("Xakriabá", "xkr"),
     # 加拿大 Nlaka'pamux：名條「Dion Kaszas Nlaka'pamux」（2022-01）。
     #   SIL 是 Thompson River Salish。無通行漢譯，鍵照原文，莫家己翻。
     "Nlaka'pamux": ("Nlaka'pamux", "thp"),
@@ -148,6 +154,67 @@ OTHER_GROUPS = {
     #   ISO 639-3 無薩米總稱，比照彝用上濟人講ê北薩米 `sme`。
     "愛努": ("Ainu", "ain"),
     "薩米": ("Sami", "sme"),
+    # 2024-07 名條第 75 批。巴布薩：平埔族群，「巴布薩族」（b75-s013，
+    #   20240706_188 晚間）、「乃俊廷 Babuza」（b75-s051，20240719_201
+    #   晚間），SIL Babuza `bzg`。加拿大 Mi'kmaq：「Brian Francis
+    #   Mi'kmaq」（b75-s066，20240723_205 晚間），SIL `mic`；無通行漢譯，
+    #   鍵照原文。
+    "巴布薩": ("Babuza", "bzg"),
+    "Mi'kmaq": ("Mi'kmaq", "mic"),
+    # 2021-12 名條第 76 批 b76-s016：「Desmond Tayley  Eastern Kuku Yalanji」
+    #   （2677 秒，澳洲昆士蘭），SIL Kuku-Yalanji `gvn`；族名有空白，鍵照原文，
+    #   「Eastern Kuku Yalanji」別名寫佇 namebars.ALIASES。
+    "Kuku Yalanji": ("Kuku Yalanji", "gvn"),
+    # 加拿大 Métis：2024-11 名條第 81 批 b81-s018 第 11 列（11-05 午間，
+    #   畫面印「Metis」，佮 Cree 仝一則）。Métis 是族群，ISO 639-3 無族群
+    #   總稱，用 Métis 家己ê語言 Michif `crg`；無通行漢譯，鍵照原文。
+    "Métis": ("Métis", "crg"),
+    # 2021-12、2022-01 名條第 84、85 批ê外國族群。尼日 Wodaabe（b84-s009、
+    #   s072，「Beji Wodaabe」「Moude Wodaabe」）講 Fulfulde，Ethnologue 共
+    #   Wodaabe 列佇 Central-Eastern Niger Fulfulde `fuq` 下底。美國 Gullah
+    #   Geechee（b84-s047）講 Sea Island Creole English `gul`。澳洲
+    #   Taungurung（b84-s076「Aunty Lee Healy Taungurung」）ISO 639-3 查無，
+    #   無通行漢譯，比照馬卡道代號寫原文。薩摩亞：名條拼「Samoya」（b85-s009），
+    #   SIL Samoan `smo`。美國 Yurok（b85-s024）SIL `yur`。
+    "Wodaabe": ("Wodaabe", "fuq"),
+    "Gullah": ("Gullah", "gul"),
+    "Taungurung": ("Taungurung", "Taungurung"),
+    "薩摩亞": ("Samoan", "smo"),
+    "Yurok": ("Yurok", "yur"),
+    # 喀麥隆 Baka 族：2022-03 名條第 94 批 b94-s001（Elenga、Emile 印「Baka族」，
+    #   上排「tao do 喀麥隆」），SIL Baka (Cameroon) `bkc`；無通行漢譯，鍵照原文。
+    "Baka": ("Baka", "bkc"),
+    # 瓜地馬拉 Q'eqchi'：2022-03 名條第 94 批 b94-s047（Rodrigo Tot，549 秒），
+    #   馬雅語族，SIL `kek`；無通行漢譯，鍵照原文。
+    "Q'eqchi'": ("Q'eqchi'", "kek"),
+    # 2022-04／05 名條第 95、96 批ê外國族群，SIL 代碼表查；無通行漢譯ê鍵照原文。
+    #   中非 Aka（b95-s007 Gaston Motambo、Angélique Manongo）SIL 叫 Yaka
+    #   (Central African Republic) `axk`。美國 Cherokee（b95-s089 Richard
+    #   Sneed）`chr`。智利 Kawesqar（b96-s029 Alfonso Carcamo）SIL Qawasqar
+    #   `alc`。巴西 Munduruku、Baré（b96-s033）`myu`、`bae`。埃及努比亞人
+    #   （b96-s032 印「Nubia」）ISO 無族群總稱，比照薩米用上濟人講ê Nobiin
+    #   `fia`。奈及利亞 Yoruba（b96-s076 Aremu Anuoluwapo）`yor`。
+    "Aka": ("Aka", "axk"),
+    "Cherokee": ("Cherokee", "chr"),
+    "Kawesqar": ("Kawesqar", "alc"),
+    "Munduruku": ("Munduruku", "myu"),
+    "Baré": ("Baré", "bae"),
+    "Nubia": ("Nubia", "fia"),
+    "Yoruba": ("Yoruba", "yor"),
+    # 肯亞 Swahili：2022-06 名條第 100 批 b100-s029（06-15 晚間 Simon Kangele
+    #   Wambua、Margaret Wanjeru wa Kiragu 印「Kiswahili族」），SIL Swahili
+    #   `swa`；名條印族語自稱 Kiswahili，鍵照原文。
+    "Kiswahili": ("Kiswahili", "swa"),
+    # 北美 Haudenosaunee 六族之一 Cayuga：2022-07 名條第 101 批 b101-s020
+    #   （07-07 午間 771 秒 Leroy Hill，畫面印「Cayu ga」），SIL `cay`；
+    #   無通行漢譯，鍵照原文。
+    "Cayuga": ("Cayuga", "cay"),
+    # 歐洲羅姆人：2022-07 名條第 104 批 b104-s010（匈牙利 Erika Varga 印
+    #   「Roma」），ISO 639-2 Romani `rom`。
+    "羅姆": ("Roma", "rom"),
+    # 北美阿帕契：2022-08 名條第 105 批 b105-s084（Sacheen Littlefeather
+    #   印「Apaci」），ISO 639-2 Apache languages 集體代號 `apa`。
+    "阿帕契": ("Apache", "apa"),
 }
 
 # 語言別（族語別下底ê變體）：族語別 -> {字樣: 代號}

@@ -62,8 +62,10 @@ from scripts.errors import PipelineError
 PROGRAMME = "開會了"
 
 # Where the delivered table records a source file, and the form the server
-# takes under its own root.
-CORPUS_DIR = "ilrdf-corpus/族語節目/開會了/"
+# takes under its own root. 2026-09-25 搬去第三份資料集（mkv／mp4 混合，
+# 24 集 mkv 檔名照 mp4 命名），舊 ilrdf-corpus/族語節目/開會了/ 彼份留咧
+# 毋過無閣用。
+CORPUS_DIR = "族語節目-aiyalaeho開會了/"
 
 VIDEO_EXT = ".mp4"
 

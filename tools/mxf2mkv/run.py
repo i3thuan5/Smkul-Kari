@@ -10,7 +10,9 @@ Nothing is left on the local disk once a file is up: the drive this runs
 against is usually nearly full, which is why the work goes to the SSD in
 the first place.
 """
+import glob
 import os
+import signal
 import subprocess
 import time
 
@@ -24,6 +26,50 @@ ENCODE_SCRIPT = os.path.join(ROOT, "scripts", "transcode", "encode_master.sh")
 
 class EncodeError(Exception):
     """This master did not become a faithful archive."""
+
+
+# How an encode that was told to stop comes back. ffmpeg catches SIGINT,
+# SIGTERM and SIGHUP, closes its outputs properly and exits 255; a shell
+# killed outright reads as the negative signal; 130 is a shell's own
+# "stopped by Ctrl+C". None of these is a bad file -- someone wants the
+# whole run to stop -- so they must not fall into batch.py's "log it and
+# carry on with the next one".
+INTERRUPTED_CODES = (255, 130, -signal.SIGINT, -signal.SIGTERM,
+                     -signal.SIGHUP)
+
+# An archive a frame or so off the master is rounding; seconds off is a
+# short file. Measured on the 8 short uploads found 2026-10-06: 0.7 s to
+# 23 min 53 s against a 48-minute master, so any real truncation is far
+# outside this.
+DURATION_TOLERANCE = 2.0
+
+
+def probe_duration(path):
+    """Seconds, as the container says."""
+    done = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+         "-of", "csv=p=0", path], capture_output=True, text=True)
+    try:
+        return float(done.stdout.strip())
+    except ValueError:
+        raise EncodeError("ffprobe 讀無時長：%s" % path)
+
+
+def check_length(source, archive, relative):
+    """Refuse an archive shorter (or longer) than its master.
+
+    The audio fingerprints cannot catch this. encode_master.sh hashes the
+    source in the same ffmpeg pass that writes the archive, so when that
+    pass is stopped early -- Ctrl+C, `q`, a SIGTERM -- ffmpeg finishes all
+    its outputs cleanly at the same point: a short archive and a short
+    fingerprint that agree bit for bit. That is how 8 truncated mkv files
+    reached the server before this check existed.
+    """
+    want = probe_duration(source)
+    got = probe_duration(archive)
+    if abs(want - got) > DURATION_TOLERANCE:
+        raise EncodeError("%s 封存長度 %.1f 秒，母帶 %.1f 秒，無齊全，無上傳"
+                          % (relative, got, want))
 
 
 def _read_md5(path):
@@ -104,7 +150,6 @@ def one_file(job, work_dir, crf=23, pix_fmt="yuv420p", log=None):
     everything = os.path.join(work_dir, name + ".all.mkv")
     finished = os.path.join(work_dir, name + ".mkv")
     made = [everything, finished]
-    index = 0
     try:
         done = subprocess.run(
             ["bash", ENCODE_SCRIPT, job.source, work_dir, name,
@@ -112,16 +157,14 @@ def one_file(job, work_dir, crf=23, pix_fmt="yuv420p", log=None):
             capture_output=True, text=True)
         if log is not None:
             log(done.stderr)
+        if done.returncode in INTERRUPTED_CODES:
+            raise KeyboardInterrupt("編碼予人喝停（離開碼 %d）：%s"
+                                    % (done.returncode, job.relative))
         if done.returncode:
             raise EncodeError("編碼失敗：%s\n%s"
                               % (job.relative, done.stderr))
 
         sources = source_md5s(work_dir, name)
-        while os.path.exists(os.path.join(
-                work_dir, "%s.src-a%d.md5" % (name, index))):
-            made.append(os.path.join(work_dir,
-                                     "%s.src-a%d.md5" % (name, index)))
-            index += 1
         if not sources:
             raise EncodeError("%s 無產出音軌指紋" % job.relative)
 
@@ -132,6 +175,7 @@ def one_file(job, work_dir, crf=23, pix_fmt="yuv420p", log=None):
             raise EncodeError("%s %s" % (job.relative, verdict.summary))
 
         remux(everything, verdict.keep, finished)
+        check_length(job.source, finished, job.relative)
         local_size = os.path.getsize(finished)
         remote_size = upload.put(finished, job.remote, local_size)
 
@@ -150,6 +194,11 @@ def one_file(job, work_dir, crf=23, pix_fmt="yuv420p", log=None):
         # 成功抑是失敗攏共本機ê物件清掉：隨身硬碟本身就欲滇矣,
         # 中間產物是刁工囥去 SSD ê，無應該留咧。失敗ê時陣工作
         # 目錄本身會留（batch.py 決定ê），毋過這支ê半成品無路用。
+        # 指紋檔用 glob 揣：編碼若中途停，猶未行到讀指紋彼步。
+        pattern = os.path.join(glob.escape(work_dir),
+                               glob.escape(name) + ".src-a*.md5")
+        for path in glob.glob(pattern):
+            made.append(path)
         for path in made:
             if os.path.exists(path):
                 os.remove(path)

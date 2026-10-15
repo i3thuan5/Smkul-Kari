@@ -372,6 +372,24 @@ class TestCodes(unittest.TestCase):
         self.assertEqual(namebars.code_of("makataw"),
                          namebars.code_of("Makatao"))
 
+    def test_2024_04_and_05_spellings(self):
+        # 第 72、73 批（2024-04、05）名條印走樣ê拼法：「Mawri」（b73-s103
+        # 紐西蘭毛利）、「Paipura」（b73-s090 白俊忠，拍瀑拉）、「Piawan」
+        # （b72-s096 達比烏蘭·古勒勒）、「SaySiyta」（b73-s008）、
+        # 「Sámi」（b73-s078、s106 Mariela Idivuoma，字距拉開ê á）、
+        # 「Taulong」（b73-s049 楊山樟，大武壠）。對無ê規集 SKIP，受訪者
+        # 欄就空ê。
+        self.assertEqual(namebars.code_of("Mawri"), namebars.code_of("Māori"))
+        self.assertEqual(namebars.code_of("Paipura"),
+                         namebars.code_of("拍瀑拉族"))
+        self.assertEqual(namebars.code_of("Piawan"),
+                         namebars.code_of("Paiwan"))
+        self.assertEqual(namebars.code_of("SaySiyta"),
+                         namebars.code_of("SaySiyat"))
+        self.assertEqual(namebars.code_of("Sámi"), namebars.code_of("薩米族"))
+        self.assertEqual(namebars.code_of("Taulong"),
+                         namebars.code_of("大武壠族"))
+
     def test_ainu_and_sami_have_codes(self):
         # 第 71 批外國族群：「愛努族」（s032、s040 富菜栄子、熊谷カネ，
         # 日本）→ SIL Ainu (Japan) `ain`；「薩米族」（s079 Mariela
@@ -379,6 +397,216 @@ class TestCodes(unittest.TestCase):
         # 北薩米 `sme`。
         self.assertEqual(namebars.code_of("愛努族"), "ain")
         self.assertEqual(namebars.code_of("薩米族"), "sme")
+
+    def test_2024_07_spellings(self):
+        # 第 75 批（2024-07）名條：「嘎哈巫族」（b75-s013，20240706_188
+        # 晚間 1479、1570 秒，「噶」寫做「嘎」）、「Daukas」（b75-s056、
+        # 20240720_202 晨間 645 秒劉新苗、689 秒劉秋雲，道卡斯；仝兩人
+        # b75-s040 印「道卡斯族」）、「Kwukasu」（b75-s030，20240713_195
+        # 午間 343、397 秒仝兩人，頂排族語句印「Twukasu」）。對無ê規集
+        # SKIP，受訪者欄就空ê。
+        self.assertEqual(namebars.code_of("嘎哈巫族"),
+                         namebars.code_of("噶哈巫族"))
+        self.assertEqual(namebars.code_of("Daukas"),
+                         namebars.code_of("道卡斯族"))
+        self.assertEqual(namebars.code_of("Kwukasu"),
+                         namebars.code_of("道卡斯族"))
+
+    def test_babuza_and_mikmaq_have_codes(self):
+        # 第 75 批外國／平埔族群：「巴布薩族」（b75-s013，20240706_188
+        # 晚間 1645 秒）、「Babuza」（b75-s051，20240719_201 晚間 1765 秒
+        # 乃俊廷）→ SIL Babuza `bzg`；「Mi'kmaq」（b75-s066，20240723_205
+        # 晚間 136 秒 Brian Francis，加拿大）→ SIL Mi'kmaq `mic`，族名有
+        # 撇號，照 Nisga'a 鍵照原文。
+        self.assertEqual(namebars.code_of("巴布薩族"), "bzg")
+        self.assertEqual(namebars.code_of("Babuza"), "bzg")
+        self.assertEqual(namebars.code_of("Mi'kmaq"), "mic")
+
+    def test_eastern_kuku_yalanji_is_one_group(self):
+        # 第 76 批（2021-12）b76-s016 第 5 列 2677 秒「Desmond Tayley  Eastern
+        # Kuku Yalanji」：澳洲原住民族群，族名本身有兩个空白，照空白切會變做
+        # 三个對無ê字，規集 SKIP。SIL Kuku-Yalanji `gvn`。
+        self.assertEqual(namebars.codes_of("Eastern Kuku Yalanji"), ["gvn"])
+        self.assertEqual(namebars.codes_of("Kuku Yalanji"), ["gvn"])
+
+    def test_2024_08_spellings(self):
+        # 第 78 批（2024-08）名條：Ivatan（巴丹島，08-06 晚間、08-29 午間）、
+        # 「凱達格蘭族」（08-23 晚間 3 人）、大武壠ê兩種轉寫 Taulun（08-17
+        # 晨間小林村，王民亮仝人別條印「大武壠族」）佮 Ta`ulung（08-10 晨間，
+        # 反引號）、巴西 Xakriabá（08-21 午間，名條小寫）、Tgdaya（德固達雅，
+        # 賽德克語群）、拼毋著ê Paiwn、Pinuyunayan、Thao。
+        self.assertEqual(namebars.codes_of("Ivatan"), ["ivv"])
+        self.assertEqual(namebars.codes_of("Ivatan族"), ["ivv"])
+        self.assertEqual(namebars.codes_of("凱達格蘭族"), ["kae"])
+        self.assertEqual(namebars.codes_of("Taulun"), ["tvx"])
+        self.assertEqual(namebars.codes_of("Ta`ulung"), ["tvx"])
+        self.assertEqual(namebars.codes_of("xakriabá"), ["xkr"])
+        self.assertEqual(namebars.codes_of("Tgdaya"), ["trv"])
+        self.assertEqual(namebars.codes_of("Paiwn"), ["pwn"])
+        self.assertEqual(namebars.codes_of("Thao"), ["ssf"])
+        self.assertEqual(namebars.codes_of("Papura"),
+                         namebars.codes_of("Paipura"))
+
+    def test_2024_09_spellings(self):
+        # 第 79 批（2024-09）：「Ruki」是 Rukai 漏一字（b79-s048 1992 秒柯浩軒，
+        # 仝人 1241 秒印 Rukai）；「Kahau(噶哈巫族)」是噶哈巫另一款轉寫。
+        self.assertEqual(namebars.codes_of("Ruki"),
+                         namebars.codes_of("Rukai"))
+        self.assertEqual(namebars.codes_of("Kahau"),
+                         namebars.codes_of("Kaxabu"))
+
+    def test_2024_10_11_spellings(self):
+        # 第 80、81 批（2024-10、11）頭一擺套用規集 SKIP ê五款字樣：
+        # 「Sakilaya(撒奇萊雅族)」（10-20 晚間 b80-s065 1159 秒）是 Sakizaya
+        # 拼走；「Papula」（10-23 晚間 b80-s077 3 人）是拍瀑拉；凱達格蘭
+        # 有「潘正育 Kaitakorangcu」（11-16 午間 b81-s067 2718 秒）佮
+        # 「Kaitakʉran」（11-24 午間 b81-s102，ʉ）兩款自稱；加拿大「Metis」
+        # （11-05 午間 b81-s018，無重音符）是 Métis，SIL 用 Michif `crg`。
+        self.assertEqual(namebars.codes_of("Sakilaya"),
+                         namebars.codes_of("Sakizaya"))
+        self.assertEqual(namebars.codes_of("Papula"),
+                         namebars.codes_of("拍瀑拉族"))
+        self.assertEqual(namebars.codes_of("Kaitakorangcu"), ["kae"])
+        self.assertEqual(namebars.codes_of("Kaitakʉran"), ["kae"])
+        self.assertEqual(namebars.codes_of("Metis"), ["crg"])
+        self.assertEqual(namebars.codes_of("Métis"), ["crg"])
+
+    def test_2021_12_2022_01_foreign_groups(self):
+        # 第 84、85 批頭一擺套用規集 SKIP ê外國族群：尼日 Wodaabe（12-06 晚間
+        # b84-s009、12-24 午間 b84-s072，講 Fulfulde）、美國 Gullah Geechee
+        # （12-17 晚間 b84-s047 三人，族名內底有空白，莫照空白切做兩族）、
+        # 澳洲 Taungurung（12-25 午間 b84-s076，ISO 無代號，鍵照原文）、
+        # 「Samoya」（01-05 晚間 b85-s009，薩摩亞）、美國 Yurok（01-13 晚間
+        # b85-s024 三人）。
+        self.assertEqual(namebars.codes_of("Wodaabe"), ["fuq"])
+        self.assertEqual(namebars.codes_of("Gullah Geechee"), ["gul"])
+        self.assertEqual(namebars.codes_of("Taungurung"), ["Taungurung"])
+        self.assertEqual(namebars.codes_of("Samoya"), ["smo"])
+        self.assertEqual(namebars.codes_of("Yurok"), ["yur"])
+
+    def test_paiwani_extra_i(self):
+        # 第 87 批 b87-s005 白惠蘭（2022-01-16 晨間，1208 秒）名條印做
+        # 「Paiwani」，讀者放大確認是播出端加一个 i；無別名規集 SKIP。
+        self.assertEqual(namebars.codes_of("Paiwani"), ["pwn"])
+
+    def test_paypolacu_is_papora(self):
+        # 第 88 批 b88-s006 白俊忠（2022-01-22 午間，2798 秒）名條族別印
+        # 「paypolacu」，伊是台中拍瀑拉族ê推動者；規集 SKIP。
+        self.assertEqual(namebars.codes_of("paypolacu"),
+                         namebars.codes_of("Papura"))
+
+    def test_kevalan_typo_is_kavalan(self):
+        # 第 90 批 b90-s013 潘靜英(ipay)（2022-01-25 午間，1945 秒）名條印
+        # 「Kevalan」，播出端打錯；規集 SKIP。
+        self.assertEqual(namebars.codes_of("Kevalan"), ["ckv"])
+
+    def test_bunum_typo_is_bunun(self):
+        # 第 90 批 b90-s033 田春梅（2022-01-30 晚間，2001 秒）名條印
+        # 「Bunum」；規集 SKIP。
+        self.assertEqual(namebars.codes_of("Bunum"), ["bnn"])
+
+    def test_dahman_is_taivoan(self):
+        # 第 91 批潘資洲（2024-06-09 晚間、06-18 午間）名條印「大滿族」，
+        # 大武壠ê另一種稱呼；兩集規集 SKIP。
+        self.assertEqual(namebars.codes_of("大滿族"), ["tvx"])
+
+    def test_2022_03_taurong_and_baka(self):
+        # 第 94 批 b94-s036 王民亮（2022-03，2603 秒）名條印「Ta'urong」，
+        # 大武壠ê另一種轉寫（仝人別條印「Taulun」「大武壠族」）；b94-s001
+        # Elenga、Emile（342、420 秒）印「Baka族」，喀麥隆ê Baka 族，SIL
+        # `bkc`。兩个攏對無代號，規集會 SKIP。
+        self.assertEqual(namebars.codes_of("Ta'urong"), ["tvx"])
+        self.assertEqual(namebars.codes_of("Baka族"), ["bkc"])
+
+    def test_paiwa_missing_n_is_paiwan(self):
+        # 第 93 批 b93-s015 giyu(郭復明)（2022-02，772 秒）名條印「Paiwa」，
+        # 讀者確認字無予人裁著，是播出端漏一个 n。
+        self.assertEqual(namebars.codes_of("Paiwa"), ["pwn"])
+
+    def test_2022_03_typos_and_qeqchi(self):
+        # 第 94 批：b94-s085 洪志彰、呂蓓蒂（364、444 秒）印「Pinuyumayyan」
+        # 雙 y；b94-s062（2264 秒）印「SaySyat」漏 i；b94-s047 Rodrigo Tot
+        # （549 秒）印「Q'eqchi'」，瓜地馬拉馬雅語族，SIL `kek`。攏對無代號，
+        # 規集會 SKIP。
+        self.assertEqual(namebars.codes_of("Pinuyumayyan"), ["pyu"])
+        self.assertEqual(namebars.codes_of("SaySyat"), ["xsy"])
+        self.assertEqual(namebars.codes_of("Q'eqchi'"), ["kek"])
+
+    def test_2022_04_pajay_kvalan_and_foreign_groups(self):
+        # 第 95 批：04-28 午間愛蘭教會彼則巴宰族受訪者 7 條印「Pajay」（巴宰ê
+        # 音譯，仝一人 Xaolihih Pazeh 佇 96 批印「巴宰族」），b95-s085 一條閣
+        # 拼做「Pajiay」；b95-s007 三條印「Kvalan」漏 a。外國族群：中非
+        # Gaston Motambo、Angélique Manongo 印「Aka」（SIL 叫 Yaka (Central
+        # African Republic)，`axk`）、Richard Sneed 印「Cherokee」（`chr`）、
+        # 智利 Veronica Tuqui 印「Rapa Nui」（中央有空白，SIL Rapanui `rap`）。
+        # 白俊忠 b95-s017 印「Paiouia」，仝一人 96 批 b96-s041 印「拍瀑拉族」。
+        # 第 96 批閣有：Kawesqar（智利，SIL Qawasqar `alc`）、Munduruku、Baré
+        # （巴西，`myu`、`bae`）、Nubia（埃及努比亞人，ISO 無族群總稱，比照薩米
+        # 用上濟人講ê Nobiin `fia`）、Yoruba（`yor`）。攏對無代號，規集會 SKIP。
+        self.assertEqual(namebars.codes_of("Paiouia"), ["ppu"])
+        self.assertEqual(namebars.codes_of("Kawesqar"), ["alc"])
+        self.assertEqual(namebars.codes_of("Munduruku"), ["myu"])
+        self.assertEqual(namebars.codes_of("Baré"), ["bae"])
+        self.assertEqual(namebars.codes_of("Nubia"), ["fia"])
+        self.assertEqual(namebars.codes_of("Yoruba"), ["yor"])
+        self.assertEqual(namebars.codes_of("Pajay"), ["pzh"])
+        self.assertEqual(namebars.codes_of("Pajiay"), ["pzh"])
+        self.assertEqual(namebars.codes_of("Kvalan"), ["ckv"])
+        self.assertEqual(namebars.codes_of("Aka"), ["axk"])
+        self.assertEqual(namebars.codes_of("Cherokee"), ["chr"])
+        self.assertEqual(namebars.codes_of("Rapa Nui"), ["rap"])
+
+    def test_batch_100_spellings(self):
+        # 2022-06 名條第 100 批，四款對無代號、規集 SKIP：
+        # 06-08 午間 b100-s006 陳小姐印「Rukia」（Rukai 字母倒反）；
+        # 06-15 晚間 b100-s029 肯亞 Simon Kangele Wambua 等 2 人印
+        # 「Kiswahili族」（SIL Swahili `swa`）；06-26 午間 b100-s065 平埔專題
+        # 3 人印「Pacai」（巴宰，佮 Pacay、Pacaicu 仝族）；06-26 晚間
+        # b100-s066 印「SaySiyal(賽夏族)」「SaySiyal」（t 印做 l）。
+        self.assertEqual(namebars.codes_of("Rukia"), ["dru"])
+        self.assertEqual(namebars.codes_of("Kiswahili族"), ["swa"])
+        self.assertEqual(namebars.codes_of("Pacai"), ["pzh"])
+        self.assertEqual(namebars.codes_of("SaySiyal"), ["xsy"])
+        self.assertEqual(namebars.codes_of("SaySiyal(賽夏族)"), ["xsy"])
+
+    def test_batch_101_cayuga(self):
+        # 2022-07 名條第 101 批 b101-s020 第 11 列（07-07 午間 771 秒）：
+        # 「Leroy Hill Cayu ga」，上排 Haudenosaunee。族名中央有空白會予
+        # codes_of 拆做兩个族，讀者寫做 Cayuga；SIL Cayuga `cay`。
+        self.assertEqual(namebars.codes_of("Cayuga"), ["cay"])
+
+    def test_batch_102_saysiat(self):
+        # 2022-07 名條第 102 批 b102-s001 第 3 列（266 秒）：畫面印
+        # 「SaySiat」，SaySiyat 掉一个 y；毋加別名就規集 SKIP。
+        self.assertEqual(namebars.codes_of("SaySiat"), ["xsy"])
+
+    def test_batch_103_naabeeho(self):
+        # 2022-07 名條第 103 批 b103-s019 第 10 列（2095 秒）：Jayne Sandoval
+        # 下排印族語自稱「Naabeeh ó」（Navajo），2023-08 彼擺印「納瓦霍族」。
+        # 自稱袂當 SKIP 規集，愛對著仝一个 `nav`。
+        self.assertEqual(namebars.codes_of("Naabeehó"), ["nav"])
+
+    def test_batch_104_roma(self):
+        # 2022-07 名條第 104 批 b104-s010 第 4 列：匈牙利 Erika Varga 下排印
+        # 「Roma」（羅姆人）；ISO 639-2 Romani `rom`。毋加就規集 SKIP。
+        self.assertEqual(namebars.codes_of("Roma"), ["rom"])
+
+    def test_batch_105_spellings(self):
+        # 2022-08 名條第 105 批：b105-s060 等 4 列印「Yami/tao」（tao 小寫，
+        # 斜線切開了後對無）；b105-s040 許鎧琳印「Paiwna」（Paiwan 拍毋著）；
+        # b105-s084 Sacheen Littlefeather 印「Apaci」（Apache，ISO 639-2
+        # 集體代號 `apa`）。三款攏會害規集 SKIP。
+        self.assertEqual(namebars.codes_of("Yami/tao"), ["tao"])
+        self.assertEqual(namebars.codes_of("Paiwna"), ["pwn"])
+        self.assertEqual(namebars.codes_of("Apaci"), ["apa"])
+
+    def test_slash_means_two_groups(self):
+        # 第 78 批 b78-s032、s090 陳豪毅一人印「Pinuyumayan/Amis」（有一擺
+        # 閣拼做 Pinuyunayan/Amis）：斜線兩爿是兩族，莫當做一个對無ê字
+        # 規集 SKIP。「Tao/Yami」仝一族，切開猶原賰一个代號。
+        self.assertEqual(namebars.codes_of("Pinuyumayan/Amis"), ["pyu", "ami"])
+        self.assertEqual(namebars.codes_of("Pinuyunayan/Amis"), ["pyu", "ami"])
+        self.assertEqual(namebars.codes_of("Tao/Yami"), ["tao"])
 
     def test_seejiq_truku_is_one_person(self):
         # s050 第 17、19 列 Awi Walis、Awe Sing(沈惠美) 印「Seejiq Truku」：

@@ -91,10 +91,16 @@ def main(argv=None):
         return runner.one_file(job, work, crf=args.crf,
                                pix_fmt=args.pix_fmt, log=log)
 
-    result = batch.run(
-        src_root=args.src, dst_root=args.dst_root, work_dir=work,
-        report_root=args.report_dir, stamp=stamp_now(),
-        one_file=one_file, limit=args.limit)
+    try:
+        result = batch.run(
+            src_root=args.src, dst_root=args.dst_root, work_dir=work,
+            report_root=args.report_dir, stamp=stamp_now(),
+            one_file=one_file, limit=args.limit)
+    except KeyboardInterrupt:
+        # 轉到一半ê彼支無上傳；工作目錄留咧，紀錄佇 --report-dir。
+        print("中斷：停落來矣，轉到一半ê彼支無上傳，後壁ê無做。"
+              "工作目錄留咧：%s" % work, file=sys.stderr)
+        return 130
 
     print("對照表：%s" % result.manifest_path)
     if result.keep_work:

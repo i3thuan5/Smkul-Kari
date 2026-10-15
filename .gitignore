@@ -181,3 +181,4 @@ kithann/
 # subagent ê暫存（視覺辨識逐批家己開一夾，量測腳本佮圖條攏囥遮）
 # ——毋是交付物，嘛毋通予 flake8 掃著。
 scratchpad/
+.vscode/

@@ -55,11 +55,19 @@ def scan(src_root):
 
     Sorted because `--limit 2` has to mean the same two files on a rerun;
     `os.walk` order is filesystem order and is not guaranteed stable.
+
+    `._name` siblings are skipped: macOS writes one next to every file
+    when the drive is exFAT or FAT rather than HFS+, to hold the resource
+    fork and extended attributes the filesystem has no room for. The
+    extension matches (`._a.mxf`), so it would otherwise queue as a real
+    master and fail encoding -- not video, just metadata.
     """
     out = []
     for folder, _dirs, files in os.walk(src_root):
         for name in files:
             if os.path.splitext(name)[1].lower() != MASTER_EXT:
+                continue
+            if name.startswith("._"):
                 continue
             full = os.path.join(folder, name)
             out.append(os.path.relpath(full, src_root))

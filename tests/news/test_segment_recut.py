@@ -162,6 +162,35 @@ class TestIslandTimeIsRecut(unittest.TestCase):
                     paths.strips_dir(self.w.work), name)), name)
 
 
+class TestStaleSheetsAreRemoved(unittest.TestCase):
+    """切 cue 程序先出組合圖、上尾才 segment_recut。重切重新編號了後，
+    舊組合圖頂懸ê號碼對著別條 cue：2021-12 有 10 集按呢（340 午間舊 827
+    條、新 824 條，舊 477 號ê圖條佇新時間軸是 474 號），讀者照舊號寫，
+    ingest 無反應，字會落佇毋著ê時間。重切了後愛 kā 舊組合圖刣掉，予
+    gap_sheets 照新號碼重做。
+    """
+
+    def setUp(self):
+        table = [row("0", "200", "外景新聞"),
+                 row("200", "400", "島語時間", basis=segments.PENDING),
+                 row("400", "600.000", "外景新聞")]
+        self.w = Work(self, band(30), table)
+        self.index = paths.sheets_index(self.w.work)
+        os.makedirs(os.path.dirname(self.index))
+        with open(self.index, "w", encoding="utf-8") as handle:
+            json.dump({"t00001000.png": [1, 2, 3]}, handle)
+
+    def test_old_sheets_go_once_the_numbering_changes(self):
+        self.w.run()
+        self.assertFalse(os.path.exists(self.index))
+
+    def test_nothing_to_recut_keeps_the_sheets(self):
+        table = [row("0", "600.000", "外景新聞")]
+        segments.write(paths.segments_file(self.w.work), table)
+        self.w.run()
+        self.assertTrue(os.path.exists(self.index))
+
+
 class TestOnlyBeforeReading(unittest.TestCase):
     """讀了字才重切，重新編號會予 TSV 對著別條 cue——愛行 rescan_band。"""
 
