@@ -11,8 +11,13 @@ second into the next VAD segment links the two paragraphs.
 
 `max_overlap_groups` returns (groups, lonely_segments, lonely_entries):
 groups are {"segs": [...], "entries": [...]} in time order; the lonely
-lists are indexes that touched nothing on the other side.
+lists are indexes that touched nothing on the other side. A lonely
+segment lying between a group's first and last segment is filled into
+that group.
 """
+
+from scripts.errors import PipelineError
+from scripts.srtlib import assemble
 
 EPSILON = 1e-9
 
@@ -130,16 +135,74 @@ def max_overlap_groups(segments, entries, straddle_frac=None):
     for j, segs in heavy.items():
         for i in segs[1:]:
             union.union(("s", segs[0]), ("s", i))
-    return _collect(union, segments, entries)
+    groups, lonely_segs, lonely_entries = _collect(union, segments, entries)
+    return _fill_holes(groups, lonely_segs) + (lonely_entries,)
 
 
-def span(group, segments, entries):
-    """(start, end) covering every member of the group."""
+def _fill_holes(groups, lonely_segs):
+    """Lonely segments between a group's first and last one join it.
+
+    A long subtitle over several short VAD segments gives each under
+    the merge threshold; nobody picks the middle ones, yet they lie in
+    the group's time, so its Formosan would miss speech its window
+    holds. Segments outside every group's first..last stay lonely.
+    """
+    lonely = set(lonely_segs)
+    for group in groups:
+        first, last = group["segs"][0], group["segs"][-1]
+        for i in range(first + 1, last):
+            if i in lonely:
+                group["segs"].append(i)
+                lonely.discard(i)
+        group["segs"].sort()
+    return groups, sorted(lonely)
+
+
+def span(group, segments):
+    """(start, end) of the group's speech -- the true VAD edges.
+
+    Subtitles are left out: their switch points do not follow the
+    Formosan, and counting them made neighbours overlap (5,393 times in
+    the 133 episodes of 2021-01..02). This is the time the pairing, the
+    calibration's opening window and the features use; the padded time
+    the CSV shows is `padded_spans`.
+    """
     starts, ends = [], []
     for i in group["segs"]:
         starts.append(segments[i]["start"])
         ends.append(segments[i]["end"])
-    for j in group["entries"]:
-        starts.append(entries[j]["true_start"])
-        ends.append(entries[j]["true_end"])
     return min(starts), max(ends)
+
+
+def padded_spans(groups, segments, duration):
+    """[(start, end)] per group: its speech padded 0.5 s a side.
+
+    Every VAD segment of the episode is a neighbour -- the other groups,
+    dropped or not, and the segments no group took: all of it is
+    someone speaking, and padding into it frames another voice. The
+    whole timeline goes through the same `pad_edges` the delivered SRTs
+    use, so closer than 1 s meets at the midpoint, clamped to
+    [0, duration]. True spans that overlap are refused: midpoint
+    stitching would hide that they were not made by `span`.
+    """
+    timeline = []
+    taken = set()
+    for number, group in enumerate(groups):
+        start, end = span(group, segments)
+        timeline.append((start, end, number))
+        taken.update(group["segs"])
+    for i, segment in enumerate(segments):
+        if i not in taken:
+            timeline.append((segment["start"], segment["end"], None))
+    timeline.sort(key=lambda item: (item[0], item[1]))
+    for before, after in zip(timeline, timeline[1:]):
+        if after[0] < before[1] - EPSILON:
+            raise PipelineError(
+                "語音範圍重疊：%.3f–%.3f 與 %.3f–%.3f，組的時間不是照真實語音段算的"
+                % (before[0], before[1], after[0], after[1]))
+    padded = assemble.pad_edges(timeline, duration=duration)
+    out = [None] * len(groups)
+    for start, end, number in padded:
+        if number is not None:
+            out[number] = (start, end)
+    return out

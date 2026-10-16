@@ -8,7 +8,7 @@
 The method is in `scripts.mt.tuning`. Everything lands in
 kithann/out/mt/調參/ (`paths.TUNING_WORK`): the deliverables do not
 depend on it, so none of it enters Kari-SRT; the chosen value and the
-table go into 2-平行語料/README.md by hand.
+table go into 2-csv-analysis/README.md by hand.
 
 Each batch is four request files of 50 rows (`request-NN-{a,b,c,d}.tsv`)
 because a 200-row file is past what the Read tool takes in one go; the

@@ -70,7 +70,10 @@ class Store(object):
                            ("segments", "1-ocr/0-segments/2021-01/%s.csv"),
                            ("whisper",
                             "2-asr-whisper/1-srt-sapolita/2021-01/%s.srt"),
-                           ("pairs", "2-asr-whisper/2-平行語料/2021-01/%s.csv"),
+                           ("pairs",
+                            "2-asr-whisper/2-csv-analysis/2021-01/%s.csv"),
+                           ("paragraph",
+                            "2-asr-whisper/3-srt-paragraph/2021-01/%s.srt"),
                            ("words", "2-asr-kaldi/1-words/2021-01/%s.json")):
             path = os.path.join(self.root, rel % OLD)
             os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -115,8 +118,11 @@ class TestTheStore(unittest.TestCase):
             self.assertFalse(self.store.exists(rel % OLD), rel)
 
     def test_what_was_made_in_the_wrong_language_is_removed(self):
+        # 20210116_016 晚間 排灣→卑南: the paragraph SRT is Paiwan
+        # recognition too, and must not stay on under the Puyuma name
         for rel in ("2-asr-whisper/1-srt-sapolita/2021-01/%s.srt",
-                    "2-asr-whisper/2-平行語料/2021-01/%s.csv",
+                    "2-asr-whisper/2-csv-analysis/2021-01/%s.csv",
+                    "2-asr-whisper/3-srt-paragraph/2021-01/%s.srt",
                     "2-asr-kaldi/1-words/2021-01/%s.json"):
             self.assertFalse(self.store.exists(rel % OLD), rel)
             self.assertFalse(self.store.exists(rel % NEW), rel)

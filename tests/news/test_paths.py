@@ -487,6 +487,18 @@ class TestWhisperPaths(unittest.TestCase):
         self.assertEqual(paths.SAPOLITA_LOG,
                          os.path.join(paths.SAPOLITA_SRT, "辨識紀錄.csv"))
 
+    def test_pairs_and_paragraph_srt_follow_format_then_content(self):
+        # 1-srt-sapolita, 2-csv-analysis, 3-srt-paragraph（使用者裁定
+        # 2026-10-16）；舊名只留著偵測，搬家沒做完要擋下來
+        self.assertEqual(paths.PAIRS_DIR,
+                         os.path.join(paths.WHISPER_DIR, "2-csv-analysis"))
+        self.assertEqual(paths.PAIRS_CALIBRATION,
+                         os.path.join(paths.PAIRS_DIR, "校正基準.csv"))
+        self.assertEqual(paths.PARAGRAPH_SRT,
+                         os.path.join(paths.WHISPER_DIR, "3-srt-paragraph"))
+        self.assertEqual(paths.LEGACY_PAIRS_DIR,
+                         os.path.join(paths.WHISPER_DIR, "2-平行語料"))
+
     def test_an_episode_lands_in_its_broadcast_month(self):
         name = "20210227_058_晨間_Thau_邵"
         self.assertEqual(

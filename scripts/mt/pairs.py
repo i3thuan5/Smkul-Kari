@@ -2,17 +2,17 @@
 """One episode's groups as the delivered CSV (a string; the caller writes).
 
 Column order is the user's (2026-09-24), with the drop reason last.
-Times are SRT stamps of the group's true span (earliest to latest of
-its segments and subtitles, no 0.5 s padding). The Formosan text is
-sapolita's verbatim, the Chinese the subtitles' verbatim, each joined
-by one space. Every group is a row, dropped ones included, so a reader
-can see why something is missing; an episode with no groups is still a
-file, header only, or it would look not yet produced.
+Times are SRT stamps of the group's speech padded 0.5 s a side (the
+caller passes them; CLAUDE.md lets this CSV carry the padding). The
+Formosan text is sapolita's verbatim, the Chinese the subtitles'
+verbatim, each joined by one space. Every group is a row, dropped ones
+included, so a reader can see why something is missing; an episode
+with no groups is still a file, header only, or it would look not yet
+produced.
 """
 import csv
 import io
 
-from scripts.mt import overlap
 from scripts.srtlib import srt
 
 FIELDS = ["族語別", "語言別代號", "成果檔名", "開始時間", "結束時間", "族語",
@@ -20,9 +20,15 @@ FIELDS = ["族語別", "語言別代號", "成果檔名", "開始時間", "結�
           "字幕條數", "不採用原因"]
 
 
-def row(episode, group, segments, entries, feats, level, reason):
-    """One CSV row (dict) for a group."""
-    start, end = overlap.span(group, segments, entries)
+def row(episode, group, segments, entries, feats, level, reason, span):
+    """One CSV row (dict) for a group, timed by `span`.
+
+    The time is the caller's -- the padded span from
+    `overlap.padded_spans` -- and never worked out here: the true span
+    is one call away, and a row quietly falling back to it would look
+    fine until someone checks the audio.
+    """
+    start, end = span
     formosan = []
     for i in group["segs"]:
         text = segments[i]["formosan"].strip()

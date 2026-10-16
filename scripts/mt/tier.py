@@ -14,7 +14,7 @@ dictionary and carries nothing.
 
 # 字幕在兩段語音中較少的那邊佔字幕長度 ≥ 這個比例，兩段就併成一組。
 # 調參決定（scripts/news/pairs_tune.py，2026-09-24）：新聞 485 處、五格
-# 都是「合併較好」，取最低的候選值。結果表在 2-平行語料/README.md。
+# 都是「合併較好」，取最低的候選值。結果表在 2-csv-analysis/README.md。
 MERGE_FRACTION = 0.10
 
 HIGH_SHARE = 0.8

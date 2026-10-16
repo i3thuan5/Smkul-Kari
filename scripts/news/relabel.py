@@ -34,7 +34,8 @@ Report = collections.namedtuple("Report", "renamed removed")
 RENAME = (("1-ocr/1-cues", ".json"), ("1-ocr/2-vision", ""),
           ("1-ocr/3-srt", ".srt"), ("1-ocr/0-segments", ".csv"))
 REMOVE = (("2-asr-whisper/1-srt-sapolita", ".srt"),
-          ("2-asr-whisper/2-平行語料", ".csv"),
+          ("2-asr-whisper/2-csv-analysis", ".csv"),
+          ("2-asr-whisper/3-srt-paragraph", ".srt"),
           ("2-asr-kaldi/1-words", ".json"), ("2-asr-kaldi/2-srt-raw", ".srt"),
           ("2-asr-kaldi/3-srt-ai", ".srt"),
           ("2-asr-kaldi/4-srt-quality", ".srt"))

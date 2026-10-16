@@ -37,7 +37,7 @@
 | spec | scenario | 測試檔 |
 |---|---|---|
 | episode-catalogue | `20210116_016_晚間_Paiwan_排灣` 片頭三格都是卑南（原檔名 `卑南語-20210116s1800.mp4`）：目錄改了、成果檔名換了，store 的時間軸／逐字稿／SRT 沒跟著改名就成孤兒檔 | `test_relabel.py` |
-| episode-catalogue | 用排灣語辨識卑南語的 whisper SRT、平行語料、kaldi 各階段不可以改名留著冒充正確的——刪掉、辨識紀錄那列也刪，等重跑 | `test_relabel.py` |
+| episode-catalogue／srt-data-store | 用排灣語辨識卑南語的 whisper SRT、平行語料（`2-csv-analysis`）、雙語字幕（`3-srt-paragraph`）、kaldi 各階段不可以改名留著冒充正確的——刪掉、辨識紀錄那列也刪，等重跑 | `test_relabel.py` |
 | episode-catalogue | 改名目標已經存在時一個都不搬（不搬一半） | `test_relabel.py` |
 
 ## 已讀字集數的帶外補切（`scripts/news/offband_backfill.py`）
@@ -71,6 +71,7 @@
 | srt-data-store | 段落表確認完才跟時間軸入庫到 `0-segments/<年-月>/`；內容相同不重寫；還有待確認段落的不入庫、時間軸照入 | `test_publish_gate.py` |
 | srt-data-store | `0-segments/` 有目錄查不到的孤兒檔、或驗不過的段落表，`rebuild --verify` 要抓到；2021 年大部分集數沒有段落表不算缺件 | `test_publish_gate.py` |
 | srt-data-store | 帶外補切直接改 Kari-SRT，work dir 還是補切前的；publish 不可拿 work dir 蓋回去（1209 晚間 729 條被 575 條蓋掉、「帶外專題」段落不見，publish 沒報錯，rebuild 才抓到）——Kari-SRT 時間軸有 work dir 沒有的區域就跳過並講原因；段落表也一樣（同一集第二次踩到：名條腳本直接呼叫 `publish_segments`，繞過 `publishable()` 的把關） | `test_publish_gate.py` |
+| srt-data-store | 平行語料兩層是仝一次配對產的：`2-csv-analysis` 改一格、`3-srt-paragraph` 改一字，`rebuild --verify` 都要指名集與層；CSV 在、SRT 無，是舊程式產的，要指名；SRT 在、CSV 無要指名；辭典取不到、辨識紀錄缺音長要指名，不可略過宣告通過；舊目錄 `2-平行語料/` 佮新目錄並存要失敗（改名時平行 session 可能用舊程式寫） | `test_rebuild_pairs.py` |
 | srt-data-store | `cut_months` 正在精修的集數只有粗切時間軸，`publishable()` 放行、`publish_one` 才 raise，整輪 publish 倒掉，排在後面的集數都入不了（20230703_184 晚間）——在 `publishable()` 就講「時間軸猶未精修」跳過 | `test_publish_gate.py` |
 | news-segments | 新聞包裡還有節目框的電話訪問卡、公文、統計圖，讀者分成「外景新聞」「其他」兩派；另立「全螢幕圖卡」（有旁白字幕，不算無字幕的「其他」） | `test_segments.py` |
 | news-segments | 一集 work dir 約 345 MB、一個月約 24 GB，剩下的月份全切完放不下（2026-09-24 只剩 42 GB）；逐月切之前看磁碟，不夠就等；整月已切完的不下載；倒一個月不擋後面、記進 `cut-progress.tsv`；fetch 回 0 但還有集數沒切不可記成「切完」 | `test_cut_months.py` |

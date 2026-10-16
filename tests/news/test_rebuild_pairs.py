@@ -1,7 +1,8 @@
-"""rebuild --verify covers 2-平行語料.
+"""rebuild --verify covers 2-csv-analysis and 3-srt-paragraph.
 
-The layer is a pure function of the store plus the dictionaries, so it
-is produced again and compared byte for byte. The dictionaries are the
+Both layers come from one pairing, a pure function of the store plus
+the dictionaries (and the audio length in 辨識紀錄.csv), so they are
+produced again and compared byte for byte. The dictionaries are the
 one outside input: missing ones are fetched from the SFTP, and when
 even that fails the check stops -- it must never pass by skipping.
 """
@@ -59,6 +60,39 @@ class TestPairsRebuild(Store):
             rebuild.pairs_problems(load_lexicons=sftp_down)
         self.assertIn("辭典", str(caught.exception))
 
+    def edit_srt(self, old, new):
+        path = self.srt_out(AMIS_NAME)
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn(old, text)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(text.replace(old, new, 1))
+
+    def test_hand_edited_paragraph_srt_is_named_with_its_layer(self):
+        self.produce()
+        self.edit_srt("族語：o tanosok", "族語：o tanosak")
+        found = rebuild.pairs_problems(load_lexicons=self.load)
+        self.assertEqual(len(found), 1)
+        self.assertIn(AMIS_NAME, found[0])
+        self.assertIn("3-srt-paragraph", found[0])
+
+    def test_a_csv_without_its_paragraph_srt_is_named(self):
+        # both come from one run; a CSV alone was made by older code
+        self.produce()
+        os.remove(self.srt_out(AMIS_NAME))
+        found = rebuild.pairs_problems(load_lexicons=self.load)
+        self.assertEqual(len(found), 1)
+        self.assertIn("3-srt-paragraph", found[0])
+
+    def test_no_audio_length_is_named_not_passed(self):
+        self.produce()
+        del self.lengths[AMIS_NAME]
+        self.write_log()
+        found = rebuild.pairs_problems(load_lexicons=self.load)
+        self.assertEqual(len(found), 1)
+        self.assertIn(AMIS_NAME, found[0])
+        self.assertIn("音長", found[0])
+
 
 class TestPairsContainment(Store):
     def test_pairs_without_sapolita_is_named(self):
@@ -81,6 +115,23 @@ class TestPairsContainment(Store):
     def test_not_yet_produced_is_fine(self):
         self.standard()
         self.assertEqual(rebuild.pairs_containment(), [])
+
+    def test_paragraph_srt_without_its_csv_is_named(self):
+        self.standard()
+        pairs_run.run(recalibrate=True, lexicons=LEXICONS)
+        os.remove(self.out(AMIS_NAME))
+        found = rebuild.pairs_containment()
+        self.assertEqual(len(found), 1)
+        self.assertIn(AMIS_NAME, found[0])
+        self.assertIn("2-csv-analysis", found[0])
+
+    def test_the_old_directory_beside_the_new_one_fails(self):
+        self.standard()
+        pairs_run.run(recalibrate=True, lexicons=LEXICONS)
+        os.makedirs(paths.LEGACY_PAIRS_DIR)
+        found = rebuild.pairs_containment()
+        self.assertEqual(len(found), 1)
+        self.assertIn("2-平行語料", found[0])
 
 
 if __name__ == "__main__":

@@ -71,7 +71,8 @@ def group_features(group, segments, entries, lexicon=None, fold=None,
     for ent in ents:
         ent_time += ent["true_end"] - ent["true_start"]
 
-    start, end = overlap.span(group, segments, entries)
+    # the true speech span, not the CSV's padded one
+    start, end = overlap.span(group, segments)
     out = {
         "n_segs": len(segs), "n_entries": len(ents),
         "duration": end - start,

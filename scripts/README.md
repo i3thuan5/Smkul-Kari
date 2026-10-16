@@ -114,8 +114,9 @@ aiyalaeho，依賴ê方向就顛倒去（這馬是 aiyalaeho → news），所�
 | `asrmt_run.py` | 語音側（kaldi）單集步驟（預設 words→raw；翻譯佮品質判斷 `--step` 指名） |
 | `whisper_run.py` | 語音側（whisper／sapolita）逐集佮整批：取音檔→查語別碼（`新聞語言別代號.csv`）→辨識→原樣存 SRT→寫辨識紀錄→刪暫存音檔；一次一集、可續跑（SRT 佮紀錄兩者都在才算做完） |
 | `lexicon_fetch.py` | 官方族語辭典：`kithann/族語辭典/` 無就對 SFTP 抓（位元組數比對、族名對檔名讀、16 族欠一族指名停），蒸餾做詞庫快取 |
-| `pairs_run.py` | 族華平行語料整批：2021-01～10、兩爿攏有ê集數 → `2-asr-whisper/2-平行語料/<年-月>/<成果檔名>.csv`；`--recalibrate` 才重算校正基準；無叫任何模型 |
+| `pairs_run.py` | 族華平行語料整批：2021-01～10、兩爿攏有ê集數 → 仝一輪寫 `2-asr-whisper/2-csv-analysis/<年-月>/<成果檔名>.csv` 佮 `3-srt-paragraph/<年-月>/<成果檔名>.srt`；CSV ê時間是語音段延伸 0.5 秒（音長取 `辨識紀錄.csv`），配對、校正基準用真實時間；舊目錄 `2-平行語料/` 若猶佇就停；`--recalibrate` 才重算校正基準；無叫任何模型 |
 | `pairs_tune.py` | 調合併門檻：`--sample` 對新聞抽樣寫裁判請求（一批四个 50 組ê檔）、`--ingest NN` 收回覆、`--report` 出各格比例表佮選值；攏囥 `kithann/out/mt/調參/`，毋入 Kari-SRT |
+| `paragraph_export.py` | 雙語字幕交件：`--export 年-月…` 對 Kari-SRT 原樣複製 `3-srt-paragraph` 佮 `2-csv-analysis`、出一集一逝ê清單（時長用 CSV ê時間，含留白）；`--spot-sample`／`--spot-report` 抽高信心組予 Opus 裁判（請求格式佮 `pairs_tune` 仝款；核對 CSV 用延伸後ê時間）。攏囥 `kithann/out/news/雙語字幕*/`，毋入 Kari-SRT |
 | `anchors_ami.json` | 阿美語錨點表（數詞＋借詞專名，拼法對照模型 lexicon） |
 | `plan_month.py` | 一批＝一个播出月份：揀來源、出跳過報告（**唯讀**，無寫任何檔）|
 | `sources.py` | 一集配一支檔的規則（母帶優先→時段相符→同名不同夾→一檔一集） |
@@ -193,7 +194,7 @@ sapolita 族語辨識段落配華語燒印字幕，
 | 檔 | 做什麼 |
 |---|---|
 | `load.py` | 讀兩側：sapolita SRT → 段落（真實 VAD 邊界）；store ê `1-cues`＋`2-vision` 走仝一條組裝鏈 → 字幕條目（帶真實窗、保留併掉ê cue 編號） |
-| `overlap.py` | 時間重疊分組：每條字幕歸予重疊上濟ê段，字幕真跨兩段（兩爿攏佔合併門檻以上）才合併 |
+| `overlap.py` | 時間重疊分組：每條字幕歸予重疊上濟ê段，字幕真跨兩段（兩爿攏佔合併門檻以上）才合併；組頭尾中間無人揀ê短語音段補入組（補洞）。兩種時間：`span` 是真實ê語音範圍（配對、校正基準、特徵），`padded_spans` 是延伸 0.5 秒後ê（干焦 CSV，鄰居是規集全部語音段） |
 | `textsim.py` | 華語側字元 n-gram F1、chrF；族語側切詞（撇號、長音記號統一）、編輯距離詞相似度 |
 | `hallucination.py` | 只靠文字ê幻覺旗標：重複 n-gram、譯文數字串、辭典命中率；16 族辭典判「這段其實是別族ê語言」 |
 | `goldalign.py` | 《開會了》真值：ASR 詞對附近字幕ê族語列做局部對齊（Smith-Waterman），毋靠時間軸 |
@@ -201,7 +202,8 @@ sapolita 族語辨識段落配華語燒印字幕，
 | `features.py` | 一組ê信心特徵，攏是新聞頂懸（無標準答案）算會出ê：chrF、辭典命中率、旗標、時間覆蓋率、長度比、每秒詞數、壓縮比 |
 | `calibration.py` | 校正基準：逐族主播開場（前 90 秒、≥5 詞）辭典命中率ê中位數；表凍結，干焦 `--recalibrate` 重算；查無族語別指名停，袂退預設值 |
 | `tier.py` | 分層：高信心／中信心／不採用＋不採用原因（幻覺＞別族語言＞詞數不足＞命中率不足）；規條線ê門檻攏佇遮，合併門檻嘛是 |
-| `pairs.py` | 一集ê組 → 交付 CSV 字串（欄位順序照使用者指定、SRT 時間戳、UTF-8 無 BOM、LF） |
+| `pairs.py` | 一集ê組 → 交付 CSV 字串（欄位順序照使用者指定、SRT 時間戳、UTF-8 無 BOM、LF）；時間由呼叫ê人傳入，家己毋算 |
+| `paragraph_srt.py` | 一集ê CSV 列 → `3-srt-paragraph` SRT 字串：干焦高、中信心，「族語：」「華語：」兩逝，時間照抄 CSV（已經延伸過）；無碰語音段，袂當干焦用高中信心重算留白 |
 | `tuning.py`／`judge_prompt_paragraph.md` | 調合併門檻ê算法：分格（字幕佇兩段中較少彼爿佔偌濟）、固定種子抽樣、合併／拆開三組、分批（兩版袂仝批）、整批收件、Wilson 95% 區間、選值（分不出取較低ê門檻）；佮裁判ê判準 |
 
 ## transcode/

@@ -1,4 +1,4 @@
-"""news/pairs_run: the 2021-01～10 batch into 2-平行語料.
+"""news/pairs_run: the 2021-01～10 batch into 2-csv-analysis, 3-srt-paragraph.
 
 A synthetic store (two tribes, three episodes); the dictionaries are
 passed in, so nothing reaches the SFTP.
@@ -12,7 +12,9 @@ import unittest
 from unittest import mock
 
 from scripts.errors import PipelineError
+from scripts.mt import calibration
 from scripts.mt import tier
+from scripts.srtlib import srt
 from scripts.news import pairs_run
 from scripts.news import paths
 
@@ -47,7 +49,11 @@ class Store(unittest.TestCase):
             "SRT_DIR": os.path.join(news, "1-ocr", "3-srt"),
             "SAPOLITA_SRT": os.path.join(news, "2-asr-whisper",
                                          "1-srt-sapolita"),
-            "PAIRS_DIR": os.path.join(news, "2-asr-whisper", "2-平行語料"),
+            "PAIRS_DIR": os.path.join(news, "2-asr-whisper", "2-csv-analysis"),
+            "PARAGRAPH_SRT": os.path.join(news, "2-asr-whisper",
+                                          "3-srt-paragraph"),
+            "LEGACY_PAIRS_DIR": os.path.join(news, "2-asr-whisper",
+                                             "2-平行語料"),
         }
         for name, value in self.dirs.items():
             patcher = mock.patch.object(paths, name, value)
@@ -55,15 +61,18 @@ class Store(unittest.TestCase):
             self.addCleanup(patcher.stop)
         self.table = os.path.join(self.dirs["PAIRS_DIR"], "校正基準.csv")
         self.catalogue = os.path.join(news, "smkul.csv")
+        self.log = os.path.join(self.dirs["SAPOLITA_SRT"], "辨識紀錄.csv")
         for name, value in (("PAIRS_CALIBRATION", self.table),
-                            ("TRACKER_STORE", self.catalogue)):
+                            ("TRACKER_STORE", self.catalogue),
+                            ("SAPOLITA_LOG", self.log)):
             patcher = mock.patch.object(paths, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)
         self.rows = []
+        self.lengths = {}
 
     def episode(self, name, tribe_en, tribe, code, formosan,
-                ocr=True, whisper=True):
+                ocr=True, whisper=True, length="200.000"):
         date = name[:8]
         self.rows.append({
             "成果檔名": name, "節目名稱": "晚間族語新聞", "年度": date[:4],
@@ -100,8 +109,21 @@ class Store(unittest.TestCase):
                              "華語：奇美部落的道路\n\n2\n00:02:00,000 --> "
                              "00:02:04,000\n族語：ʼa ʼa ʼa ʼa ʼa ʼa ʼa ʼa\n"
                              "華語：一、二、三、四、五、六\n" % formosan)
+            if length is not None:
+                self.lengths[name] = length
+
+    def write_log(self):
+        os.makedirs(os.path.dirname(self.log), exist_ok=True)
+        with open(self.log, "w", encoding="utf-8", newline="") as handle:
+            writer = csv.writer(handle, lineterminator="\n")
+            writer.writerow(["成果檔名", "語言別代號", "主播名", "伺服器",
+                             "辨識日期", "音長秒", "段數"])
+            for name in sorted(self.lengths):
+                writer.writerow([name, "ami", "不明", "x", "2026-09-18 18:05",
+                                 self.lengths[name], "2"])
 
     def write_catalogue(self):
+        self.write_log()
         with open(self.catalogue, "w", encoding="utf-8-sig",
                   newline="") as handle:
             writer = csv.DictWriter(handle, HEADER, lineterminator="\r\n")
@@ -112,6 +134,14 @@ class Store(unittest.TestCase):
     def out(self, name):
         return os.path.join(self.dirs["PAIRS_DIR"], paths.month_of(name),
                             name + ".csv")
+
+    def srt_out(self, name):
+        return os.path.join(self.dirs["PARAGRAPH_SRT"], paths.month_of(name),
+                            name + ".srt")
+
+    def csv_rows(self, name):
+        with open(self.out(name), encoding="utf-8") as handle:
+            return list(csv.DictReader(handle))
 
     def standard(self):
         self.episode("20210201_032_晚間_Amis_阿美", "Amis", "阿美", "ami", AMIS)
@@ -201,6 +231,108 @@ class TestContent(Store):
         with mock.patch.object(pairs_run.overlap, "max_overlap_groups", spy):
             pairs_run.run(recalibrate=True, lexicons=LEXICONS)
         self.assertEqual(set(seen), {tier.MERGE_FRACTION})
+
+
+AMIS_032 = "20210201_032_晚間_Amis_阿美"
+
+
+class TestParagraphSrt(Store):
+    def test_the_srt_is_written_in_the_same_run_from_the_same_rows(self):
+        self.standard()
+        pairs_run.run(recalibrate=True, lexicons=LEXICONS)
+        rows = self.csv_rows(AMIS_032)
+        kept = []
+        for r in rows:
+            if r["信心層級"] != "不採用":
+                kept.append(r)
+        with open(self.srt_out(AMIS_032), encoding="utf-8") as handle:
+            cues = srt.parse_srt(handle.read())
+        self.assertEqual(len(cues), len(kept))
+        for (start, end, text), r in zip(cues, kept):
+            self.assertEqual(srt.srt_timestamp(start), r["開始時間"])
+            self.assertEqual(srt.srt_timestamp(end), r["結束時間"])
+            self.assertEqual(text, "族語：%s\n華語：%s" % (r["族語"], r["華語"]))
+
+    def test_the_old_directory_still_there_stops_the_run(self):
+        self.standard()
+        os.makedirs(self.dirs["LEGACY_PAIRS_DIR"])
+        with self.assertRaises(PipelineError) as caught:
+            pairs_run.run(recalibrate=True, lexicons=LEXICONS)
+        self.assertIn("2-平行語料", str(caught.exception))
+
+    def test_no_audio_length_names_the_episode(self):
+        self.episode(AMIS_032, "Amis", "阿美", "ami", AMIS, length=None)
+        self.write_catalogue()
+        with self.assertRaises(PipelineError) as caught:
+            pairs_run.run(recalibrate=True, lexicons=LEXICONS)
+        self.assertIn(AMIS_032, str(caught.exception))
+
+    def test_a_blank_audio_length_names_the_episode(self):
+        self.episode(AMIS_032, "Amis", "阿美", "ami", AMIS, length="")
+        self.write_catalogue()
+        with self.assertRaises(PipelineError) as caught:
+            pairs_run.run(recalibrate=True, lexicons=LEXICONS)
+        self.assertIn(AMIS_032, str(caught.exception))
+
+
+class TestTwoTimes(Store):
+    """The true time feeds the pairing, the calibration and the
+    features; only the CSV (and the SRT copying it) shows the padded
+    one. Each mix-up below goes wrong without any error."""
+
+    def test_the_csv_shows_the_padded_time(self):
+        # speech 19.5-28.2, the next speech 2 minutes on: 19.0-28.7
+        self.standard()
+        pairs_run.run(recalibrate=True, lexicons=LEXICONS)
+        first = self.csv_rows(AMIS_032)[0]
+        self.assertEqual((first["開始時間"], first["結束時間"]),
+                         ("00:00:19,000", "00:00:28,700"))
+
+    def test_the_pairing_sees_the_true_segments(self):
+        self.standard()
+        seen = []
+        real = pairs_run.overlap.max_overlap_groups
+
+        def spy(segments, entries, straddle_frac=None):
+            seen.append(segments[0]["start"])
+            return real(segments, entries, straddle_frac=straddle_frac)
+        with mock.patch.object(pairs_run.overlap, "max_overlap_groups", spy):
+            pairs_run.run(recalibrate=True, lexicons=LEXICONS)
+        self.assertEqual(set(seen), {19.5})
+
+    def test_features_measure_the_true_duration(self):
+        self.standard()
+        entry = {"srt_name": AMIS_032, "族語別(中)": "阿美", "語言別代號": "ami"}
+        _groups, _segs, _ents, feats = pairs_run.measured(entry, LEXICONS)
+        self.assertAlmostEqual(feats[0]["duration"], 8.7)
+
+    def opening(self, speech_start, subtitle_start):
+        segments = [{"index": 0, "start": speech_start,
+                     "end": speech_start + 5.0, "formosan": AMIS, "han": ""}]
+        entries = [{"index": 0, "true_start": subtitle_start,
+                    "true_end": speech_start + 4.0, "han": "道路",
+                    "formosan": "", "cues": [0]}]
+        group = {"segs": [0], "entries": [0]}
+        feats = [{"asr_words": 12, "lexicon_rate": 0.5}]
+        entry = {"srt_name": AMIS_032, "族語別(中)": "阿美"}
+        with mock.patch.object(pairs_run, "measured",
+                               return_value=([group], segments, entries,
+                                             feats)):
+            samples = pairs_run.opening_samples(entry, LEXICONS)
+        return samples, calibration.baseline(samples)
+
+    def test_true_90_3_is_not_the_opening_though_padded_is_89_8(self):
+        samples, table = self.opening(90.3, 90.0)
+        self.assertEqual(samples[0]["start"], 90.3)
+        self.assertEqual(table, {})
+
+    def test_true_89_8_is_the_opening(self):
+        _samples, table = self.opening(89.8, 89.5)
+        self.assertEqual(table["阿美"]["groups"], 1)
+
+    def test_a_subtitle_at_89_does_not_make_speech_at_91_the_opening(self):
+        _samples, table = self.opening(91.0, 89.0)
+        self.assertEqual(table, {})
 
 
 if __name__ == "__main__":

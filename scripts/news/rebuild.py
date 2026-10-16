@@ -204,14 +204,22 @@ def _stage_files(base, suffix):
 
 
 def pairs_containment():
-    """2-平行語料 ⊆ 3-srt and ⊆ 1-srt-sapolita (both, not a chain)."""
+    """2-csv-analysis ⊆ 3-srt and ⊆ 1-srt-sapolita (both, not a chain);
+    3-srt-paragraph ⊆ 2-csv-analysis; the layer's old name must be gone."""
     pairs = _stage_files(paths.PAIRS_DIR, ".csv")
-    problems = datadirs.stage_problems(
+    problems = []
+    if os.path.exists(paths.LEGACY_PAIRS_DIR):
+        problems.append("舊目錄 %s 還在：平行語料已改名 2-csv-analysis，兩份"
+                        "不可並存" % paths.LEGACY_PAIRS_DIR)
+    problems.extend(datadirs.stage_problems(
         [("3-srt", _stage_files(paths.SRT_DIR, ".srt")),
-         ("2-平行語料", pairs)])
+         ("2-csv-analysis", pairs)]))
     problems.extend(datadirs.stage_problems(
         [("1-srt-sapolita", _stage_files(paths.SAPOLITA_SRT, ".srt")),
-         ("2-平行語料", pairs)]))
+         ("2-csv-analysis", pairs)]))
+    problems.extend(datadirs.stage_problems(
+        [("2-csv-analysis", pairs),
+         ("3-srt-paragraph", _stage_files(paths.PARAGRAPH_SRT, ".srt"))]))
     return problems
 
 
@@ -224,8 +232,16 @@ def _first_difference(stored, rebuilt):
     return "行數無仝：交付 %d 行、重建 %d 行" % (len(left), len(right))
 
 
+def _stored(path):
+    if not os.path.exists(path):
+        return None
+    with open(path, encoding="utf-8", newline="") as handle:
+        return handle.read()
+
+
 def pairs_problems(load_lexicons=None):
-    """2-平行語料 files the store cannot rebuild byte for byte.
+    """2-csv-analysis and 3-srt-paragraph files the store cannot rebuild
+    byte for byte -- one pairing makes both, so both are compared.
 
     The dictionaries are loaded only when the layer has a file at all,
     and a failure to get them stops the check: passing by skipping the
@@ -238,25 +254,32 @@ def pairs_problems(load_lexicons=None):
     try:
         lexicons = load_lexicons()
     except PipelineError as error:
-        raise PipelineError("2-平行語料 重建要用辭典，辭典取不到：%s"
+        raise PipelineError("2-csv-analysis 重建要用辭典，辭典取不到：%s"
                             % error)
     table = calibration.read(paths.PAIRS_CALIBRATION)
+    lengths = pairs_run.audio_lengths()
     by_name = {}
     for entry in episodes.load():
         by_name[entry["srt_name"]] = entry
     problems = []
     for name in names:
-        with open(pairs_run.output_path(name), encoding="utf-8",
-                  newline="") as handle:
-            stored = handle.read()
         try:
-            rebuilt = pairs_run.episode_csv(by_name[name], lexicons, table)
+            rebuilt = pairs_run.episode_files(by_name[name], lexicons, table,
+                                              lengths)
         except (PipelineError, KeyError, OSError) as error:
-            problems.append("%s 2-平行語料：重建袂出來——%s" % (name, error))
+            problems.append("%s 2-csv-analysis：重建袂出來——%s"
+                            % (name, error))
             continue
-        if stored != rebuilt:
-            problems.append("%s 2-平行語料：%s"
-                            % (name, _first_difference(stored, rebuilt)))
+        for layer, path, text in (
+                ("2-csv-analysis", pairs_run.output_path(name), rebuilt[0]),
+                ("3-srt-paragraph", pairs_run.srt_path(name), rebuilt[1])):
+            stored = _stored(path)
+            if stored is None:
+                problems.append("%s %s：無檔（兩層是仝一輪產ê，愛重跑 "
+                                "pairs_run）" % (name, layer))
+            elif stored != text:
+                problems.append("%s %s：%s" % (
+                    name, layer, _first_difference(stored, text)))
     return problems
 
 
@@ -357,7 +380,7 @@ def main():
     shutil.rmtree(tmp)
     print("\nOK: %d SRTs rebuilt byte-identical from Kari-SRT"
           % _delivered_count(entries))
-    print("OK: %d 集平行語料逐 byte 相同"
+    print("OK: %d 集平行語料（2-csv-analysis 佮 3-srt-paragraph）逐 byte 相同"
           % len(_stage_files(paths.PAIRS_DIR, ".csv")))
 
 

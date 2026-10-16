@@ -7,6 +7,7 @@ import csv
 import io
 import unittest
 
+from scripts.mt import overlap
 from scripts.mt import pairs
 
 FIELDS = ["族語別", "語言別代號", "成果檔名", "開始時間", "結束時間", "族語",
@@ -33,10 +34,11 @@ ENTS = [ent(0, 26.3, 29.0, "新聞一開始"), ent(1, 29.0, 32.0, "首先帶大�
         ent(2, 32.5, 36.0, "配合三級警戒")]
 
 
-def row(group, level="高信心", reason="", rate=0.3077, chrf=0.0451):
+def row(group, level="高信心", reason="", rate=0.3077, chrf=0.0451,
+        span=(26.22, 32.46)):
     return pairs.row(EPISODE, group, SEGS, ENTS,
                      {"lexicon_rate": rate, "chrf": chrf,
-                      "best_tribe": "魯凱"}, level, reason)
+                      "best_tribe": "魯凱"}, level, reason, span)
 
 
 def read(text):
@@ -74,6 +76,33 @@ class TestRow(unittest.TestCase):
             [row({"segs": [1], "entries": [2]}, "不採用", "詞數不足")]))[1]))
         self.assertEqual((got["信心層級"], got["不採用原因"]),
                          ("不採用", "詞數不足"))
+
+
+class TestTime(unittest.TestCase):
+    def test_writes_the_time_it_is_given_not_its_own(self):
+        # the CSV shows the padded time; row must not fall back to the
+        # true span (26.22-32.46) that it could compute from the segments
+        got = dict(zip(FIELDS, read(pairs.render(
+            [row({"segs": [0], "entries": [0, 1]},
+                 span=(25.72, 32.43))]))[1]))
+        self.assertEqual((got["開始時間"], got["結束時間"]),
+                         ("00:00:25,720", "00:00:32,430"))
+
+
+class TestFilledHoles(unittest.TestCase):
+    def test_filled_segments_join_in_time_order_and_are_counted(self):
+        segs = []
+        for i, (start, end) in enumerate([(0.0, 4.0), (5.0, 6.0), (7.0, 8.0),
+                                          (9.0, 10.0), (11.0, 14.0)]):
+            segs.append(seg(i, start, end, "w%d" % i))
+        ents = [ent(0, 0.5, 1.9, "甲"), ent(1, 2.0, 17.0, "乙")]
+        groups, _, _ = overlap.max_overlap_groups(segs, ents,
+                                                  straddle_frac=0.1)
+        got = pairs.row(EPISODE, groups[0], segs, ents,
+                        {"lexicon_rate": 0.5, "chrf": 0.1}, "高信心", "",
+                        (0.0, 14.5))
+        self.assertEqual(got["族語"], "w0 w1 w2 w3 w4")
+        self.assertEqual(got["語音段數"], "5")
 
 
 class TestFile(unittest.TestCase):

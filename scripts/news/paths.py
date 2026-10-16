@@ -336,9 +336,15 @@ SAPOLITA_SRT = os.path.join(WHISPER_DIR, "1-srt-sapolita")
 SAPOLITA_LOG = os.path.join(SAPOLITA_SRT, "辨識紀錄.csv")
 
 # 族華平行語料：sapolita 段落配華語字幕，一集一檔，加一張凍結的
-# 校正基準。內容契約見 whisper-parallel-corpus spec。
-PAIRS_DIR = os.path.join(WHISPER_DIR, "2-平行語料")
+# 校正基準；3-srt-paragraph 是同一批組裡高中信心的雙語字幕。目錄照
+# 「格式-內容」命名（1-srt-sapolita、2-csv-analysis、3-srt-paragraph）。
+# 內容契約見 whisper-parallel-corpus spec。
+PAIRS_DIR = os.path.join(WHISPER_DIR, "2-csv-analysis")
 PAIRS_CALIBRATION = os.path.join(PAIRS_DIR, "校正基準.csv")
+PARAGRAPH_SRT = os.path.join(WHISPER_DIR, "3-srt-paragraph")
+# 2-csv-analysis 的舊名。沒有程式寫它，只用來偵測搬家沒做完、或平行
+# session 用舊程式寫了一輪——兩份並存時產出與重建都要擋下來。
+LEGACY_PAIRS_DIR = os.path.join(WHISPER_DIR, "2-平行語料")
 
 # 官方族語辭典（16 族 xlsx）與蒸餾的詞庫。不入 store：放 kithann，
 # 缺檔就從 SFTP 抓（使用者裁定 2026-09-24，SFTP 保證有辭典）。
