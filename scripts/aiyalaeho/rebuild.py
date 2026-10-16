@@ -52,9 +52,9 @@ def _tsv_rows(path):
     return rows
 
 
-def episode_transcripts(srt_name):
+def episode_transcripts(srt_name, vision_dir=None):
     """transcripts.json content, rebuilt from this episode's vision TSVs."""
-    folder = paths.stage_path(paths.KARI_VISION, srt_name)
+    folder = paths.stage_path(vision_dir or paths.KARI_VISION, srt_name)
     resolved = {}
     if not os.path.isdir(folder):
         return resolved

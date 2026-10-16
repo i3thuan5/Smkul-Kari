@@ -25,6 +25,7 @@
 | `rebuild.py` | 只用 store 離線重建全部交付 SRT，逐 byte 驗證 |
 | `presets.json` | 版型：`aiyalaeho-bilingual`（黃底雙列帶） |
 | `brief.md` | 視覺辨識讀者判準的**正本**——每一批的提示都以它為準，改一次後面每批都跟著改 |
+| `cleaning/` | 交付字幕的清洗試做（承辦第2-1期第 3 點）：Kari-SRT 只讀，產出在 `kithann/out/aiyalaeho-清洗/`，見下方〈清洗〉 |
 
 news 有而這裡**沒有**的四支，各有理由：`fetch_sftp.sh`（素材已在本機，
 少數幾支手動 `scripts/news/sftp.sh get` 就好）、`plan_month.py`（沒有月份
@@ -169,7 +170,7 @@ python3 -m scripts.aiyalaeho.catalogue --annotate '開會了_083_Rukai_魯凱=�
 ## 素材：SFTP ê 44 支 mp4
 
 - SFTP `族語節目/開會了/`：**44 支 mp4**——41 支是 2026-08-04 頂傳ê
-  `NNN-語言[-方言]-字幕狀態.mp4`，另外 3 支是三月ê舊頂傳（`116ALL_無字`、
+  `NNN-語言[-語言別]-字幕狀態.mp4`，另外 3 支是三月ê舊頂傳（`116ALL_無字`、
   `119-混雜`、`122-混雜`）。三支舊ê佇**絕對路徑**
   `/docker/ilrdf-corpus/族語節目/開會了/`，毋是 SFTP ê相對根——2026-09-05
   講「提袂著」是查毋著層。44 組 mp3／wav 用袂著（這爿無做 ASR）。
@@ -583,6 +584,31 @@ sheet 的裝箱預算是 `1.10 MP ÷ sheet 寬`，而 sheet 寬是
 有結構的墨水——88／90／98 這種本來就沒字幕的集，照切、交付 0 行 SRT）、
 `MISMATCH`（有帶但列跑出槽外，或沒帶卻有對比 ≥2 倍的墨水——新聞版型
 量到 4.04，就是這條擋下來的）。
+
+## 清洗（`cleaning/`）：承辦第2-1期驗收第 3 點
+
+承辦要求對已交付的 10 集做 a 修正多餘空白與重複標點、b 比對同族語各集拼寫、c 比對族語辭典、d 修改前後對照表（語言別差異與無法確認者另標、不直接修改）。b、c 只做多於 1 集的族語（阿美、賽夏、泰雅、卑南 9 集）。
+
+**Kari-SRT 只讀**（使用者裁定 2026-10-15）：不回寫 2-vision、不重建 3-srt。所以 `brief.md`「’ 照抄不正規化」那條照舊——交付版照畫面，清洗版才把 ’ 換成 '，兩版的差別就記在對照表裡。
+
+辭典一族只收一個語別（阿美秀姑巒、泰雅賽考利克、卑南南王），「與辭典不同」多半是語言別差異，不是錯字。所以先用族語E樂園（43 個語別、逐句標語言別編號）推測各集語別，該語別見過的寫法就不算錯；剩下哪裡都查不到的才交 Claude（Opus）分類，判錯字的再回看原生圖條，分成 OCR 讀錯和播出端錯字（兩種都訂正）。冒號是詞的一部分（`kithann/規範/` 沒有冒號規定，辭典照收），不動。
+
+```bash
+python -m scripts.aiyalaeho.cleaning 詞庫        # 1-詞庫：E樂園 各語別、Kaldi 各族
+python -m scripts.aiyalaeho.cleaning 候選        # 2-候選：含語言別推測
+python -m scripts.aiyalaeho.cleaning 送判 文字   # 3-判定/文字分類/<族語>/待判-bNN.csv
+#   Opus subagent 讀 cleaning/brief_text.md 與待判檔，寫 bNN.csv
+python -m scripts.aiyalaeho.cleaning 匯入 文字
+python -m scripts.aiyalaeho.cleaning 送判 看圖   # 3-判定/看圖/<族語>/待判-bNN.csv
+#   Opus subagent 讀 cleaning/brief_image.md 與原生圖條，寫 bNN.csv
+python -m scripts.aiyalaeho.cleaning 匯入 看圖
+python -m scripts.aiyalaeho.cleaning 清洗        # 4-清洗版/、5-交付/修改前後對照表.csv
+python -m scripts.aiyalaeho.cleaning 報表        # 5-交付/ 拼寫不一致表、辭典比對表、語言別推測表
+```
+
+E樂園 的文字檔要先從 `kithann/E樂園/` 的壓縮檔解到 `kithann/E樂園-解壓/`（只解 csv、txt、json、xml，不解音檔）；`11.閱讀文本.zip`、`17.族語新聞閱讀.zip` 會被 `unzip` 誤報 zip bomb，用 Python `zipfile` 解。Kaldi 詞表讀 huggingface 快取裡 ILRDF 模型的 `graph/words.txt`。
+
+清洗版**直接改交付 SRT 的文字行**，編號、時間、空行一個 byte 都不動——在 cue 層改了再重組的話，文字變得一樣的相鄰兩條會被 `merge_repeats` 併掉，字幕編號位移，對照表就對不上交付版。
 
 ## `text/`：上字文稿平行語料（跟上面全部無關，沒有影片）
 

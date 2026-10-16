@@ -151,7 +151,7 @@ class TestThresholds(unittest.TestCase):
 
     def test_a_narrow_lead_is_not_flagged(self):
         # 賽德克 102 對太魯閣是 89% 對 82%，才差 7%——仝一个語言ê
-        # 兩个方言本底就相像，毋是別族來賓。
+        # 兩个語言別本底就相像，毋是別族來賓。
         both = {"kako", "matini", "tangasa", "maafo", "sain"}
         lex = {"阿美": both - {"sain"}, "布農": both}
         text = srt("""

@@ -22,7 +22,8 @@ tests/
 ├── mt/           族語新聞平行語料：對齊、分層、CSV、調參（對照表佇該目錄ê README）
 ├── aiyalaeho/    《開會了》編排層測試（檔名解析、雙槽驗版型、雙列
 │   │             組裝、九欄進度表、0-cue 交付、離線重建）
-│   └── langcheck/  逐條語言判定（對照表佇該目錄ê README）
+│   ├── langcheck/  逐條語言判定（對照表佇該目錄ê README）
+│   └── cleaning/   字幕清洗試做：承辦第2-1期第 3 點 a–d（對照表佇該目錄ê README）
 └── …
 
 tests-e2e/        fixture.py  test_roundtrip  test_mxf2mkv_roundtrip
@@ -148,7 +149,8 @@ tests-e2e/        fixture.py  test_roundtrip  test_mxf2mkv_roundtrip
 | episode-catalogue | 族語別佮語言別ê代號對照表（16 種族語別攏查有代號、太魯閣 `trv-x-truku` 毋是 `trv`、德路固是賽德克ê變體、查無退族語級、代號倒轉查名、`und` 是標準答案）——13 逝ê對照表佇 `languages/README.md` | `languages/test_languages.py` |
 | episode-catalogue | 節目目錄ê共同欄位佮不變量（播出時段對節目名稱推、集數補三碼、成果檔名佮識別欄互推、重複、列序、素材位置非空、語言欄值域、孤兒檔）——11 逝ê對照表佇 `catalogue/README.md` | `catalogue/test_catalogue_checks.py` |
 | aiyalaeho-language-check | 逐條語言判定ê規組（逐條標記、兩張 CSV）——對照表佇 `aiyalaeho/langcheck/README.md` | `aiyalaeho/langcheck/*.py` |
-| aiyalaeho-language-check | 官方族語辭典（字元分類、辭典蒸餾、詞庫比對、方言別正音）——13 逝ê對照表佇 `lexicon/README.md` | `lexicon/*.py` |
+| aiyalaeho-language-check | 官方族語辭典（字元分類、辭典蒸餾、詞庫比對、語言別正音）——13 逝ê對照表佇 `lexicon/README.md` | `lexicon/*.py` |
+| aiyalaeho-cleaning | 開會了交付字幕清洗試做（規則清洗、語言別推測、拼寫候選、Claude 判定ê送出匯入、清洗版、四份交付 CSV）——對照表佇 `aiyalaeho/cleaning/README.md`；E樂園、Kaldi 詞表ê蒸餾佇 `lexicon/README.md` | `aiyalaeho/cleaning/*.py`、`lexicon/test_klokah.py`、`lexicon/test_kaldi_words.py` |
 | mxf2mkv | 轉到一半停掉的短檔袂使上傳：ffmpeg 收著 Ctrl+C／q 會好好收尾，封存佮音軌指紋（仝一擺 ffmpeg 算ê）仝款短、照樣「逐位元相符」——2026-10-06 查著 8 支 0.7 秒到 23 分 53 秒ê mkv 傳起去矣（正常 48 分鐘）；上傳前比母帶時長（差 2 秒以上就擋）、離開碼 255／130／-SIGINT 當做中斷規批停（毋是「記落來、行下一支」）、中斷了指紋檔嘛愛清、`-nostdin` 予 ffmpeg 袂讀鍵盤 | `mxf2mkv/test_interrupt.py`、`transcode/test_encode_master.py` |
 | subtitle-text-source | 兩逝一 cue ê TSV：列名毋著／cue 無佇 sheet 頂懸／仝一 cue 兩批攏有——規批拒收 | `aiyalaeho/test_ingest.py` |
 | srt-data-store | store 版面（`aiyalaeho/1-ocr/{1-cues,2-vision,3-srt}`、不分層）；inventory 欄位宣告 | `aiyalaeho/test_paths.py` |

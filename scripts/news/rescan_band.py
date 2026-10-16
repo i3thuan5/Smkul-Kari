@@ -215,11 +215,12 @@ def main(argv=None):
     book["rescanned"] = book.get("rescanned", []) + [
         {"lo": args.lo, "hi": args.hi, "region": args.region,
          "count": len(new)}]
-    with open(timeline, "w", encoding="utf-8") as out:
-        json.dump(book, out, ensure_ascii=False, indent=2, sort_keys=True)
-
+    # move_strips 會 kā 重切ê cue 改指 `han` 圖條，所以時間軸愛佇伊
+    # 後壁才寫（2022-12 353 晚間先寫，373 條留 `line0`，組合圖規段跳過）
     moved, added = move_strips(work, spliced, fresh, args.lo, len(new))
     print("strips：徙 %d 張、新 %d 張" % (moved, added))
+    with open(timeline, "w", encoding="utf-8") as out:
+        json.dump(book, out, ensure_ascii=False, indent=2, sort_keys=True)
 
     folder = os.path.join(paths.KARI_VISION,
                           paths.month_of(_srt_name(args.stem)),
@@ -252,6 +253,9 @@ def rebuild_sheets(work, book):
     slots, cols, anchor = gap_sheets.news_sheet_layout()
     made = sheets.build_sheets(work, book, row_slots=slots,
                                compare_cols=cols, right_anchor=anchor)
+    # 猶未組裝過ê集數無 5-transcripts/（讀字讀煞才發現愛重切）
+    os.makedirs(os.path.dirname(paths.transcripts_file(work)),
+                exist_ok=True)
     with open(paths.transcripts_file(work), "w",
               encoding="utf-8") as handle:
         json.dump({}, handle, ensure_ascii=False, indent=2,

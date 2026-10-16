@@ -600,6 +600,54 @@ class TestCodes(unittest.TestCase):
         self.assertEqual(namebars.codes_of("Paiwna"), ["pwn"])
         self.assertEqual(namebars.codes_of("Apaci"), ["apa"])
 
+    def test_batch_106_wailacki(self):
+        # 2022-09 名條第 106 批 b106-s049 第 5 列：太空人 Nicole Aunapu Mann
+        # 印「Wailacki」（加州 Round Valley 的 Wailaki 人，ISO 639-3 `wlk`）。
+        # 毋加就規集 SKIP。
+        self.assertEqual(namebars.codes_of("Wailacki"), ["wlk"])
+
+    def test_batch_106_xukuru(self):
+        # 2022-09 名條第 106 批 b106-s066 第 2 列：巴西 Marcos Luidson 印
+        # 「Xukuru」（伯南布哥州 Xukuru 人，ISO 639-3 `xoo` Xukurú）。
+        self.assertEqual(namebars.codes_of("Xukuru"), ["xoo"])
+
+    def test_batch_107_spellings(self):
+        # 2022-10 名條第 107 批：b107-s003 摩洛哥 Fatima Masoudi 印
+        # 「Amazigh」（柏柏人，ISO 639-2 集體代號 `ber`）；b107-s037、s078
+        # Tracie Revis、David Hill 印「Muscogee族」「Muscogee」（ISO 639-2
+        # `mus` Creek）；b107-s057 Erika Varga 這擺印中文「羅姆人」（毋是
+        # 「族」，尾字無剝）；b107-s005 印「Rukau」（Rukai 拍毋著）。四款
+        # 攏會害規集 SKIP。
+        self.assertEqual(namebars.codes_of("Amazigh"), ["ber"])
+        self.assertEqual(namebars.codes_of("Muscogee"), ["mus"])
+        self.assertEqual(namebars.codes_of("Muscogee族"), ["mus"])
+        self.assertEqual(namebars.codes_of("羅姆人"), ["rom"])
+        self.assertEqual(namebars.codes_of("Rukau"), ["dru"])
+
+    def test_batch_108_spellings(self):
+        # 2022-11 名條第 108 批：b108-s027、s028 Bauk é Dai'l、潘德興等 4 人
+        # 印「Kehau」（噶哈巫自稱 Kaxabu ê另一款拼法）；b108-s032 加拿大
+        # Rex Holwell 印「Inuit」，b108-s046 仝人印中文「因紐特族」（ISO
+        # 639-3 `iku` Inuktitut）。三款攏會害規集 SKIP。
+        self.assertEqual(namebars.codes_of("Kehau"), ["pzh-x-kaxabu"])
+        self.assertEqual(namebars.codes_of("Inuit"), ["iku"])
+        self.assertEqual(namebars.codes_of("因紐特族"), ["iku"])
+
+    def test_batch_109_spellings(self):
+        # 2022-12 名條第 109 批：b109-s037 潘仁和印「Kaha'u」（噶哈巫另一款
+        # 拼法，仝人 s037 閣印「噶哈巫族」）；北美原住民 s020／s054 印
+        # 「Ojibwe」（`oji`）、s025 印「Menominee族」（`mez`）、s085 印
+        # 「Secwépemc」（`shs` Shuswap）、s082 Katrina Fuller 印「Sicangu
+        # Lakota」（族名中央有空白，莫切做兩人；`lkt`）；澳洲 s089 Tarquin
+        # Singleton 印「Yirrganydji」（Ethnologue 列 Yirrgay 做 Djabugay
+        # 方言，`dyy`）。六款攏會害規集 SKIP。
+        self.assertEqual(namebars.codes_of("Kaha'u"), ["pzh-x-kaxabu"])
+        self.assertEqual(namebars.codes_of("Ojibwe"), ["oji"])
+        self.assertEqual(namebars.codes_of("Menominee族"), ["mez"])
+        self.assertEqual(namebars.codes_of("Secwépemc"), ["shs"])
+        self.assertEqual(namebars.codes_of("Sicangu Lakota"), ["lkt"])
+        self.assertEqual(namebars.codes_of("Yirrganydji"), ["dyy"])
+
     def test_slash_means_two_groups(self):
         # 第 78 批 b78-s032、s090 陳豪毅一人印「Pinuyumayan/Amis」（有一擺
         # 閣拼做 Pinuyunayan/Amis）：斜線兩爿是兩族，莫當做一个對無ê字

@@ -72,6 +72,12 @@ ALIASES = {
     "Puyuma": "Pinuyumayan",             # 2024-03 第 71 批林志興、潘調志
     "Ta'urung": "Taivoan",               # 2024-03 李文瑞，仝人另一條「大武壠族」
     "makataw": "Makatao",                # 2024-03 潘玉燕，小寫
+    "Rukau": "Rukai",                    # 2022-10 第 107 批 s005
+    "羅姆人": "羅姆",                    # 2022-10 第 107 批 s057 Erika Varga
+    "Kehau": "Kaxabu",                   # 2022-11 第 108 批 s027 噶哈巫 4 人
+    "因紐特族": "因紐特",                # 2022-11 第 108 批 s046 Rex Holwell
+    "Kaha'u": "Kaxabu",                  # 2022-12 第 109 批 s037 潘仁和
+    "Sicangu Lakota": "Lakota",          # 2022-12 第 109 批 s082 Katrina Fuller
     "Mawri": "Māori",                    # 2024-05 第 73 批 s103
     "Paipura": "拍瀑拉",                 # 2024-05 白俊忠
     "Piawan": "Paiwan",                  # 2024-04 達比烏蘭·古勒勒

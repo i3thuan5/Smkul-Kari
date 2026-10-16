@@ -60,7 +60,9 @@ aiyalaeho，依賴ê方向就顛倒去（這馬是 aiyalaeho → news），所�
 |---|---|
 | `dictionary.py` | xlsx → 詞庫：標準函式庫讀（`zipfile`＋`xml.etree`，無 openpyxl）、欄位靠表頭名、取 `單字`／`詞根`／`例句原文` 三欄、撇號正規化 |
 | `script.py` | 字元分類（Unicode 類別，毋是 ASCII 範圍；注音毋算漢字）佮切詞——詞庫佮字幕用仝一支尺 |
-| `vocab.py` | 逐族詞庫命中率、上倚ê族、方言別正音（南勢阿美 u→o、b→f、v→f，加法毋是取代） |
+| `vocab.py` | 逐族詞庫命中率、上倚ê族、語言別正音（南勢阿美 u→o、b→f、v→f，加法毋是取代） |
+| `klokah.py` | 族語E樂園教材（`kithann/E樂園-解壓/` ê csv＋xml）→ 逐語別詞表：族語欄靠欄名規則認（十幾種寫法）、語別取 dialectId 抑是資料夾名、語別全名剝做語言別代號；辭典一族干焦收一个語別，這是手頭唯一分會出語別ê族語文本 |
+| `kaldi_words.py` | ILRDF Kaldi 族語模型ê `graph/words.txt` → 族語詞表（排除 `<eps>`、`<UNK>`、`#0` 等模型符號）；干焦證明「這族有人按呢寫」，毋決定寫法 |
 
 ## ocr/——影像側引擎（燒印字幕抽取）
 
@@ -175,6 +177,7 @@ aiyalaeho，依賴ê方向就顛倒去（這馬是 aiyalaeho → news），所�
 | `blobs.py` | 連通元件（8-連通ê `label`／`boxes`，佮「族語逝ê墨底」ê `deepest_bottom`）——環境無 scipy，讀者逐擺家己重寫就逐擺無仝，收做一支才免 |
 | `brief.md` | 視覺辨識讀者判準ê**正本**（逐批ê提示攏對這份提，判準才袂逐批走鐘） |
 | `text/oledoc.py`／`decode.py`／`parse.py`／`lang.py`／`split.py`／`pairs.py` | 上字文稿（001–045，無影片、佮上面攏無關）轉族華平行語料：OLE2 讀取、副檔名分派解碼、排版判定、語言代號、多重分隔符 AI 判讀、組出 `1-句對.csv`；詳見 [Kari-SRT/aiyalaeho/text/README.md](../Kari-SRT/aiyalaeho/text/README.md) |
+| `cleaning/source.py`／`rules.py`／`dialect.py`／`candidates.py`／`verdicts.py`／`apply.py`／`report.py`／`__main__.py` | 交付字幕ê清洗試做（承辦第2-1期第 3 點 a–d）：讀交付 SRT 佮 cue／圖條對應、a 項規則、E樂園 推語言別、拼寫候選佮初篩、Claude 判定ê送出匯入、清洗版佮對照表、交付 CSV。**Kari-SRT 干焦讀**，產出佇 `kithann/out/aiyalaeho-清洗/`；詳見 [aiyalaeho/README.md](aiyalaeho/README.md)〈清洗〉 |
 | `langcheck/mark.py`／`report.py` | 交付 SRT 逐條ê語言判定：逐條標記、兩張 CSV。辭典彼爿（讀 xlsx、切詞、命中率）用頂層 `lexicon/`。**干焦讀 `3-srt/`**，離線、無叫模型；詳見 [Kari-SRT/aiyalaeho/1-ocr/4-語言檢查/README.md](../Kari-SRT/aiyalaeho/1-ocr/4-語言檢查/README.md) |
 
 news 有而遮無ê四支：`fetch_sftp.sh`（素材已經佇本機）、`plan_month.py`

@@ -215,6 +215,34 @@ OTHER_GROUPS = {
     # 北美阿帕契：2022-08 名條第 105 批 b105-s084（Sacheen Littlefeather
     #   印「Apaci」），ISO 639-2 Apache languages 集體代號 `apa`。
     "阿帕契": ("Apache", "apa"),
+    # 加州 Round Valley 的 Wailaki 人：2022-09 名條第 106 批 b106-s049
+    #   （太空人 Nicole Aunapu Mann 印「Wailacki」），ISO 639-3 `wlk`；
+    #   無通行漢譯，鍵照原文。
+    "Wailacki": ("Wailacki", "wlk"),
+    # 巴西伯南布哥州 Xukuru 人：2022-09 名條第 106 批 b106-s066（Marcos
+    #   Luidson 印「Xukuru」），ISO 639-3 `xoo` Xukurú；無通行漢譯，鍵照原文。
+    "Xukuru": ("Xukuru", "xoo"),
+    # 北非柏柏人：2022-10 名條第 107 批 b107-s003（摩洛哥 Fatima Masoudi
+    #   印「Amazigh」），ISO 639-2 集體代號 `ber`（Berber languages）。
+    "柏柏": ("Amazigh", "ber"),
+    # 美國奧克拉荷馬 Muscogee（Creek）Nation：2022-10 名條第 107 批
+    #   b107-s037、s078（Tracie Revis、David Hill），ISO 639-2 `mus`。
+    "馬斯科吉": ("Muscogee", "mus"),
+    # 加拿大因紐特人：2022-11 名條第 108 批 b108-s032（Rex Holwell 印
+    #   「Inuit」，s046 仝人印「因紐特族」），ISO 639-3 `iku` Inuktitut。
+    "因紐特": ("Inuit", "iku"),
+    # 北美原住民：2022-12 名條第 109 批。b109-s020／s054 印「Ojibwe」
+    #   （ISO 639-3 `oji` Ojibwa）；s025 印「Menominee族」（`mez`）；
+    #   s085 印「Secwépemc」（`shs` Shuswap）；s082 Katrina Fuller 印
+    #   「Sicangu Lakota」（`lkt` Lakota）。
+    "奧吉布瓦": ("Ojibwe", "oji"),
+    "梅諾米尼": ("Menominee", "mez"),
+    "舒斯瓦普": ("Secwépemc", "shs"),
+    "拉科塔": ("Lakota", "lkt"),
+    # 澳洲 Yirrganydji：2022-12 名條第 109 批 b109-s089（Tarquin Singleton
+    #   印「Yirrganydji cuku」）。ISO 639-3 無獨立代號，Ethnologue 列
+    #   Yirrgay 做 Djabugay 方言，用 `dyy`。
+    "伊爾甘吉": ("Yirrganydji", "dyy"),
 }
 
 # 語言別（族語別下底ê變體）：族語別 -> {字樣: 代號}

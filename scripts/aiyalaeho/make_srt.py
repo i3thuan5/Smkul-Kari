@@ -51,8 +51,16 @@ def build(work):
     """One record per cue: its timing and each row's text."""
     with open(datadirs.cues_to_read(work), encoding="utf-8") as handle:
         manifest = json.load(handle)
+    return manifest, records_of(manifest, load_transcripts(work))
 
-    texts = load_transcripts(work)
+
+def records_of(manifest, texts):
+    """One record per cue from a timeline and its text, keyed by cue number.
+
+    Split out of build so a reader that has the timeline and the text in
+    hand -- the cleaning line maps each delivered entry back to its cues --
+    goes through the very same records the deliverable was made from.
+    """
     records = []
     for cue in manifest["cues"]:
         got = texts.get(str(cue["index"]))
@@ -63,7 +71,7 @@ def build(work):
         for name, _label in LABELS:
             record[name] = (got.get(name) or "").strip()
         records.append(record)
-    return manifest, records
+    return records
 
 
 def entry_text(record):

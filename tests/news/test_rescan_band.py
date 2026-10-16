@@ -174,5 +174,103 @@ class TestRemapTsvRows(unittest.TestCase):
         self.assertEqual(got[5], "  頭尾空白  ")
 
 
+class TestRebuildSheets(unittest.TestCase):
+    """重做組合圖了後愛寫一份空ê transcripts.json。
+
+    2022-12 353 晚間：讀字讀煞、猶未組裝就發現帶外專題愛重切，work dir
+    內底猶無 `5-transcripts/`。重切、接 cue、TSV 重編號、組合圖攏做好矣，
+    上尾寫 transcripts.json 煞因為目錄無佇咧 FileNotFoundError 倒去
+    （2026-10-16）。重切是無 dry-run 以外ê退路ê操作，倒佇上尾一步上歹收。
+    """
+
+    def test_writes_transcripts_when_the_folder_is_missing(self):
+        import json
+        import os
+        import tempfile
+        from unittest import mock
+        from scripts import datadirs
+        with tempfile.TemporaryDirectory() as work:
+            target = datadirs.transcripts_file(work)
+            self.assertFalse(os.path.isdir(os.path.dirname(target)))
+            with mock.patch.object(rescan_band.sheets, "build_sheets",
+                                   return_value=3), \
+                    mock.patch.object(rescan_band.gap_sheets,
+                                      "news_sheet_layout",
+                                      return_value=(None, None, None)):
+                made = rescan_band.rebuild_sheets(work, {"cues": []})
+            self.assertEqual(made, 3)
+            with open(target, encoding="utf-8") as handle:
+                self.assertEqual(json.load(handle), {})
+
+
+class TestMainPersistsStripRefs(unittest.TestCase):
+    """重切出來ê cue 愛指向 `han` 圖條，而且愛寫入磁碟頂ê時間軸。
+
+    2022-12 353 晚間重切 373 條：`move_strips` 有 kā 新圖條抄做
+    `t…_han.png`、mā kā cue 改做 `{"han": …}`，毋過時間軸是佇
+    `move_strips` 進前就寫落去矣，磁碟頂ê 373 條猶是 recut 原本ê
+    `{"line0": …}`。組合圖干焦認 `han`，規段 373 條攏予跳過，
+    30 張組合圖內底無半條重切ê cue，嘛無報錯（2026-10-16）。
+    """
+
+    def test_recut_cues_point_at_han_strips_on_disk(self):
+        import json
+        import os
+        import tempfile
+        from unittest import mock
+        from scripts import datadirs
+        from scripts.ocr import stripname
+        stem = "2022_353_2022-12-19_晚間_Amis_阿美"
+        with tempfile.TemporaryDirectory() as root:
+            work = os.path.join(root, stem + ".work")
+            timeline = datadirs.refined_cues(work)
+            os.makedirs(os.path.dirname(timeline))
+            os.makedirs(datadirs.strips_dir(work))
+            old = []
+            for i in range(5):
+                start = 10.0 * i
+                old.append({"index": i + 1, "start": start,
+                            "end": start + 5,
+                            "images": {"han": datadirs.strip_ref(
+                                stripname.of(start, "han"))}})
+            with open(timeline, "w", encoding="utf-8") as handle:
+                json.dump({"cues": old}, handle)
+            video = os.path.join(root, "v.mkv")
+            open(video, "w").close()
+            vision = os.path.join(root, "vision")
+
+            def fake_recut(video, start, duration, out, region=None,
+                           venv=None):
+                os.makedirs(datadirs.strips_dir(out), exist_ok=True)
+                new = []
+                for n, t in enumerate((11.0, 13.0, 16.0)):
+                    name = "%05d_line0.png" % (n + 1)
+                    open(os.path.join(datadirs.strips_dir(out), name),
+                         "w").close()
+                    new.append({"index": n + 1, "start": t, "end": t + 2,
+                                "images": {"line0": datadirs.strip_ref(
+                                    name)}})
+                return new
+
+            with mock.patch.object(rescan_band.paths, "work_dir",
+                                   return_value=work), \
+                    mock.patch.object(rescan_band, "recut", fake_recut), \
+                    mock.patch.object(
+                        rescan_band, "_srt_name",
+                        return_value="20221219_353_晚間_Amis_阿美"), \
+                    mock.patch.object(rescan_band.paths, "KARI_VISION",
+                                      vision), \
+                    mock.patch.object(rescan_band, "rebuild_sheets"), \
+                    mock.patch.object(rescan_band.lowpri, "be_nice"):
+                rescan_band.main([stem, "2", "3", "--video", video])
+            with open(timeline, encoding="utf-8") as handle:
+                cues = json.load(handle)["cues"]
+            self.assertEqual(len(cues), 6)
+            for cue in cues[1:4]:
+                self.assertEqual(list(cue["images"]), ["han"])
+                self.assertTrue(os.path.exists(
+                    os.path.join(work, cue["images"]["han"])))
+
+
 if __name__ == "__main__":
     unittest.main()
