@@ -66,7 +66,12 @@ def publishable(entry, cues_dir=None):
 
 
 def areas_only_in_store(entry, source, cues_dir=None):
-    """Re-cut areas the store timeline has and the work dir's lacks."""
+    """Re-cut areas the store timeline has and the work dir's lacks.
+
+    Compared by setting, not just by name: the same name re-cut with
+    another preset or region (20240603_155, offband → flower) is just as
+    stale, and passing it put the pre-splice timeline back.
+    """
     target = paths.stage_path(cues_dir or paths.KARI_CUES,
                               entry["srt_name"], ".json")
     if not os.path.exists(target):
@@ -77,7 +82,7 @@ def areas_only_in_store(entry, source, cues_dir=None):
         local = json.load(handle).get("areas") or {}
     missing = []
     for name in sorted(stored):
-        if name not in local:
+        if local.get(name) != stored[name]:
             missing.append(name)
     return missing
 

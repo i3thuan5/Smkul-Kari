@@ -137,6 +137,9 @@ OTHER_GROUPS = {
     #   1151 秒），SIL Wakawaka；族名本身有空白。
     "Maasai": ("Maasai", "mas"),
     "Wakka Wakka": ("Wakka Wakka", "wkw"),
+    # 澳洲 Kooma：「Brett Leavy Kooma」（20230602_153 晚間名條第 111 批），
+    #   族語 Guwamu，SIL `gwu`；無通行漢譯，鍵照原文。
+    "Kooma": ("Kooma", "gwu"),
     # 加拿大 Nisga'a：「Sim'oogit Ni'isjoohl Nisga'a」（2023-09 名條第 65 批
     #   b65-s004 第 5 列，1070 秒），SIL Nisga'a；族名有撇號。
     "Nisga'a": ("Nisga'a", "ncg"),
@@ -161,6 +164,20 @@ OTHER_GROUPS = {
     #   鍵照原文。
     "巴布薩": ("Babuza", "bzg"),
     "Mi'kmaq": ("Mi'kmaq", "mic"),
+    # 2024-01 名條第 114 批ê外國族群，攏無通行漢譯，鍵照原文。哥倫比亞
+    #   Tatuyo：「Hernando Prado/Pinon Tatuyo」（b114-s048，20240115_015
+    #   午間），SIL `tav`。澳洲 Anindilyakwa：「Noeleen Lalara
+    #   Anindilyakwa族」（b114-s064，20240121_021 晚間；另一則無「族」），
+    #   SIL `aoi`。俄國 Buryat：「Gennadiy Buryatia」（b114-s030，
+    #   20240110_010 晚間），名條印共和國地名，SIL Buriat (Russia)
+    #   `bxr`，「Buryatia」別名寫佇 namebars.ALIASES。
+    "Tatuyo": ("Tatuyo", "tav"),
+    "Anindilyakwa": ("Anindilyakwa", "aoi"),
+    "Buryat": ("Buryat", "bxr"),
+    # 加拿大 Piikani（黑腳族一支）：「Lowell Yellowhorn  Piikani cu」
+    #   （b114-s015，20240106_006 午間 906 秒），SIL Blackfoot `bla`；
+    #   「Piikani cu」別名寫佇 namebars.ALIASES。
+    "Piikani": ("Piikani", "bla"),
     # 2021-12 名條第 76 批 b76-s016：「Desmond Tayley  Eastern Kuku Yalanji」
     #   （2677 秒，澳洲昆士蘭），SIL Kuku-Yalanji `gvn`；族名有空白，鍵照原文，
     #   「Eastern Kuku Yalanji」別名寫佇 namebars.ALIASES。

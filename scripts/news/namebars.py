@@ -41,6 +41,7 @@ ALIASES = {
     "Aims": "Amis",                      # 2024-12-23 午間舒米·如妮
     "Pikangcu": "Bigambul",              # 畢甘布（Pikambul）轉寫走樣
     "Silaya": "Siraya",
+    "Silaiya": "Siraya",                 # 2023-06-10 晨間楊振綸
     "Makataw": "Makatao", "Makatau": "Makatao",
     "Kanakanvu": "Kanakanavu",           # 2021-11-04 晚間 217 秒
     "Seeidq": "Seediq",                  # 2021-11 Walis Pawan
@@ -50,6 +51,7 @@ ALIASES = {
     "Maori": "Māori",
     "Pacay": "Pazeh",                    # 2023-07 潘英傑
     "Pacaicu": "Pazeh",                  # 2023-09-23 午間愛蘭教會，巴宰族語自稱
+    "Bazii": "Pazeh",                    # 2023-06-10 晨間潘英傑
     "Maulii": "Māori",                   # 2023-09 毛利族語拼法
     "Paipulacu": "拍瀑拉",               # 2023-10 拍瀑拉族羅馬字
     "Tenetehara": "Tembé",               # 2023-10 巴西 Tembé 別稱
@@ -98,6 +100,10 @@ ALIASES = {
     "Papura": "拍瀑拉",                  # 2024-08 羅義惇「klgan Papura」
     "Ruki": "Rukai",                     # 2024-09 柯浩軒，仝人別條 Rukai
     "Kahau": "Kaxabu",                   # 2024-09「Kahau(噶哈巫族)」
+    "Dawkas": "Taokas",                  # 2024-09-26 張壽琴、王商益，道卡斯
+    "Buryatia": "Buryat",                # 2024-01-10 晚間，名條印地名
+    "Pwaiwan": "Paiwan",                 # 2024-01-20 午間陳偉哲，拍毋著
+    "Piikani cu": "Piikani",             # 2024-01-06 午間 Lowell Yellowhorn
     "Sakilaya": "Sakizaya",              # 2024-10-20 晚間「Sakilaya(撒奇萊雅族)」
     "Papula": "拍瀑拉",                  # 2024-10-23 晚間 3 人
     "Kaitakorangcu": "凱達格蘭",         # 2024-11-16 午間潘正育

@@ -30,6 +30,26 @@ def band(count, step=20.0):
     return out
 
 
+class TestSheetMask(unittest.TestCase):
+    """組合圖裁切用ê遮罩愛是重切彼个 preset ê，毋通是預設白字判準。
+
+    2024-06-03 155 晚間部落達人段用 titv-news-flower 重切：組合圖照
+    「白字墨水」所在ê欄裁圖條，prepare 交 `mask: {}`，裁切用預設遮罩，
+    彩色花字算做背景，434「一定非常愛這個人」、621「肉質也美味」規句
+    予人裁掉、542「就像挑老公一樣 挑好的」干焦賰「就像挑老公」
+    （2026-10-16 讀者逐條對原生圖條才發現）。
+    """
+
+    def test_flower_preset_mask_keeps_outline_saturation(self):
+        mask = offband_backfill.sheet_mask("titv-news-flower")
+        self.assertEqual(mask.get("outline_saturation"), 90)
+
+    def test_offband_preset_mask_is_its_own(self):
+        mask = offband_backfill.sheet_mask("titv-news-offband")
+        self.assertIsNone(mask.get("outline_saturation"))
+        self.assertTrue(mask.get("outline"))
+
+
 class TestRenumbering(unittest.TestCase):
 
     def setUp(self):

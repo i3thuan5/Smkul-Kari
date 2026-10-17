@@ -144,3 +144,11 @@ class TestServerPath(unittest.TestCase):
         raw = "home/mkv-raw/112/7月/23NL003_183_族語午間新聞_Kanakanavu.mkv"
         for given in (raw, "/" + raw):
             self.assertEqual(resolve_slug.server_path(given), "/" + raw)
+
+    def test_aiyalaeho_folder_sits_beside_the_corpus_root(self):
+        # 《開會了》2026-09-25 搬去第三份資料集，囥佇 `/docker/` 下底、
+        # 佮 `ilrdf-corpus/` 平排。照舊接會變成
+        # `/docker/ilrdf-corpus/族語節目-aiyalaeho開會了/…`，伺服器揣無。
+        raw = "docker/族語節目-aiyalaeho開會了/068-阿美語-秀姑巒-雙語字幕.mp4"
+        for given in (raw, "/" + raw):
+            self.assertEqual(resolve_slug.server_path(given), "/" + raw)

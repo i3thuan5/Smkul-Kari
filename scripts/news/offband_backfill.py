@@ -187,6 +187,17 @@ def starting_table(name, out, store=None):
     return None
 
 
+def sheet_mask(preset):
+    """重切彼个 preset ê遮罩設定，予組合圖照仝款ê判準裁圖條。
+
+    組合圖照遮罩ê墨水欄裁圖條；交空ê `{}` 就是預設白字判準，
+    titv-news-flower ê彩色花字會算做背景、予人裁掉（2024-06-03
+    155 晚間規句無去ê有 434、621）。
+    """
+    with open(paths.ENGINE_PRESETS, encoding="utf-8") as handle:
+        return dict(json.load(handle)[preset].get("mask", {}))
+
+
 def _sha(path):
     with open(path, "rb") as handle:
         return hashlib.sha256(handle.read()).hexdigest()
@@ -230,7 +241,8 @@ def prepare(name, lo, hi, video, preset=PRESET):
     for item in spliced:
         if int(item["index"]) in wanted:
             shown.append(item)
-    manifest = {"lines": stretch["lines"], "mask": {}, "cues": shown}
+    manifest = {"lines": stretch["lines"], "mask": sheet_mask(preset),
+                "cues": shown}
     sheet_dir = paths.sheets_dir(out)
     if os.path.isdir(sheet_dir):
         shutil.rmtree(sheet_dir)

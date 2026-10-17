@@ -282,6 +282,16 @@ class TestCodes(unittest.TestCase):
         self.assertEqual(namebars.code_of("Shoshone"), "shh")
         self.assertEqual(namebars.code_of("Kuki"), "Kuki")
 
+    def test_kooma_and_bazii(self):
+        # 2023-06 名條第 111 批：153 晚間「Brett Leavy Kooma」（澳洲 Kooma，
+        # 族語 Guwamu，SIL `gwu`）、161 晨間 108 秒「潘英傑 Bazii」（巴宰
+        # 另一款拼法）。無對照時 apply 規集 SKIP。
+        self.assertEqual(namebars.code_of("Kooma"), "gwu")
+        self.assertEqual(namebars.code_of("Bazii"),
+                         namebars.code_of("Pacay"))
+        # 161 晨間 512 秒「楊振綸 Silaiya」：西拉雅閣一款拼法。
+        self.assertEqual(namebars.code_of("Silaiya"), "fos")
+
     def test_maasai_wakka_wakka_and_aliases(self):
         # 2023-09-19～23 名條：「Ole Iguanani Maasai」（SIL Masai `mas`）、
         # 「Corey Appo Wakka Wakka」（SIL Wakawaka `wkw`；族名中央有空白，
@@ -411,6 +421,36 @@ class TestCodes(unittest.TestCase):
                          namebars.code_of("道卡斯族"))
         self.assertEqual(namebars.code_of("Kwukasu"),
                          namebars.code_of("道卡斯族"))
+
+    def test_2024_09_dawkas_and_yami_with_bracket(self):
+        # 第 112 批（2024-09）名條：「Dawkas」（b112-s002，20240926_270
+        # 午間 1280 秒張壽琴、1379 秒王商益，道卡斯；仝一則標題「道卡斯.
+        # 邵族」，王商益 2023-12 印 Taukas）、「Yami(達悟)族」（b112-s015
+        # 1233 秒夏曼．馬得能，族名後壁閣加括號中文佮「族」）。
+        self.assertEqual(namebars.code_of("Dawkas"),
+                         namebars.code_of("道卡斯族"))
+        self.assertEqual(namebars.codes_of("Yami(達悟)族"),
+                         [namebars.code_of("Yami")])
+
+    def test_2024_01_foreign_groups_and_pwaiwan(self):
+        # 第 114 批（2024-01）名條：「Hernando Prado/Pinon Tatuyo」（b114-s048
+        # 第 4 列，20240115_015 午間 2667 秒，哥倫比亞亞馬遜）、「Noeleen
+        # Lalara Anindilyakwa族」（b114-s064 第 9 列，20240121_021 晚間 791
+        # 秒；b114-s079 仝人印「Anindilyakwa」，澳洲）、「Gennadiy
+        # Buryatia」（b114-s030 第 14 列，20240110_010 晚間 2475 秒——
+        # Buryatia 是布里亞特共和國ê地名，族名是 Buryat）、「陳偉哲
+        # Pwaiwan」（b114-s061 第 6 列，20240120_020 午間 729 秒，Paiwan
+        # 拍毋著）。
+        self.assertEqual(namebars.code_of("Tatuyo"), "tav")
+        self.assertEqual(namebars.code_of("Anindilyakwa"), "aoi")
+        self.assertEqual(namebars.codes_of("Anindilyakwa族"), ["aoi"])
+        self.assertEqual(namebars.code_of("Buryatia"), "bxr")
+        self.assertEqual(namebars.code_of("Pwaiwan"),
+                         namebars.code_of("Paiwan"))
+        # 「Lowell Yellowhorn  Piikani cu」（b114-s015 第 5 列，
+        # 20240106_006 午間 906 秒，加拿大 Lethbridge College），抽影片
+        # 四格攏是「Piikani cu」，cu 毋是第二个人。
+        self.assertEqual(namebars.codes_of("Piikani cu"), ["bla"])
 
     def test_babuza_and_mikmaq_have_codes(self):
         # 第 75 批外國／平埔族群：「巴布薩族」（b75-s013，20240706_188

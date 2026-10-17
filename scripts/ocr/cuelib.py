@@ -42,6 +42,11 @@ def erode(mask, size):
 # ------------------------------------------------------------- text mask
 
 
+# `outline_saturation` 認做描邊ê彩色，上光ê通道起碼愛到遮：暗紅、暗綠
+# 這款顏色本底就會予 dark_max 收著，這條干焦管「亮閣鮮」ê描邊。
+SATURATED_MIN = 120
+
+
 class MaskSpec(object):
     """Tuning for `text_mask`.
 
@@ -55,7 +60,7 @@ class MaskSpec(object):
                  outline=True, outline_size=9, thin=False, thin_size=7,
                  band_probe=None, band_rows=None, scale=1,
                  compare_cols=None, compare_rows=None,
-                 right_anchor=None):
+                 right_anchor=None, outline_saturation=None):
         self.white_min = white_min
         self.max_spread = max_spread
         self.dark_max = dark_max
@@ -113,6 +118,13 @@ class MaskSpec(object):
         # band, so no picture reaches the mask and there is nothing to gain.
         self.compare_cols = compare_cols
         self.compare_rows = compare_rows
+        # 彩色花字：白邊旁邊ê若毋是暗色、是高飽和色（最大最小通道差超過
+        # 這个數、上光ê通道 > SATURATED_MIN），嘛算描邊。部落達人ê紅字
+        # 「粉紅填色＋白內描邊＋紅外描邊」，邊仔無暗色，現行判準框內
+        # 密度 0.005；開 90 起到 0.187，框外背景 0.01–0.02 無升
+        # （2024-06 三集七格量ê，2026-10-16）。None 就是原本ê判準。
+        # 佮 compare_cols 仝款是區域 preset 宣告ê，袂寫入時間軸。
+        self.outline_saturation = outline_saturation
 
     def scaled(self, factor):
         """A copy of this spec measured in subsampled pixels.
@@ -134,7 +146,8 @@ class MaskSpec(object):
             compare_cols=_halve_span(self.compare_cols, step),
             compare_rows=_halve_span(self.compare_rows, step),
             right_anchor=(None if self.right_anchor is None
-                          else self.right_anchor // step))
+                          else self.right_anchor // step),
+            outline_saturation=self.outline_saturation)
         if self.band_probe:
             probe = dict(self.band_probe)
             probe["x"] = int(probe.get("x", 0)) // step
@@ -147,7 +160,7 @@ class MaskSpec(object):
         spec = cls()
         for key in ("white_min", "max_spread", "dark_max", "outline",
                     "outline_size", "thin", "thin_size", "band_probe",
-                    "band_rows", "right_anchor"):
+                    "band_rows", "right_anchor", "outline_saturation"):
             if key in data:
                 setattr(spec, key, data[key])
         return spec
@@ -203,8 +216,11 @@ def text_mask(rgb, spec):
     high = rgb.max(axis=2).astype(np.int16)
     mask = (low > spec.white_min) & ((high - low) < spec.max_spread)
     if spec.outline:
-        dark = luma_of(rgb) < spec.dark_max
-        mask &= dilate(dark, spec.outline_size)
+        edge = luma_of(rgb) < spec.dark_max
+        if spec.outline_saturation is not None:
+            edge |= (((high - low) > spec.outline_saturation)
+                     & (high > SATURATED_MIN))
+        mask &= dilate(edge, spec.outline_size)
         if spec.thin:
             white = (low > spec.white_min) & ((high - low) < spec.max_spread)
             mask &= ~erode(white, spec.thin_size)

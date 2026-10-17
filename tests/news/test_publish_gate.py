@@ -318,6 +318,19 @@ class TestStaleWorkDir(unittest.TestCase):
         work, reason = self.judge()
         self.assertEqual(reason, "")
 
+    def test_same_area_name_cut_differently_is_still_stale(self):
+        # 2026-10-16：`20240603_155_晚間_Amis_阿美` work dir 有 10-15
+        # 用 titv-news-offband 切ê「帶外專題」，store 是 10-16 用
+        # titv-news-flower 重切ê（919 條）。干焦比區域名，兩爿攏有就放
+        # 過，publish 共 store 蓋轉去 855 條，rebuild --verify 才抓著。
+        self.timeline(paths.refined_cues(self.work),
+                      {"帶外專題": {"preset": "titv-news-offband",
+                                "region": [392, 910, 1528, 122]}})
+        self.spliced_store()
+        work, reason = self.judge()
+        self.assertEqual(work, "")
+        self.assertIn("帶外專題", reason)
+
     def test_the_segments_table_is_not_overwritten_either(self):
         # 仝一集又踏一擺（2026-09-24 深夜）：受訪者名條ê腳本直接叫
         # publish_segments，work dir 彼份補切進前ê段落表共「帶外專題」

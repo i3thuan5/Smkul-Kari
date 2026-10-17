@@ -89,6 +89,35 @@ class TestTextMask(unittest.TestCase):
         frame[28:32, 10:50] = 255
         self.assertEqual(int(cuelib.text_mask(frame, spec).sum()), 4 * 40)
 
+    def test_colour_outlined_glyph_needs_outline_saturation(self):
+        # 部落達人彩色花字（2024-06-16 168 晨間「就像挑老公一樣」）：粉紅
+        # 填色、白色內描邊、紅色外描邊。白邊旁邊無暗色（紅 213,68,31 ê
+        # 亮度 107 > 95），現行遮罩框內密度 0.005、比背景閣較低，規句
+        # 讀袂著。白邊旁邊ê高飽和色嘛算描邊，密度起到 0.187。
+        frame = self._canvas((213, 68, 31))
+        frame[28:32, 10:50] = 255
+        self.assertEqual(
+            int(cuelib.text_mask(frame, cuelib.MaskSpec()).sum()), 0)
+        spec = cuelib.MaskSpec(outline_saturation=90)
+        self.assertGreater(int(cuelib.text_mask(frame, spec).sum()), 100)
+
+    def test_outline_saturation_still_rejects_pale_areas(self):
+        # 淺粉紅牆、白衫：近白色佇大片淺色內底，邊仔無暗色嘛無高飽和
+        # 色，開這个選項仝款袂使算字（2024-06 樣本框外背景密度
+        # 0.01–0.02，開了無升）。
+        frame = self._canvas((240, 215, 215))
+        frame[28:32, 10:50] = 255
+        spec = cuelib.MaskSpec(outline_saturation=90)
+        self.assertEqual(int(cuelib.text_mask(frame, spec).sum()), 0)
+
+    def test_outline_saturation_keeps_white_on_dark_unchanged(self):
+        frame = self._canvas(30)
+        frame[28:32, 10:50] = 255
+        plain = cuelib.text_mask(frame, cuelib.MaskSpec())
+        wide = cuelib.text_mask(frame,
+                                cuelib.MaskSpec(outline_saturation=90))
+        self.assertTrue((plain == wide).all())
+
     def test_luma_matches_bt601(self):
         frame = np.zeros((1, 1, 3), dtype=np.uint8)
         frame[0, 0] = (255, 255, 255)
@@ -262,6 +291,13 @@ class TestMaskSpecStaysOutOfTheManifest(unittest.TestCase):
         spec = cuelib.MaskSpec(scale=2, compare_cols=(1250, 1790),
                                compare_rows=(4, 114))
         self.assertEqual(set(spec.to_dict().keys()), self.KEYS)
+
+    def test_outline_saturation_is_read_but_not_written(self):
+        # 區域 preset 宣告ê，毋是逐集量ê，仝款莫寫入時間軸
+        spec = cuelib.MaskSpec.from_dict({"outline_saturation": 90})
+        self.assertEqual(spec.outline_saturation, 90)
+        self.assertEqual(set(spec.to_dict().keys()), self.KEYS)
+        self.assertEqual(spec.scaled(2).outline_saturation, 90)
 
     def test_from_dict_ignores_the_three(self):
         spec = cuelib.MaskSpec.from_dict(

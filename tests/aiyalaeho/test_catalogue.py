@@ -13,6 +13,7 @@ from scripts.aiyalaeho import catalogue
 from scripts.aiyalaeho import episodes
 from scripts.aiyalaeho import paths
 from scripts.errors import PipelineError
+from scripts.news import resolve_slug
 
 
 def parse(name):
@@ -37,10 +38,17 @@ class TestParseStandardNames(unittest.TestCase):
         got = parse("88-泰雅語-無字幕.mp4")
         self.assertEqual(got["srt_name"], "開會了_088_Atayal_泰雅")
 
-    def test_the_video_path_is_corpus_root_relative(self):
+    def test_the_video_path_is_where_the_server_holds_it(self):
+        # 影片佇 `/docker/族語節目-aiyalaeho開會了/`，毋是 `ilrdf-corpus/`
+        # 下底。本底寫 `族語節目-aiyalaeho開會了/…`，server_path 會接做
+        # `/docker/ilrdf-corpus/…`，提去抓檔揣無。
         got = parse("082-阿美語-雙語字幕.mp4")
-        self.assertEqual(got["video"],
-                         "族語節目-aiyalaeho開會了/082-阿美語-雙語字幕.mp4")
+        self.assertEqual(
+            got["video"],
+            "docker/族語節目-aiyalaeho開會了/082-阿美語-雙語字幕.mp4")
+        self.assertEqual(
+            resolve_slug.server_path(got["video"]),
+            "/docker/族語節目-aiyalaeho開會了/082-阿美語-雙語字幕.mp4")
         self.assertEqual(got["file"], "082-阿美語-雙語字幕.mp4")
 
     def test_the_programme_name_is_recorded(self):

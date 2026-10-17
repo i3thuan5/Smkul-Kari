@@ -54,8 +54,9 @@ def normalise(path):
 
 # Sources that are not under the corpus root at all. The 2026-09-23 mkv
 # delivery sits in `/home/mkv-raw/`, a sibling of `/docker`, and the
-# catalogue writes it `home/mkv-raw/…`.
-OTHER_ROOTS = ("home/",)
+# catalogue writes it `home/mkv-raw/…`. 開會了 moved on 2026-09-25 to
+# `/docker/族語節目-aiyalaeho開會了/`, a sibling of `ilrdf-corpus/`.
+OTHER_ROOTS = ("home/", "docker/族語節目-aiyalaeho開會了/")
 
 
 def server_path(path):
