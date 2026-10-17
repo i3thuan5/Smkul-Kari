@@ -35,10 +35,17 @@ Kari-SRT/
     │   （階段內容的契約見 asr-bilingual-srt 與 parallel-corpus-quality）
     └── 2-asr-whisper/               語音側（whisper）：sapolita 族語辨識
         ├── README.md
-        └── 1-srt-sapolita/
-            ├── 辨識紀錄.csv          一集一列
-            └── <年-月>/<成果檔名>.srt  伺服器回傳原樣
-        （內容的契約見 whisper-asr-srt）
+        ├── 1-srt-sapolita/
+        │   ├── 辨識紀錄.csv          一集一列
+        │   └── <年-月>/<成果檔名>.srt  伺服器回傳原樣
+        ├── 2-csv-analysis/
+        │   ├── README.md
+        │   ├── 校正基準.csv          各族辭典命中率基準（凍結）
+        │   └── <年-月>/<成果檔名>.csv  族華段落配對，一組一列，含不採用與原因
+        └── 3-srt-paragraph/
+            ├── README.md
+            └── <年-月>/<成果檔名>.srt  高、中信心的組，族語華語兩行
+        （1-srt-sapolita 的契約見 whisper-asr-srt；2、3 見 whisper-parallel-corpus）
 ```
 
 同一份資料 SHALL 只有一個路徑；同一產物的不同狀態 SHALL 分開存放於
@@ -96,6 +103,11 @@ SHALL NOT 存在第二份 inventory；所有讀寫 inventory 的程式與腳本 
 - **WHEN** 檢視 `news/2-asr-kaldi/`
 - **THEN** `mt-cache/` 與 `quality-cache/` 存在，各為每引擎／每裁判
   一個 JSONL 檔
+
+#### Scenario: whisper 那條的舊目錄名不再存在
+
+- **WHEN** 在 Kari-SRT 內搜尋名為 `2-平行語料` 的目錄
+- **THEN** 找不到；配對的 CSV 在 `2-asr-whisper/2-csv-analysis/`，雙語字幕在 `2-asr-whisper/3-srt-paragraph/`
 
 ### Requirement: 工作目錄照語料、月份、編號階段分層
 
@@ -521,7 +533,7 @@ Kari-SRT，SHALL NOT 要求整集全部階段完成才准入庫，也 SHALL NOT 
 
 ### Requirement: 下游階段的集數必為上游的子集
 
-離線重建驗證 SHALL 檢查各階段之間的包含關係：`3-srt/` 的成果檔名集合 SHALL 是 `2-vision/` 的子集，`2-vision/` SHALL 是 `1-cues/` 的子集。`2-asr-whisper/2-平行語料/` 的成果檔名集合 SHALL 同時是 `1-ocr/3-srt/` 與 `2-asr-whisper/1-srt-sapolita/` 的子集。
+離線重建驗證 SHALL 檢查各階段之間的包含關係：`3-srt/` 的成果檔名集合 SHALL 是 `2-vision/` 的子集，`2-vision/` SHALL 是 `1-cues/` 的子集。`2-asr-whisper/2-csv-analysis/` 的成果檔名集合 SHALL 同時是 `1-ocr/3-srt/` 與 `2-asr-whisper/1-srt-sapolita/` 的子集；`2-asr-whisper/3-srt-paragraph/` 的成果檔名集合 SHALL 是 `2-csv-analysis/` 的子集。
 
 下游有而上游沒有的集數 SHALL 使驗證以非零狀態結束，並指名是哪一集在哪一層缺——那份交付物重建不出來。上游有而下游沒有 SHALL 視為正常，那只表示還沒做到那一步。
 
@@ -537,20 +549,25 @@ Kari-SRT，SHALL NOT 要求整集全部階段完成才准入庫，也 SHALL NOT 
 
 #### Scenario: 平行語料沒有對應的辨識結果
 
-- **WHEN** `2-平行語料/` 有某集的 CSV，`1-srt-sapolita/` 沒有該集的 SRT
+- **WHEN** `2-csv-analysis/` 有某集的 CSV，`1-srt-sapolita/` 沒有該集的 SRT
+- **THEN** 驗證以非零狀態結束，指名該集與缺的那一層
+
+#### Scenario: 雙語字幕沒有對應的配對 CSV
+
+- **WHEN** `3-srt-paragraph/` 有某集的 SRT，`2-csv-analysis/` 沒有該集的 CSV
 - **THEN** 驗證以非零狀態結束，指名該集與缺的那一層
 
 ### Requirement: 平行語料層可離線重建
 
-`Kari-SRT/news/2-asr-whisper/2-平行語料/` 裡每一集的檔，SHALL 能從下列輸入逐 byte 重建：主 repo（程式）、Kari-SRT（該集的 `1-ocr/1-cues/`、`1-ocr/2-vision/`、`2-asr-whisper/1-srt-sapolita/`、`news/smkul.csv`、`2-平行語料/校正基準.csv`）、`kithann/族語辭典/`。重建 SHALL NOT 呼叫任何模型。
+`Kari-SRT/news/2-asr-whisper/2-csv-analysis/` 與 `3-srt-paragraph/` 裡每一集的檔，SHALL 能從下列輸入逐 byte 重建：主 repo（程式）、Kari-SRT（該集的 `1-ocr/1-cues/`、`1-ocr/2-vision/`、`2-asr-whisper/1-srt-sapolita/`（含 `辨識紀錄.csv` 的音長秒）、`news/smkul.csv`、`2-csv-analysis/校正基準.csv`）、`kithann/族語辭典/`。重建 SHALL NOT 呼叫任何模型。
 
 辭典是這條規則唯一的外部來源：`kithann/族語辭典/` 缺檔時，重建 SHALL 從 SFTP 取得後再驗；SFTP 也取不到時，SHALL 指名中止，SHALL NOT 略過這一層而宣告通過。
 
-`scripts.news.rebuild --verify` SHALL 涵蓋這一層。這一層沒有檔的集數 SHALL NOT 算錯，那只是還沒做到。
+`scripts.news.rebuild --verify` SHALL 涵蓋這兩層。這兩層沒有檔的集數 SHALL NOT 算錯，那只是還沒做到。
 
 #### Scenario: 有人手改了入庫的 CSV
 
-- **WHEN** 某集 `2-平行語料/` 的 CSV 被人改了一格
+- **WHEN** 某集 `2-csv-analysis/` 的 CSV 被人改了一格
 - **THEN** 重建驗證以非零狀態結束並指名該集
 
 #### Scenario: 換機器沒有辭典
@@ -562,6 +579,16 @@ Kari-SRT，SHALL NOT 要求整集全部階段完成才准入庫，也 SHALL NOT 
 
 - **WHEN** `kithann/族語辭典/` 不存在，SFTP 也連不上
 - **THEN** 驗證以非零狀態結束，說明是辭典取不到，而不是宣告通過
+
+#### Scenario: 有人手改了入庫的雙語字幕
+
+- **WHEN** 某集 `3-srt-paragraph/` 的 SRT 被人改了一個字
+- **THEN** 重建驗證以非零狀態結束並指名該集
+
+#### Scenario: 舊目錄還在就不驗
+
+- **WHEN** Kari-SRT 裡同時有 `2-asr-whisper/2-平行語料/` 與 `2-csv-analysis/`
+- **THEN** 重建驗證以非零狀態結束，指名舊目錄要移除，不宣告通過
 
 ### Requirement: 節目目錄的不變量
 
@@ -623,3 +650,11 @@ Kari-SRT 的內容綁定在一台機器上——同一份資料在另一台機�
 
 - **WHEN** 對某集執行組裝流程
 - **THEN** `3-srt/` 底下只有該集的 SRT，沒有同名的 QC 摘要檔
+### Requirement: 片頭辨識改語別時清掉語音側產物
+
+片頭辨識查出節目目錄的語別標錯、改了那一集的語別時，語音側用錯的語言做出來的檔 SHALL 一併刪除等重跑：`2-asr-whisper/1-srt-sapolita/`、`2-asr-whisper/2-csv-analysis/`、`2-asr-whisper/3-srt-paragraph/`，以及 kaldi 那條的各層。跟語言無關的影像側檔（`1-ocr/` 各層）SHALL 只改名、內容不動。
+
+#### Scenario: 改語別後雙語字幕也刪掉
+
+- **WHEN** 20210116_016 晚間從排灣改成卑南，改之前 `3-srt-paragraph/` 已有排灣那一集的 SRT
+- **THEN** 那份 SRT 被刪除，不會以卑南的檔名留下排灣語辨識做出來的字幕

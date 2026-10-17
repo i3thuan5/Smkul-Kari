@@ -53,7 +53,7 @@
 
 ## 8. 驗收
 
-- [ ] 8.1 tox -e rebuild（rebuild --verify）通過，集數＝目錄裡沒標 pending 的筆數，且平行語料與 3-srt-paragraph 的集數相同
+- [x] 8.1 tox -e rebuild（rebuild --verify）通過，集數＝目錄裡沒標 pending 的筆數，且平行語料與 3-srt-paragraph 的集數相同
 - [x] 8.2 python3 -m scripts.news.name_catalogue --check 通過；tox -e unittest、tox -e flake8 全過
 - [x] 8.3 用 paragraph_export --export 2021-01 2021-02 產一份到 kithann/out，跟補件版比：條數跟補件版（7,735）的差只來自補洞那些組的層級變動；不含留白的語音時長約 44.98 小時（explore 量的，補洞前），差異同樣只能來自那些組
 - [x] 8.4 回覆檔寫到 kithann/tuiue/<MMDD>/，列出可以 git add 的檔案（主 repo 與 Kari-SRT 分開），以及要通知 whisper 那條線的事
