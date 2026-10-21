@@ -156,6 +156,13 @@ OTHER_GROUPS = {
     #   「Mariela Idivuoma 薩米族」（b71-s079 1300 秒，NRK Sápmi 總編輯），
     #   ISO 639-3 無薩米總稱，比照彝用上濟人講ê北薩米 `sme`。
     "愛努": ("Ainu", "ain"),
+    # 2023-03 名條第 122 批：「Aynu」是愛努的羅馬字拼法（062 晚間）；
+    #   澳洲 Yidinji（090 晚間），SIL Yidiny `yii`。
+    "Aynu": ("Ainu", "ain"),
+    "Yidinji": ("Yidinji", "yii"),
+    # 2023-04 名條第 123 批：澳洲西北 Nyikina（097 晚間、106 午間重播），
+    #   SIL Nyikina `nyh`。
+    "Nyikina": ("Nyikina", "nyh"),
     "薩米": ("Sami", "sme"),
     # 2024-07 名條第 75 批。巴布薩：平埔族群，「巴布薩族」（b75-s013，
     #   20240706_188 晚間）、「乃俊廷 Babuza」（b75-s051，20240719_201

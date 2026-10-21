@@ -85,6 +85,7 @@ ALIASES = {
     "Piawan": "Paiwan",                  # 2024-04 達比烏蘭·古勒勒
     "SaySiyta": "SaySiyat",              # 2024-05 第 73 批 s008
     "Sámi": "Sami",                      # 2024-05 Mariela Idivuoma
+    "Sàmi": "Sami",                      # 2023-04 第 123 批，重音符反過來
     "Taulong": "Taivoan",                # 2024-05 楊山樟，大武壠
     "嘎哈巫族": "Kaxabu", "嘎哈巫": "Kaxabu",   # 2024-07 第 75 批 s013
     "Daukas": "Taokas",                  # 2024-07 劉新苗、劉秋雲，道卡斯
@@ -125,6 +126,11 @@ ALIASES = {
     "Paiwa": "Paiwan",                   # 2022-02 第 93 批 giyu(郭復明)，播出端漏 n
     "Pinuyumayyan": "Pinuyumayan",       # 2022-03 第 94 批洪志彰、呂蓓蒂，雙 y
     "SaySyat": "SaySiyat",               # 2022-03 第 94 批 b94-s062，漏 i
+    "SiySiyaat": "SaySiyat",             # 2023-01 第 118 批 b118-s011，a、i 對調
+    "Pauwan": "Paiwan",                  # 2023-01 第 120 批 b120-s005，i 印成 u
+    "Pinuyumaya": "Pinuyumayan",         # 2023-02 第 121 批 b121-s033，少結尾 n
+    "Rkai": "Rukai",                     # 2023-02 第 121 批 b121-s062，少一個 u
+    "Amia": "Amis",                      # 2023-03 第 122 批 066 午間，s 印成 a
     "Kvalan": "Kavalan",                 # 2022-04 第 95 批 b95-s007，漏 a
     "Pajay": "巴宰",                     # 2022-04-28 午間愛蘭教會，巴宰音譯
     "Pajiay": "巴宰",                    # 仝彼則 b95-s085，閣拼一款

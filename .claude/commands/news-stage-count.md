@@ -19,7 +19,7 @@ argument-hint: "[2021-02]（不填就統計全部月份）"
 | 6. 雙語 SRT | `2-asr-kaldi/3-srt-ai/<月份>/` | `<集名>.srt` 一個檔 |
 | 7. 品質判斷完成 | `2-asr-kaldi/4-srt-quality/<月份>/` | `<集名>.srt` 一個檔 |
 
-`2-asr-kaldi/mt-cache/*.jsonl`、`2-asr-kaldi/quality-cache/*.jsonl` 是共用快取（機翻、品質判斷結果），不是逐集檔案，**不算進表格**，附註提一下大小就好。
+**2-asr-kaldi 的 4–7 階段和它的快取都不算**（使用者 2026-10-19：「2-asr-kaldi 可以不要算」；只有 2021-01、02 試做過，之後改走 whisper）。表格欄位只放 1–3 階段、whisper、smkul.csv 總集數。上表 4–7 列留著當目錄說明。
 
 **`2-asr-whisper/`（sapolita 辨識）要等 OCR（1–3 階段）做完才能做**——語言別
 是 OCR 之後才確認下來的，要有確認過的語言別，whisper 才能選對模型正確

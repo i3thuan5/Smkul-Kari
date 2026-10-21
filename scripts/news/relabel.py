@@ -41,15 +41,32 @@ REMOVE = (("2-asr-whisper/1-srt-sapolita", ".srt"),
           ("2-asr-kaldi/4-srt-quality", ".srt"))
 
 
+def news_variety(chinese, path=None):
+    """`新聞語言別代號.csv` 內這族ê（語言別, 語言別代號）。"""
+    with open(path or paths.NEWS_VARIETIES, encoding="utf-8") as handle:
+        for row in csv.DictReader(handle):
+            if row["族語別(中)"] == chinese:
+                return row["語言別"], row["語言別代號"]
+    raise PipelineError("新聞語言別代號.csv 無 %r 這族" % chinese)
+
+
 def relabel_row(row, chinese, reason):
-    """目錄一列換做 `chinese` 這族：族語別、代號、成果檔名、備註。"""
+    """目錄一列換做 `chinese` 這族：族語別、代號、成果檔名、備註。
+
+    mkv-raw 來源（2021-11 起）ê列攏照 `新聞語言別代號.csv` 填語言別，
+    whisper 嘛照彼張表揀模型；2021-01～10 ilrdf-corpus 舊批干焦記族語別。
+    改族了後照仝一款，目錄才佮鄰居、佮 whisper 用ê碼對會著。
+    """
     english = languages.english_for(chinese)
     out = dict(row)
     old = row["族語別(中)"]
     out["族語別(英)"] = english
     out["族語別(中)"] = chinese
-    out["語言別"] = ""
-    out["語言別代號"] = languages.code_for(chinese, "")
+    if (row.get("原始影片檔案位置") or "").startswith("home/"):
+        out["語言別"], out["語言別代號"] = news_variety(chinese)
+    else:
+        out["語言別"] = ""
+        out["語言別代號"] = languages.code_for(chinese, "")
     out["成果檔名"] = checks.srt_name_of(out)
     note = "族語別本底標 %s，改 %s：%s" % (old, chinese, reason)
     out["備註"] = (row.get("備註") or "").strip()

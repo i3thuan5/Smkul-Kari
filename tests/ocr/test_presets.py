@@ -234,6 +234,17 @@ class TestOffBandAreas(unittest.TestCase):
         self.assertLessEqual(lo, 620)
         self.assertGreaterEqual(hi, 1300)
 
+    def test_the_letterboxed_documentary_fits_the_low_variant(self):
+        # 20220321_080 午間泰雅 1484–2064 秒加烏邊ê紀錄片：字幕 y 807–862
+        # （22 格中位數量ê），跨過字幕帶下緣 848，下半截予裁掉，規集
+        # 擱咧無讀。左爿語別牌／天氣框仝款佇 x 391 以內。
+        top, bottom = self.rows("titv-news-offband-low")
+        self.assertLessEqual(top, 797)
+        self.assertGreaterEqual(bottom, 872)
+        left, _top, width, _h = self.presets["titv-news-offband-low"]["region"]
+        self.assertGreaterEqual(left, 392)
+        self.assertEqual(left + width, 1920)
+
     def test_the_sunken_2021_dictionary_is_taken_whole(self):
         # 2021「文化小辭典」子母畫面ê字幕沉到 y≈803–885（20210219_050
         # 晚間 803–857、20211101_305 晚間 815–870），靠右、佇粉紅框內
@@ -261,7 +272,7 @@ class TestOffBandAreas(unittest.TestCase):
     def test_off_band_areas_do_not_anchor_right(self):
         # 置中抑是左右無一定：right_anchor 會kā右爿ê雜訊加入圖條。
         for name in ("titv-news-island", "titv-news-offband",
-                     "titv-news-offband-high",
+                     "titv-news-offband-high", "titv-news-offband-low",
                      "titv-news-mailbox", "titv-news-montage"):
             self.assertNotIn("right_anchor", self.presets[name]["mask"], name)
             self.assertNotIn("match", self.presets[name], name)

@@ -118,6 +118,7 @@ tests-e2e/        fixture.py  test_roundtrip  test_mxf2mkv_roundtrip
 | subtitle-text-source | 判準寫「第一張–最後一張」，但分出來的批在檔名上不連續，讀者會讀到別批的圖——要逐張列出 | `news/test_vision_prompt.py` |
 | subtitle-text-source | `batches` 對未核實的圖切、`brief()` 對全部圖切，第 N 批內容不同（058晨 51 張一邊 3 批一邊 2 批）；讀到一半再派，兩邊都從 `b01` 起算，蓋掉已收進 Kari-SRT 的 `b01.tsv`；讀者還在寫、尚未 ingest 的檔不得把編號往後推 | `news/test_batches.py`、`news/test_vision_prompt.py` |
 | subtitle-text-source | 視覺 token 從 PNG 檔頭拿：不是 PNG、檔頭截斷、第一塊不是 IHDR 要報錯，不可猜數字；切批跑在沒有 numpy／PIL 的系統 python3，這支只准用標準函式庫 | `ocr/test_sheetsize.py` |
+| cue-timing | 一條 cue 剖做兩條，兩半愛寫入本底有這條 cue ê TSV：讀者分批是交錯ê，逐个 TSV ê號碼範圍攏重疊（063 晨 b01 3–916、b03 12–917），照「範圍包有」揀會揀著 b01，743 本底佇 b03，剖了後兩个檔攏有 743，ingest 規集擋（2026-10-19 拆 063 晨、089 晚踏著） | `news/test_split_cue.py` |
 | cue-timing | 抓檔批次的並行集數與 ffmpeg 執行緒數預設 6／2（2 緒每核效率 0.98，預設 8–9 緒只有 0.67）；旗標勝過環境變數；0、負數、非數字要在開工前擋下（0 會讓等空位的迴圈永遠等不到）；同時跑的工作不超過上限、一集失敗不卡住整批 | `news/test_fetch_sftp_config.py` |
 
 **片頭辨識、段落表、帶外補切、字幕帶版型**（`news-segments` 與相關修改）：表放 `tests/news/README.md`，無囥佇遮。

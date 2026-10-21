@@ -154,6 +154,28 @@ class TestSegmentsOverride(unittest.TestCase):
                           + "、".join(segments.BASES)])
 
 
+class TestPlanKind(unittest.TestCase):
+    """補切ê段落類型記佇 plan，apply 照 plan 標區域。
+
+    2024 試做五集（032 晚、034 晨、196 晨、028 午、210 晨）ê島語時間、
+    部落信箱從來無補切，work dir 已經清掉，干焦會當用這支直接改
+    Kari-SRT；原本 KIND 寫死「帶外專題」，補落去會變做帶外專題，段落表
+    佮時間軸 areas 攏標毋著。
+    """
+
+    def test_a_plan_from_before_kinds_existed_is_still_offband(self):
+        self.assertEqual(offband_backfill.plan_kind({"lo": 1, "hi": 2}),
+                         "帶外專題")
+
+    def test_an_island_plan_lands_as_island(self):
+        self.assertEqual(offband_backfill.plan_kind({"kind": "島語時間"}),
+                         "島語時間")
+
+    def test_a_kind_outside_the_segment_types_is_refused(self):
+        with self.assertRaises(PipelineError):
+            offband_backfill.plan_kind({"kind": "島語"})
+
+
 class TestStartingTable(unittest.TestCase):
     """補切進前ê段落表對佗來。
 
@@ -190,6 +212,20 @@ class TestStartingTable(unittest.TestCase):
         self.write(self.store + "/2024-12/%s.csv" % self.NAME, "攝影棚")
         self.write(self.out + "/0-segments.csv", "帶外專題")
         self.assertEqual(self.start()[0]["類型"], "帶外專題")
+
+    def test_a_store_table_without_basis_still_passes_the_check(self):
+        # Kari-SRT 的段落表不存「依據」欄（write_store 拿掉）。2026-10-20
+        # 補切 2023-02 058 晚、059 午時，從 store 讀進來的列依據全是空字串，
+        # apply 時 segments.check 擋下「第 2 逝：依據 ''」，段落表沒有入庫。
+        path = self.store + "/2024-12/%s.csv" % self.NAME
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        segments.write_store(path, [
+            {"起秒": "0", "迄秒": "100", "類型": "攝影棚", "單元語別": "阿美",
+             "字幕上緣y": "840", "字幕下緣y": "930", "依據": "自動",
+             segments.INTERVIEWEE: "無", segments.SPEECH: "無"}])
+        rows = self.start()
+        self.assertTrue(rows[0]["依據"])
+        self.assertEqual(segments.check(rows, self.NAME, 100.0), [])
 
     def test_no_table_anywhere_means_classify_afresh(self):
         self.assertIsNone(self.start())

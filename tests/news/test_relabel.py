@@ -52,6 +52,26 @@ class TestTheRow(unittest.TestCase):
                                   "片頭")
         self.assertTrue(got["備註"].startswith("檔名寫 18:00"))
 
+    def test_a_mkv_raw_row_takes_the_news_variety(self):
+        """mkv-raw 來源ê列（2021-11 起）攏照 `新聞語言別代號.csv` 填語言別。
+
+        2026-10-19 改 2024-08 兩集撒奇萊雅 → 阿美、2024-10 兩集太魯閣 → 泰雅，
+        目錄寫 `ami`、`tay`，毋過 mkv-raw 其他 2494 列攏是 `ami-x-pswl`、
+        `tay-x-sql`，whisper 嘛是用表內ê碼辨識——目錄佮實際用ê模型對袂著。
+        """
+        row = catalogue_row(
+            原始影片檔案位置="home/mkv-raw/113/8月/20240828S2000.mkv")
+        row["族語別(英)"], row["族語別(中)"], row["語言別代號"] = (
+            "Sakizaya", "撒奇萊雅", "szy")
+        got = relabel.relabel_row(row, "阿美", "語別牌")
+        self.assertEqual((got["語言別"], got["語言別代號"]),
+                         ("海岸", "ami-x-pswl"))
+
+    def test_an_old_batch_row_keeps_the_family_code(self):
+        """2021-01～10 ê ilrdf-corpus 舊批干焦記族語別（289 列），改了嘛仝款。"""
+        got = relabel.relabel_row(catalogue_row(), "阿美", "片頭")
+        self.assertEqual((got["語言別"], got["語言別代號"]), ("", "ami"))
+
     def test_an_unknown_language_is_refused(self):
         with self.assertRaises(PipelineError):
             relabel.relabel_row(catalogue_row(), "卑南語", "x")

@@ -39,6 +39,19 @@ KIND = "帶外專題"
 PRESET = "titv-news-offband"
 
 
+def plan_kind(plan):
+    """plan 記ê段落類型；較早ê plan 無這欄，當做帶外專題。
+
+    島語時間、部落信箱嘛用這支補切（work dir 清掉ê集干焦會當直接改
+    Kari-SRT），類型愛是段落表認得ê，拍毋著就擋。
+    """
+    kind = plan.get("kind", KIND)
+    if kind not in segments.TYPES:
+        raise PipelineError("補切類型 %r 毋是段落類型（%s）"
+                            % (kind, "、".join(segments.TYPES)))
+    return kind
+
+
 # ------------------------------------------------------------ 純算術
 
 
@@ -183,7 +196,13 @@ def starting_table(name, out, store=None):
                  paths.stage_path(store or paths.SEGMENTS_STORE, name,
                                   ".csv")):
         if os.path.exists(path):
-            return segments.read(path)
+            rows = segments.read(path)
+            # Kari-SRT 的表不存「依據」；寫回補切目錄時變空字串，
+            # segments.check 會擋。入庫時這欄又會拿掉，這裡只是過關用。
+            for row in rows:
+                if not row.get("依據"):
+                    row["依據"] = "人工"
+            return rows
     return None
 
 
@@ -203,12 +222,14 @@ def _sha(path):
         return hashlib.sha256(handle.read()).hexdigest()
 
 
-def prepare(name, lo, hi, video, preset=PRESET):
+def prepare(name, lo, hi, video, preset=PRESET, kind=KIND):
     """重切、精修、算編號、出組合圖、算段落表；寫 `<out>/plan.json`。
 
     `preset` 預設 `titv-news-offband`（對白 y≈940–1035）；060 晚間ê兩逝
-    戲劇字幕（878–989）用 `titv-news-offband-high`。
+    戲劇字幕（878–989）用 `titv-news-offband-high`。`kind` 是這段ê段落
+    類型（島語時間、部落信箱…），預設帶外專題。
     """
+    kind = plan_kind({"kind": kind})
     from scripts.news import segment_recut
     from scripts.news import shots
     from scripts.ocr import sheets
@@ -227,7 +248,7 @@ def prepare(name, lo, hi, video, preset=PRESET):
     new = []
     for item in stretch["cues"]:
         item = dict(item)
-        item["area"] = KIND
+        item["area"] = kind
         new.append(item)
     spliced = splice(book["cues"], lo, hi, new)
     fresh = fresh_numbers(spliced, book["cues"])
@@ -259,11 +280,11 @@ def prepare(name, lo, hi, video, preset=PRESET):
                                   book["duration"])
     region = stretch.get("region") or [0, 930, 1920, 110]
     segments.write(table_path, override(
-        table, lo, hi, KIND, band=(region[1], region[1] + region[3])))
+        table, lo, hi, kind, band=(region[1], region[1] + region[3])))
 
     plan = {"srt_name": name, "lo": lo, "hi": hi, "store_sha": _sha(store),
             "spliced": spliced, "fresh": fresh, "old_total": len(book["cues"]),
-            "region": stretch.get("region"), "preset": preset}
+            "region": stretch.get("region"), "preset": preset, "kind": kind}
     with open(os.path.join(out, "plan.json"), "w", encoding="utf-8") as fh:
         json.dump(plan, fh, ensure_ascii=False, indent=2, sort_keys=True)
     print("%s：舊 %d 條 → 新 %d 條，新 cue %d 條（%s–%s 號），組合圖 %d 張"
@@ -319,8 +340,8 @@ def apply(name, reader):
 
     book["cues"] = plan["spliced"]
     areas = dict(book.get("areas", {}))
-    areas[KIND] = {"preset": plan.get("preset", PRESET),
-                   "region": plan.get("region")}
+    areas[plan_kind(plan)] = {"preset": plan.get("preset", PRESET),
+                              "region": plan.get("region")}
     book["areas"] = areas
     with open(store, "w", encoding="utf-8") as handle:
         handle.write(redump_store.dump(datadirs.store_timeline(book)))
@@ -359,12 +380,14 @@ def main(argv=None):
     one.add_argument("hi", type=float)
     one.add_argument("video")
     one.add_argument("--preset", default=PRESET)
+    one.add_argument("--kind", default=KIND, help="段落類型，預設帶外專題")
     two = sub.add_parser("apply")
     two.add_argument("name")
     two.add_argument("tsv")
     args = ap.parse_args(argv)
     if args.command == "prepare":
-        prepare(args.name, args.lo, args.hi, args.video, args.preset)
+        prepare(args.name, args.lo, args.hi, args.video, args.preset,
+                args.kind)
     else:
         apply(args.name, args.tsv)
     return 0

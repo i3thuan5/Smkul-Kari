@@ -434,5 +434,35 @@
       1528,
       122
     ]
+  },
+  "titv-news-offband-low": {
+    "lines": [
+      {
+        "h": 90,
+        "lang": "chi_tra",
+        "name": "han",
+        "ocr_scale": 1,
+        "y": 0
+      }
+    ],
+    "mask": {
+      "compare_rows": [
+        4,
+        86
+      ],
+      "dark_max": 95,
+      "max_spread": 45,
+      "outline": true,
+      "outline_size": 9,
+      "scale": 2,
+      "white_min": 185
+    },
+    "note": "2022 年加烏邊ê紀錄片段（`20220321_080_午間_Atayal_泰雅` 1484–2064 秒）：字幕 y 807–862（22 格中位數），跨過字幕帶下緣 848，下半截予裁掉。區域 790–880；x 392 起避開左爿語別牌、天氣框，佮 offband 仝款。干焦 offband_backfill 用。",
+    "region": [
+      392,
+      790,
+      1528,
+      90
+    ]
   }
 }

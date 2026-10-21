@@ -143,9 +143,19 @@ def holding(folder, index):
     The two halves have to land in one file, and it has to be the file the
     range belongs to -- writing them anywhere else makes `ingest` report a
     cue in two files and refuse the whole episode.
+
+    Batches interleave (a reader takes some sheets, the next reader the
+    following ones, then back again), so every TSV's range overlaps the
+    others and "the range covers it" picks the first file, not the one
+    holding the row. The file that already carries `index` comes first.
     """
     best = None
-    for path in sorted(glob.glob(os.path.join(folder, "b*.tsv"))):
+    paths_ = sorted(glob.glob(os.path.join(folder, "b*.tsv")))
+    for path in paths_:
+        for cue, _text in read_tsv(path):
+            if cue == index:
+                return path
+    for path in paths_:
         rows = read_tsv(path)
         if not rows:
             continue

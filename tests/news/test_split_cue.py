@@ -187,5 +187,36 @@ class TestSheets(unittest.TestCase):
             self.assertEqual(cues, sorted(cues))
 
 
+class TestHolding(unittest.TestCase):
+    """兩半愛寫入本底有這條 cue ê彼个 TSV。
+
+    讀者分批是交錯ê（一批讀幾張組合圖，下一批讀後幾張，閣轉來），所以
+    逐个 TSV ê號碼範圍攏重疊：`20240303_063_晨間_Paiwan_排灣` b01 是
+    3–916、b02 1–918、b03 12–917。照「範圍包有」揀，頭一个 b01 就中，
+    毋過 cue 743 本底佇 b03——剖開了後 743 佇 b01、b03 攏有，ingest 擋
+    （2026-10-19 拆 063 晨 743、089 晚 862 踏著）。
+    """
+
+    def setUp(self):
+        import tempfile
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.folder = tmp.name
+        self.write("b01.tsv", [(3, "甲"), (742, "乙"), (916, "丙")])
+        self.write("b02.tsv", [(1, "丁"), (744, ""), (918, "戊")])
+        self.write("b03.tsv", [(12, "己"), (743, "庚"), (917, "辛")])
+
+    def write(self, name, rows):
+        split_cue.write_tsv("%s/%s" % (self.folder, name), rows)
+
+    def test_the_file_that_carries_the_cue_wins(self):
+        got = split_cue.holding(self.folder, 743)
+        self.assertTrue(got.endswith("b03.tsv"), got)
+
+    def test_a_cue_nobody_wrote_falls_back_to_a_covering_file(self):
+        got = split_cue.holding(self.folder, 745)
+        self.assertTrue(got.endswith(".tsv"), got)
+
+
 if __name__ == "__main__":
     unittest.main()

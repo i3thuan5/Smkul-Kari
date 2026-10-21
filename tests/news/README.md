@@ -39,6 +39,7 @@
 | episode-catalogue | `20210116_016_晚間_Paiwan_排灣` 片頭三格都是卑南（原檔名 `卑南語-20210116s1800.mp4`）：目錄改了、成果檔名換了，store 的時間軸／逐字稿／SRT 沒跟著改名就成孤兒檔 | `test_relabel.py` |
 | episode-catalogue／srt-data-store | 用排灣語辨識卑南語的 whisper SRT、平行語料（`2-csv-analysis`）、雙語字幕（`3-srt-paragraph`）、kaldi 各階段不可以改名留著冒充正確的——刪掉、辨識紀錄那列也刪，等重跑 | `test_relabel.py` |
 | episode-catalogue | 改名目標已經存在時一個都不搬（不搬一半） | `test_relabel.py` |
+| episode-catalogue | 2024-08 撒奇萊雅 → 阿美、2024-10 太魯閣 → 泰雅改了，目錄寫 `ami`、`tay`，但 mkv-raw 其他 2494 列都照 `新聞語言別代號.csv`（`ami-x-pswl`／海岸），whisper 也用那張表選模型——mkv-raw 來源照表填語言別；2021-01～10 ilrdf-corpus 舊批（289 列只記族語別）照舊 | `test_relabel.py` |
 
 ## 已讀字集數的帶外補切（`scripts/news/offband_backfill.py`）
 
@@ -49,6 +50,8 @@
 | cue-timing | 讀者 TSV 要剛好是新 cue 那幾號，少一條、多一條都擋 | `test_offband_backfill.py` |
 | news-segments | 段落表那段人工覆寫成「帶外專題」，前後的段照切，待確認的段仍擋入庫 | `test_offband_backfill.py` |
 | news-segments | 已確認入庫的段落表（`20241209_344_晚間_Amis_阿美`）補切時被 2021 判準重算的表蓋掉，讀者確認過的列被換成一堆「他族插播／待確認」——起點要依序取：前一段補切的表 → Kari-SRT 已入庫的表 → 都沒有才重算 | `test_offband_backfill.py` |
+| news-segments | work dir 清掉的集（2024 試做五集）島語時間、部落信箱要用這支補切，類型寫死「帶外專題」會把段落表和 areas 標錯；plan 記類型、舊 plan 沒記的當帶外專題、打錯的類型（「島語」）要擋 | `test_offband_backfill.py` |
+| news-segments | Kari-SRT 的段落表不存「依據」欄；2023-02 058 晚、059 午補切時從 store 讀進來的列依據全是空字串，apply 被 segments.check 擋下「依據 ''」，段落表沒入庫——從表讀進來時補「人工」 | `test_offband_backfill.py` |
 
 ## 帶外補切（`scripts/news/segment_recut.py`、`splice.py`）
 

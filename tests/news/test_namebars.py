@@ -609,6 +609,41 @@ class TestCodes(unittest.TestCase):
         self.assertEqual(namebars.codes_of("SaySiyal"), ["xsy"])
         self.assertEqual(namebars.codes_of("SaySiyal(賽夏族)"), ["xsy"])
 
+    def test_batch_118_siysiyaat(self):
+        # 2023-01 名條第 118 批 b118-s011 第 16 列（01-08 晚間 1492 秒）印
+        # 「SiySiyaat」（賽夏，a、i 對調又多一個 a）。對不到代號會讓整集
+        # SKIP，這集 49 條名條的受訪者欄全部空白。
+        self.assertEqual(namebars.codes_of("SiySiyaat"), ["xsy"])
+
+    def test_batch_120_pauwan(self):
+        # 2023-01 名條第 120 批 b120-s005 第 4 列（01-20 午間 2178 秒）印
+        # 「vavauni Pauwan」，Paiwan 的 i 印成 u。對不到代號會讓整集 SKIP。
+        self.assertEqual(namebars.codes_of("Pauwan"), ["pwn"])
+
+    def test_batch_121_dropped_letters(self):
+        # 2023-02 名條第 121 批：b121-s033（02-13 晚間 2434 秒）印「Pinuyumaya」
+        # 少結尾 n；b121-s062（02-25 晚間 2687 秒）印「elrenge(金沛珺) Rkai」
+        # 少一個 u。對不到代號會讓整集 SKIP。
+        self.assertEqual(namebars.codes_of("Pinuyumaya"), ["pyu"])
+        self.assertEqual(namebars.codes_of("Rkai"), ["dru"])
+
+    def test_batch_122_ainu_yidinji_amia(self):
+        # 2023-03 名條第 122 批：062 晚間印「Aynu」（日本愛努，羅馬字拼法，
+        # 跟已收的「愛努」同族 `ain`）；090 晚間印「Yidinji」（澳洲 Yidinji，
+        # SIL Yidiny `yii`）；066 午間印「Amia」（Amis 的 s 印成 a）。
+        # 對不到代號會讓整集 SKIP。
+        self.assertEqual(namebars.codes_of("Aynu"), ["ain"])
+        self.assertEqual(namebars.codes_of("Yidinji"), ["yii"])
+        self.assertEqual(namebars.codes_of("Amia"), ["ami"])
+
+    def test_batch_123_nyikina(self):
+        # 2023-04 名條第 123 批：097 晚間、106 午間（重播）印「Nyikina」，
+        # 澳洲西北 Nyikina 族，SIL Nyikina `nyh`。對不到代號會讓整集 SKIP。
+        self.assertEqual(namebars.codes_of("Nyikina"), ["nyh"])
+        # 同一批 097 晚間、106 午間另一位印「Sàmi」（a 上是重音符 `），
+        # 跟已收的「Sámi」同族，北薩米 `sme`。
+        self.assertEqual(namebars.codes_of("Sàmi"), ["sme"])
+
     def test_batch_101_cayuga(self):
         # 2022-07 名條第 101 批 b101-s020 第 11 列（07-07 午間 771 秒）：
         # 「Leroy Hill Cayu ga」，上排 Haudenosaunee。族名中央有空白會予
