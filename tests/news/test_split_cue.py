@@ -65,6 +65,27 @@ class TestSplit(unittest.TestCase):
         got = split_cue.split(run(5), 3, 2.4)
         self.assertEqual(got[3]["images"], {})
 
+    def test_each_half_samples_inside_its_own_time(self):
+        """2026-10-21 試做：065 午新 813、816 的 sample_ts 沿用前半條，
+        落佇家己範圍外，照 sample_ts 抽格會抽著前一句。"""
+        cues = run(5)
+        cues[2]["sample_ts"] = 2.8
+        got = split_cue.split(cues, 3, 2.4)
+        self.assertTrue(2.0 <= got[2]["sample_ts"] <= 2.4)
+        self.assertEqual(got[3]["sample_ts"], 2.8)
+
+    def test_a_sample_already_in_the_first_half_stays(self):
+        cues = run(5)
+        cues[2]["sample_ts"] = 2.1
+        got = split_cue.split(cues, 3, 2.4)
+        self.assertEqual(got[2]["sample_ts"], 2.1)
+        self.assertTrue(2.4 <= got[3]["sample_ts"] <= 3.0)
+
+    def test_a_cue_without_sample_ts_gets_none(self):
+        got = split_cue.split(run(5), 3, 2.4)
+        self.assertNotIn("sample_ts", got[2])
+        self.assertNotIn("sample_ts", got[3])
+
     def test_a_split_at_the_start_is_an_error(self):
         with self.assertRaises(PipelineError):
             split_cue.split(run(5), 3, 2.0)

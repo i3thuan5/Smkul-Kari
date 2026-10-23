@@ -136,6 +136,7 @@ aiyalaeho，依賴ê方向就顛倒去（這馬是 aiyalaeho → news），所�
 | `offband_backfill.py` | 已經讀完字ê集數補切一段帶外字幕（2021 帶外專題）：`prepare` 重切、精修、照時間算新編號、干焦為新 cue 出組合圖；`apply` 照時間徙 store ê TSV 編號、收讀者 TSV、時間軸佮 SRT 入庫 |
 | `segment_recut.py` | 段落表上帶外ê段（島語時間、部落信箱…）用家己ê preset 重切、精修，讀字進前接轉時間軸，cue 記 `area` |
 | `split_cue.py` | 佇量出來ê時間點kā一條 cue 剖做兩條，後壁ê重新編號 |
+| `place_cue.py` | 切段器切袂開ê時，照量出來ê秒數插一條 cue（`insert`）抑是調一條 cue ê起迄（`bounds`），袂使佮隔壁疊做伙 |
 | `migrate_strips.py` | Strip ê檔名對 cue 序號換做起始時間（照磁碟頂ê檔案走，毋是照 cue）|
 | `redump_store.py` | 店面ê JSON 重排做人讀有ê形（縮排、鍵排序、漢字免跳脫）；JSONL 一逝一筆免縮排。干焦改排版，內容無動 |
 | `gap_sheets.py`／`batches.py`／`ingest.py` | 視覺辨識批次的出題與收卷 |

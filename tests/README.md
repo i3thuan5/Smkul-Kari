@@ -103,7 +103,7 @@ tests-e2e/        fixture.py  test_roundtrip  test_mxf2mkv_roundtrip
 | srt-data-store | 校讀完成比對編號集合 | `news/test_vision_complete.py` |
 | srt-data-store | `2-asr` 改名後 Kari-SRT 與工作目錄兩處都是 `2-asr-kaldi`，whisper 另有一組平行的路徑常數 | `news/test_paths.py` |
 | whisper-asr-srt／asr-bilingual-srt | 有封存 mkv 就不向 SFTP 要；暫存區裡切 cue 留下的原檔不用（kaldi 以前會先看它）；whisper 不看 kaldi 工作目錄的 `audio.mp3`；自 SFTP 抓來的原檔抽完音軌就刪、位元組數不符要指名該集中止 | `news/test_audio.py` |
-| whisper-asr-srt | SRT 原樣存：「族語：／華語：」兩行、片尾幻覺、檔尾不補換行都不動、不加 0.5 秒留白——存下的檔和伺服器回的逐 byte 相同；smkul.csv 7 族只記族語別要換成新聞語言別代號.csv 的語別碼、查族用 `族語別(中)` 不用代號前綴、表上查不到要中止指名；主播名取 OCR 字幕前 15 條第一個「我是」，取不到寫「不明」不留空；續跑以 SRT 與紀錄列都在為做完；整批一次一集、一集失敗不擋下一集，失敗的集不留 SRT 或紀錄列 | `news/test_whisper_run.py` |
+| whisper-asr-srt | SRT 原樣存：「族語：／華語：」兩行、片尾幻覺、檔尾不補換行都不動、不加 0.5 秒留白——存下的檔和伺服器回的逐 byte 相同；smkul.csv 7 族只記族語別要換成新聞語言別代號.csv 的語別碼、查族用 `族語別(中)` 不用代號前綴、表上查不到要中止指名；目錄那列填了非保底語言別（2026-10-21 Muni Kadrangian 排灣 131 集填北排灣）要送那列的代號，不可照族別查表送保底中排灣，那列代號屬別族要中止指名；主播名取 OCR 字幕前 15 條第一個「我是」，取不到寫「不明」不留空；續跑以 SRT 與紀錄列都在為做完；整批一次一集、一集失敗不擋下一集，失敗的集不留 SRT 或紀錄列 | `news/test_whisper_run.py` |
 | whisper-asr-srt | OCR SRT 還沒入庫的集不可以送 whisper（使用者 2026-10-05：OCR 之後才確認得了語言別）——整批模式以前照節目目錄全部送，3066 集裡還沒 OCR 的也會被送出去；帶集名重跑也要擋，連音檔都不取 | `news/test_whisper_run.py` |
 | subtitle-text-source | 文稿不供字／中間產物不擋交付 | `news/test_make_one.py`、`news/test_make_srt.py` |
 | asr-bilingual-srt | 音檔時長不符指名中止／續跑跳過已完成步驟 | `news/test_asrmt_run.py` |
@@ -119,6 +119,8 @@ tests-e2e/        fixture.py  test_roundtrip  test_mxf2mkv_roundtrip
 | subtitle-text-source | `batches` 對未核實的圖切、`brief()` 對全部圖切，第 N 批內容不同（058晨 51 張一邊 3 批一邊 2 批）；讀到一半再派，兩邊都從 `b01` 起算，蓋掉已收進 Kari-SRT 的 `b01.tsv`；讀者還在寫、尚未 ingest 的檔不得把編號往後推 | `news/test_batches.py`、`news/test_vision_prompt.py` |
 | subtitle-text-source | 視覺 token 從 PNG 檔頭拿：不是 PNG、檔頭截斷、第一塊不是 IHDR 要報錯，不可猜數字；切批跑在沒有 numpy／PIL 的系統 python3，這支只准用標準函式庫 | `ocr/test_sheetsize.py` |
 | cue-timing | 一條 cue 剖做兩條，兩半愛寫入本底有這條 cue ê TSV：讀者分批是交錯ê，逐个 TSV ê號碼範圍攏重疊（063 晨 b01 3–916、b03 12–917），照「範圍包有」揀會揀著 b01，743 本底佇 b03，剖了後兩个檔攏有 743，ingest 規集擋（2026-10-19 拆 063 晨、089 晚踏著） | `news/test_split_cue.py` |
+| cue-timing | 剖開了後兩半ê sample_ts（抽格時間）愛落佇家己ê範圍：舊做法兩半攏沿用原本ê，後半條（065 午新 813、816，2026-10-21 試做）ê sample_ts 落佇前半條，照伊抽格會抽著前一句；無 sample_ts ê cue 毋通加這欄 | `news/test_split_cue.py` |
+| cue-timing | 量好ê秒數插一條 cue（place_cue insert）、調一條 cue ê起迄（bounds）：20211203_337 晚 1178–1180「山」「海」單字字幕佇空拍浪花頂，浪花墨量 314–504 比一字（約 150）較大，切段器佮仝 preset 重切攏切袂開；插入／調界攏毋通佮隔壁疊做伙（愛先調隔壁）；新 cue 無 strip、sample_ts 佇家己範圍；後壁重新編號毋改 strip 檔名；TSV 新列寫入隔壁彼个檔、其他檔干焦位移；sheets.json 新 cue 綴前一條的彼張 | `news/test_place_cue.py` |
 | cue-timing | 抓檔批次的並行集數與 ffmpeg 執行緒數預設 6／2（2 緒每核效率 0.98，預設 8–9 緒只有 0.67）；旗標勝過環境變數；0、負數、非數字要在開工前擋下（0 會讓等空位的迴圈永遠等不到）；同時跑的工作不超過上限、一集失敗不卡住整批 | `news/test_fetch_sftp_config.py` |
 
 **片頭辨識、段落表、帶外補切、字幕帶版型**（`news-segments` 與相關修改）：表放 `tests/news/README.md`，無囥佇遮。

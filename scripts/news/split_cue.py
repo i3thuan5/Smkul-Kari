@@ -65,6 +65,11 @@ def split(cues, index, at):
     tail = dict(one)
     tail["start"] = at
     tail["images"] = {}
+    # sample_ts（抽格時間）愛落佇家己ê範圍：原本ê若無佇這半，改用中點。
+    for half in (head, tail):
+        if "sample_ts" in half and not (
+                half["start"] <= half["sample_ts"] <= half["end"]):
+            half["sample_ts"] = round((half["start"] + half["end"]) / 2, 3)
     out = []
     for cue in cues[:index - 1]:
         out.append(dict(cue))

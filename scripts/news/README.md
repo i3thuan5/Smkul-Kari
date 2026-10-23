@@ -1391,6 +1391,7 @@ sheet 讀了一遍，還多花了建兩次 contact sheet 的工。真正的價�
 | `blank_runs.py` | 掠 vision TSV 內底ê長連紲空白——字幕若印佇帶外，規段會變空白（離線，免影片）|
 | `rescan_band.py` | kā一段用毋著帶切ê cue 重切、接轉去、規集重新編號（五項用號碼做鍵ê物件做伙徙）|
 | `split_cue.py` | 一條 cue 內底有兩句ê時，佇量出來ê彼點kā伊剖開（`images` 留原本ê，strip 免改名）|
+| `place_cue.py` | 某一句規條無 cue（例：337 晚空拍浪花頂ê「山」「海」）抑是 cue 起迄差傷濟：照逐格量出來ê秒數插一條（`insert`，無 strip、標 `placed`）抑是調界（`bounds`）；硩著隔壁就擋，愛先調隔壁 |
 | `migrate_strips.py` | Strip 檔名對序號換做起始時間；`scripts/ocr/stripname.py` 是號名ê所在 |
 | `redump_store.py` | 店面ê JSON 重排做人讀有ê形（縮排、鍵排序、漢字免跳脫）；JSONL 一逝一筆免縮排。干焦改排版，內容無動 |
 | `plan_month.py` | 一批＝一个播出月份：揀來源、登記 pending、出跳過報告 |

@@ -58,7 +58,8 @@ def _read_varieties(path=None):
 
 
 def code_for(entry, variety_path=None):
-    """這集送 sapolita 的語別碼，查 `新聞語言別代號.csv`。
+    """這集送 sapolita 的語別碼：目錄那列填了語言別（變體）就用那列，
+    否則查 `新聞語言別代號.csv` 的保底。
 
     鍵是節目目錄的 `族語別(中)`，不是既有的 `語言別代號`——後者對
     多語別的族只記到族語別（`ami`），而賽德克（`trv`）跟太魯閣
@@ -77,6 +78,21 @@ def code_for(entry, variety_path=None):
         raise PipelineError(
             "%s：新聞語言別代號.csv 的代號 %r（%s）查無族語別／語言別"
             "代號對照表，袂使送出" % (name, code, family))
+    # 目錄那列有填語言別（族語別下的變體）就送那個：非保底的語言別是有
+    # 網頁證據才填的（使用者 2026-10-21），保底那列填的跟表上一樣。
+    row = entry.get("語言別代號", "")
+    if row and row != code:
+        try:
+            row_family = languages.language_of(row)
+            row_variety = languages.variety_of(row)
+        except PipelineError:
+            row_family, row_variety = None, ""
+        if row_variety:
+            if row_family != family:
+                raise PipelineError(
+                    "%s：目錄語言別代號 %r 毋是%s，袂使送出"
+                    % (name, row, family))
+            return row
     return code
 
 

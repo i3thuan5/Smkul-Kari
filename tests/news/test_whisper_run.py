@@ -111,6 +111,26 @@ class TestCodeFor(Env):
         self.assertIn("20210227_058", str(caught.exception))
         self.assertIn("卑南", str(caught.exception))
 
+    def test_verified_non_default_variety_on_the_row_wins(self):
+        # 2026-10-21：Muni Kadrangian 播的排灣 131 集目錄改填北排灣（有網頁
+        # 證據），但送 sapolita 的仍是保底中排灣——照族別查表、不看那列
+        self._write_varieties([("排灣", "pwn-x-pnvn", "中排灣", "使用者保底")])
+        entry = dict(_entry(), **{"族語別(中)": "排灣",
+                                  "語言別代號": "pwn-x-vnrn"})
+        self.assertEqual(
+            whisper_run.code_for(entry, variety_path=self.variety_path),
+            "pwn-x-vnrn")
+
+    def test_row_variety_of_another_family_aborts_naming_the_episode(self):
+        # 排灣那列手誤填阿美的海岸代號：不可照送，也不可默默退回保底
+        self._write_varieties([("排灣", "pwn-x-pnvn", "中排灣", "使用者保底")])
+        entry = dict(_entry(), **{"族語別(中)": "排灣",
+                                  "語言別代號": "ami-x-pswl"})
+        with self.assertRaises(PipelineError) as caught:
+            whisper_run.code_for(entry, variety_path=self.variety_path)
+        self.assertIn("20210227_058", str(caught.exception))
+        self.assertIn("ami-x-pswl", str(caught.exception))
+
     def test_a_code_the_repo_table_does_not_know_aborts(self):
         self._write_varieties([("邵", "not-a-real-code", "", "手誤")])
         with self.assertRaises(PipelineError):

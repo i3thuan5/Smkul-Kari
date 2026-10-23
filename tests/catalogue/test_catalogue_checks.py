@@ -265,6 +265,16 @@ class TestExcludedFiles(unittest.TestCase):
         self.assertEqual(checks.excluded_problems([news_row()], [other],
                                                   server_path), [])
 
+    def test_a_broken_source_mxf_needs_no_kept_file(self):
+        # 使用者 2026-10-21：24NL003_190 等 8 支 mxf 大細 19 GB，干焦頭前
+        # 幾 MB 有資料、後壁攏是 0，轉出來 0.7 秒。彼个時段無另外一支好
+        # 保留，袂使為著欲過檢查烏白填一支。
+        broken = excluded_row(
+            伺服器路徑="/home/mkv-raw/113/7月/24NL003_190_族語午間新聞_Atayal.mkv",
+            排除原因="原始mxf影片損毀", 同一支的保留檔="")
+        self.assertEqual(checks.excluded_problems([news_row()], [broken],
+                                                  server_path), [])
+
     def test_a_non_news_programme_listed_in_the_catalogue_is_named(self):
         other = excluded_row(
             伺服器路徑="/home/mkv-raw/112/6月/23NL004_174_族語晚間新聞_Paiwan.mkv",
