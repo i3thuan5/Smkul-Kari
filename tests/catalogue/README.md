@@ -25,4 +25,4 @@
 | srt-data-store | 孤兒檔：階段目錄有而目錄表查無該成果檔名時指名 | `test_catalogue_checks.py` |
 | srt-data-store | 表裡有 969 列而階段目錄只有 75 集**不是**錯——那是還沒做 | `test_catalogue_checks.py` |
 | episode-catalogue | 兩個語料的表頭除了集識別欄之外完全一致；表頭順序不對要指名 | `test_catalogue_checks.py` |
-| episode-catalogue | 排除清單每列要寫同一支的保留檔，但「非新聞節目」（`20240930S2000.mkv` 其實是《看見族語》）本來就沒有同一支，「原始mxf影片損毀」（`24NL003_190` 等 8 支 mxf 19 GB 只有開頭幾 MB 有資料、其餘全 0，轉出來 0.7 秒）也一樣，留空不算錯——不可為了過檢查硬填一支；這種檔若出現在目錄裡照樣要指名 | `test_catalogue_checks.py` |
+| episode-catalogue | 排除清單每列要寫同一支的保留檔，但「非新聞節目」（`22NL004_066` 其實是原視華語新聞《晚安新聞》）本來就沒有同一支，「原始mxf影片損毀」（`24NL003_190` 等 8 支 mxf 19 GB 只有開頭幾 MB 有資料、其餘全 0，轉出來 0.7 秒）也一樣，留空不算錯——不可為了過檢查硬填一支；這種檔若出現在目錄裡照樣要指名 | `test_catalogue_checks.py` |

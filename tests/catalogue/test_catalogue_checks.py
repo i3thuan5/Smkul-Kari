@@ -257,10 +257,12 @@ class TestExcludedFiles(unittest.TestCase):
         self.assertIn("同一支的保留檔", problems[0])
 
     def test_a_non_news_programme_needs_no_kept_file(self):
-        # 使用者 2026-10-05：20240930S2000.mkv 是《看見族語》，毋是新聞，
-        # 本底就無「同一支」通好保留；袂使為著欲過檢查烏白填一支。
+        # 使用者 2026-10-05：22NL004_066 是原視華語新聞《晚安新聞》，毋是
+        # 族語新聞，本底就無「同一支」通好保留；袂使為著欲過檢查烏白填一支。
+        # （20240930S2000.mkv 本底嘛列佇遮，2026-10-29 更正：《看見族語》
+        # 是族語新聞改名，毋是非新聞節目，已經提掉。）
         other = excluded_row(
-            伺服器路徑="/home/mkv-raw/113/9月/20240930S2000.mkv",
+            伺服器路徑="/home/mkv-raw/111.01-111.05/3月mxf檔/22NL004_066晚間族語新聞.mkv",
             排除原因="非新聞節目", 同一支的保留檔="")
         self.assertEqual(checks.excluded_problems([news_row()], [other],
                                                   server_path), [])

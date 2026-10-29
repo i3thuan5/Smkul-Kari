@@ -41,6 +41,15 @@
 | episode-catalogue | 改名目標已經存在時一個都不搬（不搬一半） | `test_relabel.py` |
 | episode-catalogue | 2024-08 撒奇萊雅 → 阿美、2024-10 太魯閣 → 泰雅改了，目錄寫 `ami`、`tay`，但 mkv-raw 其他 2494 列都照 `新聞語言別代號.csv`（`ami-x-pswl`／海岸），whisper 也用那張表選模型——mkv-raw 來源照表填語言別；2021-01～10 ilrdf-corpus 舊批（289 列只記族語別）照舊 | `test_relabel.py` |
 
+## 播出日期改正（`scripts/news/redate.py`）
+
+| spec | scenario | 測試檔 |
+|---|---|---|
+| episode-catalogue | `20240930_274_晚間_Amis_阿美` 用的 `20241001S2000.mkv`，OCR 內容（台9線崇德土石流、山陀兒颱風來襲）和檔名都是 10-01：改日期和集數後成果檔名要跟著換成 `20241001_275_…`，族語、語言別代號、來源檔都不能動 | `test_redate.py` |
+| srt-data-store | 內容還是同一集、語言沒變，whisper 辨識結果、平行語料、kaldi 各階段**一個都不能刪**（relabel 才刪），逐階段改名；跨月 09 → 10 時月份資料夾也要換，否則 `rebuild --verify` 找到孤兒檔 | `test_redate.py` |
+| srt-data-store | 片頭辨識、辨識紀錄兩張表原本照成果檔名排好，改名後仍要排好，否則一次改名重寫出整張表的 diff；辨識紀錄那列的音長秒、段數不可以變 | `test_redate.py` |
+| episode-catalogue | 改名目標已存在（store 裡或目錄裡）時一個都不搬、不改；目錄查無這集也不搬；日期格式 `2024/10/01`、`20241001`、`2024-10-1` 要擋；跨年改日期時年度欄跟著變 | `test_redate.py` |
+
 ## 已讀字集數的帶外補切（`scripts/news/offband_backfill.py`）
 
 | spec | scenario | 測試檔 |
