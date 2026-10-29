@@ -94,6 +94,7 @@ tests-e2e/        fixture.py  test_roundtrip  test_mxf2mkv_roundtrip
 
 | spec | scenario | 測試檔 |
 |---|---|---|
+| cue-timing／srt-data-store | 重播集照首播移植：位移（p50 一格、八成兩格）、剪接拒絕、整段搬（只限首播重切過）或分區搬（安全邊、整句不切碎、區內字不同或首播自己重疊才那一區要人判、搬進來的 cue 標首播的切法設定）、重播自己重切過整件要人判、只擋新造成的重疊、範圍縮與重播自己的時間軸錯、改號照身分、TSV／訂正紀錄／段落表跟著改、像素驗收（邊界點在套用區外緣、範圍頭尾不取）、首播有字重播沒字只列不搬、拍快照與鏈式移植、入庫失敗或收到 SIGTERM 回滾（共用訂正檔讀改寫一氣呵成、回滾不蓋掉別人附加的列；換檔後的收尾出錯只警告）、家族用強連通分量排序（表在 `tests/news/README.md`〈重播移植〉） | `news/test_rebroadcast_port.py` |
 | srt-data-store | 交付物唯一正本／inventory 無第二份 | `news/test_paths.py`、`news/test_plan_month.py` |
 | srt-data-store | 命名鍵 srt_name；逐集資料在播出月份一層，跨集與總表不分層 | `news/test_resolve_slug.py`、`news/test_add_episodes.py`、`news/test_paths.py` |
 | srt-data-store | 進度表併記影片長度（由時間軸推導，尚無時間軸留白）| `news/test_tracker_row.py` |
