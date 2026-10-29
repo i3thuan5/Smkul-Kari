@@ -700,6 +700,140 @@ class TestFixes(unittest.TestCase):
             port.port_pending(lines, SRC_SLUG, TGT_SLUG, SRC, TGT,
                               self.result)
 
+    def test_pending_alternation_outside_renumbered(self):
+        """多選一寫法 `^\\(N\\|M\\)`（pending 裡大括號寫法 18 列：200 晚、206 晚、
+        251 午、013 晚…）範圍外也要改號：舊做法只認 `^N\\t`，`\\(` 開頭的整列
+        原封不動抄過去，號碼指到別條字幕，沒有任何訊息。位址、`\\(N\\)`
+        單一個、`\\(N\\than\\t…\\)` 包在大括號裡的都一樣。"""
+        last = len(self.tgt_book["cues"])
+        new = self.result["moves"][last]
+        lines = [
+            "%s\ts/^\\(2\\|%d\\)\\(\\than\\t.*\\)以工代賑/\\1\\2以工帶振/\t照畫面"
+            % (TGT_SLUG, last),
+            "%s\t/^\\(1\\|%d\\)\\than\\t/s/圖紋/圖文/\t照畫面" % (TGT_SLUG, last),
+            "%s\ts/^\\(%d\\)\\than\\t$/\\1\\than\\t接納/\t花字" % (TGT_SLUG, last),
+            "%s\ts/^\\(%d\\than\\t\\)所以/\\1那以/\t照畫面" % (TGT_SLUG, last),
+        ]
+        got, extra = port.port_pending(lines, SRC_SLUG, TGT_SLUG, SRC, TGT,
+                                       self.result)
+        self.assertEqual(extra, [])
+        self.assertEqual(got[0], "%s\ts/^\\(2\\|%d\\)\\(\\than\\t.*\\)以工代賑/"
+                         "\\1\\2以工帶振/\t照畫面" % (TGT_SLUG, new))
+        self.assertEqual(got[1], "%s\t/^\\(1\\|%d\\)\\than\\t/s/圖紋/圖文/\t照畫面"
+                         % (TGT_SLUG, new))
+        self.assertEqual(got[2], "%s\ts/^\\(%d\\)\\than\\t$/\\1\\than\\t接納/"
+                         "\t花字" % (TGT_SLUG, new))
+        self.assertEqual(got[3], "%s\ts/^\\(%d\\than\\t\\)所以/\\1那以/\t照畫面"
+                         % (TGT_SLUG, new))
+
+    def test_pending_alternation_inside_refused(self):
+        """012 晚 `s/^\\(734\\|738\\|751\\|752\\|753\\)\\than\\t.*$/
+        \\1\\than\\t/`（粉紅提問字卡清空）在移植範圍內：舊做法認不得、不擋，整段搬後
+        734 變成「有一次跨年晚會在尖石」，日後套用把正確的字清空。範圍內
+        一個號碼就要擋；跟範圍外的混在一起也擋。"""
+        inside = self.result["removed"][0]
+        for expr in ("s/^\\(%d\\)\\than\\t.*$/\\1\\than\\t/" % inside,
+                     "s/^\\(1\\|%d\\)\\than\\t.*$/\\1\\than\\t/" % inside,
+                     "/^\\(1\\|%d\\)\\than\\t/s/圖紋/圖文/" % inside):
+            lines = ["%s\t%s\t提問字卡不收" % (TGT_SLUG, expr)]
+            with self.assertRaises(PipelineError) as caught:
+                port.port_pending(lines, SRC_SLUG, TGT_SLUG, SRC, TGT,
+                                  self.result)
+            self.assertIn("要人看", str(caught.exception))
+
+    def test_pending_unrecognized_cue_sed_refused(self):
+        """`^` 後面接的不是認得的 cue 寫法（`7.4`、`\\(734\\|7..\\)`、
+        `[0-9]\\{3\\}`）：分不出指哪幾條，不可以當成不帶號放過去。"""
+        for expr in ("s/^7.4\\than\\t.*$/\\1\\than\\t/",
+                     "s/^\\(734\\|7..\\)\\than\\t.*$/\\1\\than\\t/",
+                     "s/^[0-9]\\{3\\}\\than\\t舊/新/"):
+            lines = ["%s\t%s\t看不懂" % (TGT_SLUG, expr)]
+            with self.assertRaises(PipelineError) as caught:
+                port.port_pending(lines, SRC_SLUG, TGT_SLUG, SRC, TGT,
+                                  self.result)
+            self.assertIn("看不懂", str(caught.exception))
+
+    def test_pending_wildcard_cue_left_alone(self):
+        """`^\\([0-9]*\\)`、`^\\([0-9]\\+\\than\\t\\)` 是照字找、不指號（104 午
+        金句卡、026 午花字）：不擋、不改。"""
+        lines = [
+            "%s\ts/^\\([0-9]*\\)\\than\\t.*niqan gnklaan.*$/\\1\\than\\t/\t金句卡"
+            % TGT_SLUG,
+            "%s\ts/^\\([0-9]\\+\\than\\t\\)下次選金句$/\\1/\t花字" % TGT_SLUG,
+        ]
+        got, extra = port.port_pending(lines, SRC_SLUG, TGT_SLUG, SRC, TGT,
+                                       self.result)
+        self.assertEqual(got, lines)
+        self.assertEqual(extra, [])
+
+    def test_pending_source_alternation_carried(self):
+        """首播範圍內用多選一寫的訂正，每個號碼各補一列 manual-fixes——
+        舊做法 `_sed_rows` 只認 `^N\\than\\t`，整列漏掉、訂正紀錄少了。"""
+        lines = ["%s\ts/^\\(12\\|13\\)\\(\\than\\t.*\\)以工代賑/\\1\\2以工帶振/\t"
+                 "照畫面" % SRC_SLUG]
+        got, extra = port.port_pending(lines, SRC_SLUG, TGT_SLUG, SRC, TGT,
+                                       self.result)
+        self.assertEqual(got, lines)
+        heads = []
+        for row in extra:
+            heads.append(row[:4])
+        self.assertEqual(heads, [
+            [TGT, str(self.result["ported"][12]), "以工代賑", "以工帶振"],
+            [TGT, str(self.result["ported"][13]), "以工代賑", "以工帶振"]])
+
+
+class TestSedCues(unittest.TestCase):
+    """pending-fixes.txt 裡實際出現過的帶號寫法（2026-10-28 全檔 683 列）。
+    `[[:space:]]` 當 tab 的 4 列（`/^469[[:space:]]/`）舊做法也認不得。"""
+
+    def test_numbers_of_every_shape(self):
+        cases = [
+            ("s/^\\(734\\|738\\|751\\|752\\|753\\)\\than\\t.*$/\\1\\than\\t/",
+             {734, 738, 751, 752, 753}),
+            ("s/^\\(1049\\|106[2-5]\\|109[015]\\|1089\\|110[45]\\)"
+             "\\than\\t.*$/\\1\\than\\t/",
+             {1049, 1062, 1063, 1064, 1065, 1090, 1091, 1095, 1089, 1104,
+              1105}),
+            ("s/^695\\than\\t$/695\\than\\t參與的時候/; s/^\\(71[34]\\)\\than\\t$/"
+             "\\1\\than\\t接納 瞬間的那種/", {695, 713, 714}),
+            ("s/^\\(682\\than\\t\\)所以/\\1那以/", {682}),
+            ("s/^\\(22[12]\\than\\t藉由\\)手紋/\\1手文/", {221, 222}),
+            ("/^\\(724\\|728\\|735\\)\\than\\t/s/圖紋/圖文/", {724, 728, 735}),
+            ("/^802\\t/ s/看得到/看的到/", {802}),
+            ("/^92[567][[:space:]]/s/拉阿魯哇/拉阿魯瓦/", {925, 926, 927}),
+            ("/^469[[:space:]]/s/(米粒織/(粒織/", {469}),
+            ("s/^802\\than\\t舊/803\\than\\t新/", {802, 803}),
+            ("s/^\\([0-9]\\+\\than\\t\\)下次選金句$/\\1/", set()),
+            ("s/\\([0-9]\\)．\\([0-9]\\)/\\1.\\2/g", set()),
+            ("s/Kingdalruan\\([^e]\\|$\\)/Kingdalruane\\1/g", set()),
+        ]
+        for expr, numbers in cases:
+            self.assertEqual(port._sed_cues(expr), numbers, expr)
+
+    def test_renumber_keeps_shape(self):
+        """改號照原本的寫法：多選一逐個換；`[34]` 換完還能寫成同一個字首
+        就留字元類，不行而且是獨立的一個選項就拆成 `\\|`；號碼沒變的整段
+        原樣。"""
+        expr = ("s/^\\(1049\\|106[2-5]\\|71[34]\\)\\than\\t.*$/\\1\\than\\t/")
+        moves = {1049: 1050, 1062: 1063, 1063: 1064, 1064: 1065, 1065: 1066,
+                 713: 713, 714: 714}
+        self.assertEqual(port._renumber_sed(expr, moves),
+                         "s/^\\(1050\\|106[3456]\\|71[34]\\)\\than\\t.*$/"
+                         "\\1\\than\\t/")
+        moves[1065] = 1070
+        self.assertEqual(port._renumber_sed(expr, moves),
+                         "s/^\\(1050\\|1063\\|1064\\|1065\\|1070\\|71[34]\\)"
+                         "\\than\\t.*$/\\1\\than\\t/")
+
+    def test_renumber_embedded_class_unrepresentable_refused(self):
+        """`\\(22[12]\\than\\t藉由\\)` 的字元類包在大括號中間，換完不同字首
+        （229、231）寫不回字元類，也不能拆 `\\|`（會連後面的字一起分開）：擋。"""
+        expr = "s/^\\(22[12]\\than\\t藉由\\)手紋/\\1手文/"
+        self.assertEqual(port._renumber_sed(expr, {221: 222, 222: 223}),
+                         "s/^\\(22[23]\\than\\t藉由\\)手紋/\\1手文/")
+        with self.assertRaises(PipelineError):
+            port._renumber_sed(expr, {221: 229, 222: 231})
+
 
 # ------------------------------------------------------------ 段落表、areas
 

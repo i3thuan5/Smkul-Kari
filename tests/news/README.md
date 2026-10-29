@@ -135,6 +135,14 @@
 | srt-data-store | 首播範圍內的訂正要抄給重播集（不然就是 095 午驗收被抓的「有訂正、沒紀錄」） | `test_fixes_carried_from_source` |
 | srt-data-store | 重播範圍內自己的訂正、首播同處字不一樣（075「萬用鏟」修在 075、129 還是「萬用鐮」）→ 擋：整段搬會把重播修好的蓋回去 | `test_target_own_fix_refused` |
 | srt-data-store | `pending-fixes.txt` 帶 cue 號的 sed（`/^N\t/`、`s/^N\than\t…`，100 列）範圍外改號、範圍內擋；首播範圍內帶 cue 號的補一列 manual-fixes | `test_pending_fixes_cue_lines` |
+| srt-data-store | 多選一寫法 `s/^\(N\|M\)\(\than\t.*\)…`、位址 `/^\(N\|M\)\than\t/`、`\(N\)` 單一個、`\(N\than\t…\)` 包在大括號裡的（pending 裡舊做法認不得的 22 列，大括號寫法 18 列：200 晚、206 晚、251 午、013 晚…）範圍外也要改號：舊做法只認 `^N\t`，整列原封不動，號碼指到別條字幕 | `test_pending_alternation_outside_renumbered` |
+| srt-data-store | 012 晚 `s/^\(734\|738\|751\|752\|753\)\than\t.*$/\1\than\t/`（粉紅提問字卡清空）在移植範圍內，舊做法認不得、不擋；整段搬後 734 變成「有一次跨年晚會在尖石」，日後套用會把正確的字清空。範圍內一個號碼就擋，跟範圍外混在一起也擋 | `test_pending_alternation_inside_refused` |
+| srt-data-store | `^` 後面接的不是認得的 cue 寫法（`7.4`、`\(734\|7..\)`、`[0-9]\{3\}`）：分不出指哪幾條，報「看不懂」，不可以當成不帶號放過 | `test_pending_unrecognized_cue_sed_refused` |
+| srt-data-store | `^\([0-9]*\)`、`^\([0-9]\+\than\t\)` 是照字找、不指號（104 午金句卡、026 午花字）：不擋、不改 | `test_pending_wildcard_cue_left_alone` |
+| srt-data-store | 首播範圍內用多選一寫的訂正，每個號碼各補一列 manual-fixes：舊做法 `_sed_rows` 只認 `^N\than\t`，整列漏掉，訂正紀錄少了 | `test_pending_source_alternation_carried` |
+| srt-data-store | pending 實際出現過的帶號寫法都認得出號碼：字元類 `106[2-5]`、`109[015]`、`71[34]`，`[[:space:]]` 當 tab 的 4 列（`/^469[[:space:]]/`，舊做法也認不得），換的那邊開頭的 `803\than\t`；照字找的、不帶 `^` 的不算 | `test_numbers_of_every_shape` |
+| srt-data-store | 改號照原本的寫法寫回去：`106[2-5]` 換完還同字首就留字元類，不同字首而且是獨立的一個選項就拆成 `\|`，號碼沒變的整段原樣 | `test_renumber_keeps_shape` |
+| srt-data-store | `\(22[12]\than\t藉由\)` 的字元類包在大括號中間，換成 229、231 寫不回字元類，也不能拆 `\|`（會連後面的字一起分開）：擋，要人看 | `test_renumber_embedded_class_unrepresentable_refused` |
 | news-segments | 222 晚被 2542–2564 切成兩列的帶外專題要併回一列，上下緣 690–1040 換成首播的 940–1060 | `test_segments_replaced_by_source_rows` |
 | news-segments | 位移不是整數，新列邊會變成 1597.049 這種；跟重播原本列邊差 ≤ 3 秒就用重播的，避免 1–2 秒碎列 | `test_segments_snap_to_target_edges` |
 | news-segments | 寫進臨時 work dir 的表要有「依據」（Kari-SRT 的表沒有這欄），不然 `segments.check` 擋、publish 印「段落表 wait」 | `test_segments_basis_filled` |

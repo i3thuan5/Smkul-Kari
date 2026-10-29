@@ -134,9 +134,6 @@ THUMB = (384, 216)
 PUNCT = re.compile(r"[\s，。！？、!?,.~～…「」『』：:；;（）()．・·\-—_\"“”]")
 APOSTROPHES = re.compile(r"[’‘`ʼ′]")
 CUE_FIELD = re.compile(r"^([0-9]+)(?:[–-]([0-9]+))?$")
-SED = re.compile(r"(?:/\^([0-9]+)\\t/\s*)?"
-                 r"s/((?:\\.|[^/\\])*)/((?:\\.|[^/\\])*)/g?")
-SED_LINE = re.compile(r"^\^?([0-9]+)\\than\\t(.*)$")
 
 
 # ------------------------------------------------------------ 位移
@@ -2242,48 +2239,351 @@ def _cue_list(parsed):
     return list(range(first, last + 1))
 
 
+# pending-fixes 的 sed 裡指 cue 號的地方（2026-10-28 全檔 683 列量過的寫法）：
+#
+#   /^802\t/ s/…/…/                 位址（\t 也有人寫 [[:space:]]）
+#   s/^802\than\t舊/803\than\t新/     找、換開頭各一個號
+#   s/^\(734\|738\|71[34]\)\than\t…   多選一（可以帶字元類），\(N\) 單一個也算
+#   s/^\(682\than\t\)所以/\1那以/     號碼包在大括號開頭
+#   s/^\([0-9]*\)\than\t…             照字找、不指號
+#
+# `^` 後面接別的東西（`7.4`、`[0-9]\{3\}`）分不出指哪幾條，一律報錯，不可以
+# 當成不帶號放過去：012 晚的多選一寫法就是這樣被放過，整段搬後指到別條字幕。
+CUE_ATOM = re.compile(r"(?:[0-9]|\[[0-9-]+\])+")
+CUE_WILDCARD = re.compile(r"\[0-9\](?:\*|\\\+)")
+CUE_TAB = re.compile(r"\\t|\[\[:space:\]\]")
+REPLACE_CUE = re.compile(r"[0-9]+(?=\\than\\t)")
+SED_FLAGS = "gpI0123456789"
+
+
+def _unreadable(expr, why):
+    return PipelineError("pending-fixes 看不懂的 sed（%s）：%s" % (why, expr))
+
+
+def _bracket_end(expr, pos, end):
+    """`[` 在 pos：回傳 `]` 後面的位置（`[]…]`、`[^]…]` 的第一個 `]` 是字）。"""
+    i = pos + 1
+    if i < end and expr[i] == "^":
+        i += 1
+    if i < end and expr[i] == "]":
+        i += 1
+    while i < end:
+        if expr.startswith("[:", i):
+            close = expr.find(":]", i + 2, end)
+            if close < 0:
+                raise _unreadable(expr, "[: 沒有收尾")
+            i = close + 2
+            continue
+        if expr[i] == "]":
+            return i + 1
+        i += 1
+    raise _unreadable(expr, "[ 沒有收尾")
+
+
+def _regex_end(expr, pos):
+    """從 pos 往後找沒跳脫的 `/`（regex 的收尾）。"""
+    i = pos
+    while i < len(expr):
+        char = expr[i]
+        if char == "\\":
+            i += 2
+            continue
+        if char == "[":
+            i = _bracket_end(expr, i, len(expr))
+            continue
+        if char == "/":
+            return i
+        i += 1
+    raise _unreadable(expr, "/ 沒有收尾")
+
+
+def _sed_parts(expr):
+    """sed 指令 → [(種類, 起, 迄)]，種類是 address／search／replace（迄不含
+    收尾的 `/`）。只認 `[/位址/] s/找/換/旗標`，`;` 接下一個；別的指令報錯。"""
+    parts = []
+    i = 0
+    size = len(expr)
+    while True:
+        while i < size and expr[i] in " ;":
+            i += 1
+        if i >= size:
+            return parts
+        if expr[i] == "/":
+            close = _regex_end(expr, i + 1)
+            parts.append(("address", i + 1, close))
+            i = close + 1
+            while i < size and expr[i] == " ":
+                i += 1
+        if not expr.startswith("s/", i):
+            raise _unreadable(expr, "只認 s/…/…/")
+        middle = _regex_end(expr, i + 2)
+        close = _regex_end(expr, middle + 1)
+        parts.append(("search", i + 2, middle))
+        parts.append(("replace", middle + 1, close))
+        i = close + 1
+        while i < size and expr[i] in SED_FLAGS:
+            i += 1
+
+
+def _group_end(expr, pos, end):
+    """`\\(` 後面 pos 起，回傳對應 `\\)` 的位置；順便切出最外層的 `\\|`
+    選項 → (收尾位置, [(起, 迄)])。"""
+    depth = 0
+    alts = []
+    first = pos
+    i = pos
+    while i < end:
+        if expr.startswith("\\(", i):
+            depth += 1
+            i += 2
+            continue
+        if expr.startswith("\\)", i):
+            if depth == 0:
+                alts.append((first, i))
+                return i, alts
+            depth -= 1
+            i += 2
+            continue
+        if expr.startswith("\\|", i) and depth == 0:
+            alts.append((first, i))
+            first = i + 2
+            i += 2
+            continue
+        if expr[i] == "\\":
+            i += 2
+            continue
+        if expr[i] == "[":
+            i = _bracket_end(expr, i, end)
+            continue
+        i += 1
+    raise _unreadable(expr, "\\( 沒有收尾")
+
+
+def _atom_numbers(atom):
+    """`106[2-5]` → [1062, 1063, 1064, 1065]。"""
+    heads = [""]
+    for piece in re.findall(r"[0-9]|\[[0-9-]+\]", atom):
+        if piece.startswith("["):
+            digits = []
+            body = piece[1:-1]
+            i = 0
+            while i < len(body):
+                if i + 2 < len(body) and body[i + 1] == "-":
+                    for code in range(ord(body[i]), ord(body[i + 2]) + 1):
+                        digits.append(chr(code))
+                    i += 3
+                    continue
+                digits.append(body[i])
+                i += 1
+        else:
+            digits = [piece]
+        grown = []
+        for head in heads:
+            for digit in digits:
+                grown.append(head + digit)
+        heads = grown
+    out = []
+    for head in heads:
+        out.append(int(head))
+    return sorted(set(out))
+
+
+def _ref(expr, start, end, whole):
+    return {"start": start, "end": end, "whole": whole,
+            "numbers": _atom_numbers(expr[start:end])}
+
+
+def _anchored_refs(expr, pos, end):
+    """regex 開頭是 `^`、pos 在 `^` 後面：→ (指號的地方, cue 頭的資訊)。
+    cue 頭的資訊給 `_sed_rows` 拆「改前」：{"groups": [各大括號裡號碼以外的
+    字], "rest": 起}。"""
+    if expr.startswith("\\(", pos):
+        close, alts = _group_end(expr, pos + 2, end)
+        refs = []
+        wild = False
+        inner = ""
+        for first, last in alts:
+            match = CUE_ATOM.match(expr, first, last)
+            if match and match.end() == last:
+                refs.append(_ref(expr, first, last, True))
+            elif match and CUE_TAB.match(expr, match.end(), last):
+                refs.append(_ref(expr, first, match.end(), False))
+                inner = expr[match.end():last]
+            elif CUE_WILDCARD.match(expr, first, last):
+                wild = True
+            else:
+                raise _unreadable(expr, "^\\( 後面不是 cue 號")
+        if wild and refs:
+            raise _unreadable(expr, "多選一裡有號碼也有 [0-9]*")
+        after = close + 2
+        groups = [inner]
+        if refs and refs[0]["whole"]:
+            if expr.startswith("\\(", after):
+                second, _alts = _group_end(expr, after + 2, end)
+                if not CUE_TAB.match(expr, after + 2, second):
+                    raise _unreadable(expr, "多選一後面不是 \\t")
+                groups.append(expr[after + 2:second])
+                after = second + 2
+            elif not CUE_TAB.match(expr, after, end):
+                raise _unreadable(expr, "多選一後面不是 \\t")
+        for item in refs:
+            if item["whole"] != refs[0]["whole"]:
+                raise _unreadable(expr, "多選一的寫法混雜")
+        return refs, {"groups": groups, "rest": after}
+    match = CUE_ATOM.match(expr, pos, end)
+    if match and CUE_TAB.match(expr, match.end(), end):
+        return ([_ref(expr, pos, match.end(), False)],
+                {"groups": [], "rest": match.end()})
+    if CUE_WILDCARD.match(expr, pos, end):
+        return [], None
+    raise _unreadable(expr, "^ 後面不是 cue 號")
+
+
+def _sed_commands(expr):
+    """→ 每個 s 指令一筆 {address, search, replace: (起, 迄), refs: 指號的
+    地方, head: search 的 cue 頭（沒有是 None）}。"""
+    commands = []
+    address = None
+    for kind, start, end in _sed_parts(expr):
+        if kind == "address":
+            address = (start, end)
+            continue
+        if kind == "search":
+            command = {"address": address, "search": (start, end),
+                       "refs": [], "head": None}
+            address = None
+            if command["address"]:
+                first, last = command["address"]
+                if expr.startswith("^", first) and first < last:
+                    refs, _head = _anchored_refs(expr, first + 1, last)
+                    command["refs"] += refs
+            if expr.startswith("^", start) and start < end:
+                refs, head = _anchored_refs(expr, start + 1, end)
+                command["refs"] += refs
+                if refs:
+                    command["head"] = head
+            commands.append(command)
+            continue
+        command = commands[-1]
+        command["replace"] = (start, end)
+        match = REPLACE_CUE.match(expr, start, end)
+        if match:
+            item = _ref(expr, start, match.end(), False)
+            item["replace"] = True
+            command["refs"].append(item)
+    return commands
+
+
+def _sed_refs(expr):
+    refs = []
+    for command in _sed_commands(expr):
+        refs += command["refs"]
+    return refs
+
+
 def _sed_cues(expr):
+    """sed 指到的 cue 號（集合）。看不懂的寫法丟 PipelineError。"""
     found = set()
-    for match in re.finditer(r"/\^([0-9]+)\\t/", expr):
-        found.add(int(match.group(1)))
-    for match in re.finditer(r"s/\^([0-9]+)\\than\\t", expr):
-        found.add(int(match.group(1)))
+    for item in _sed_refs(expr):
+        found.update(item["numbers"])
     return found
 
 
+def _render_atom(numbers, whole, original, old):
+    """改號後的號碼寫回去：跟原本一樣就原樣；一個號、同字首只差末位（寫成
+    字元類）、獨立的一個選項（拆成 `\\|`），其他寫不回去就擋。"""
+    numbers = sorted(set(numbers))
+    if numbers == sorted(set(old)):
+        return original
+    texts = []
+    for number in numbers:
+        texts.append(str(number))
+    if len(texts) == 1:
+        return texts[0]
+    prefix = texts[0][:-1]
+    same = True
+    for text in texts:
+        if len(text) != len(texts[0]) or text[:-1] != prefix:
+            same = False
+    if same:
+        tails = ""
+        for text in texts:
+            tails += text[-1]
+        return "%s[%s]" % (prefix, tails)
+    if whole:
+        return "\\|".join(texts)
+    raise PipelineError("pending-fixes 的 %s 改號成 %s 寫不回同一個寫法，要人看"
+                        % (original, ", ".join(texts)))
+
+
 def _renumber_sed(expr, moves):
-    def address(match):
-        return "/^%d\\t/" % moves[int(match.group(1))]
-
-    def search(match):
-        return "s/^%d\\than\\t" % moves[int(match.group(1))]
-
-    def replace(match):
-        return "/%d\\than\\t" % moves[int(match.group(1))]
-    expr = re.sub(r"/\^([0-9]+)\\t/", address, expr)
-    expr = re.sub(r"s/\^([0-9]+)\\than\\t", search, expr)
-    return re.sub(r"(?<=[^\\])/([0-9]+)\\than\\t", replace, expr)
+    """sed 裡指的 cue 號照 `moves`（{舊號: 新號}）改，寫法照原本的。"""
+    out = []
+    at = 0
+    for item in sorted(_sed_refs(expr), key=lambda ref: ref["start"]):
+        news = []
+        for number in item["numbers"]:
+            news.append(moves[number])
+        out.append(expr[at:item["start"]])
+        out.append(_render_atom(news, item["whole"],
+                                expr[item["start"]:item["end"]],
+                                item["numbers"]))
+        at = item["end"]
+    out.append(expr[at:])
+    return "".join(out)
 
 
 def _unescape(text):
     return re.sub(r"\\(.)", r"\1", text)
 
 
+def _strip_any(text):
+    """開頭的 `.*` 拿掉（後面還有字才拿）。"""
+    if text.startswith(".*") and len(text) > 2:
+        return text[2:]
+    return text
+
+
 def _sed_rows(expr):
-    """帶 cue 號的 s/// → [(cue, 改前, 改後)]，解析方式照 fixlog.py。"""
+    """帶 cue 號的 s/// → [(cue, 改前, 改後)]，多選一的每個號碼各一筆；
+    cue 頭（號碼、`\\than\\t`、包號碼的大括號）拆掉，換的那邊開頭的
+    `\\1`、`\\2` 換回大括號裡的字。"""
     out = []
-    for cue, old, new in SED.findall(expr):
-        match = SED_LINE.match(old)
-        if match:
-            cue = cue or match.group(1)
-            old = match.group(2)
-            new = re.sub(r"^(\\1|[0-9]+)\\than\\t", "", new)
-        if not cue:
+    for command in _sed_commands(expr):
+        numbers = set()
+        for item in command["refs"]:
+            if not item.get("replace"):
+                numbers.update(item["numbers"])
+        if not numbers:
+            for item in command["refs"]:
+                numbers.update(item["numbers"])
+        if not numbers:
             continue
+        start, end = command["search"]
+        old = expr[start:end]
+        groups = []
+        head = command["head"]
+        if head is not None:
+            groups = head["groups"]
+            old = "".join(groups) + expr[head["rest"]:end]
+            old = re.sub(r"^(?:\\t|\[\[:space:\]\])(?:hand?(?:\\\?)?"
+                         r"(?:\\t|\[\[:space:\]\]))?", "", old)
+        first, last = command["replace"]
+        new = expr[first:last]
+        while True:
+            match = re.match(r"\\([1-9])", new)
+            if not match:
+                break
+            slot = int(match.group(1)) - 1
+            new = (groups[slot] if slot < len(groups) else "") + new[2:]
+        new = re.sub(r"^(?:[0-9]+)?\\than\\t", "", new)
         if old.endswith("$") and not old.endswith("\\$"):
             old = old[:-1]
-        out.append((int(cue), _unescape(old) or "（空白）",
-                    _unescape(new) or "（空白）"))
+        old = _strip_any(old)
+        new = _strip_any(new)
+        for number in sorted(numbers):
+            out.append((number, _unescape(old) or "（空白）",
+                        _unescape(new) or "（空白）"))
     return out
 
 

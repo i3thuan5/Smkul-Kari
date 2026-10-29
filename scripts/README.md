@@ -187,6 +187,19 @@ news 有而遮無ê四支：`fetch_sftp.sh`（素材已經佇本機）、`plan_m
 （無月份批次，登記併入 `catalogue.py`）、`gap_sheets.py`（無 `.work`
 彼層歷史）、`batches.py`（`ocr.cli pending` 就會列未讀ê sheet）。
 
+## modeleval/——用《開會了》OCR 字幕評測原語會 AI 模型
+
+《開會了》族語／華語兩列燒印字幕當標準答案，量 sapolita（whisper 族語辨識）的 WER／CER，與翻譯服務族→華、華→族的 BLEU／chrF++。產出在 `kithann/out/modeleval-阿美/`，不進 Kari-SRT。WER／CER／BLEU／chrF++ 照 sacrebleu／jiwer 的定義重寫在 `metrics.py`（不另裝套件）。詳見 [scripts/modeleval/README.md](modeleval/README.md)。
+
+| 檔 | 做什麼 |
+|---|---|
+| `pairs.py` | 讀標準答案（`4-語言檢查/逐條語言標記.csv`）；sapolita 語別碼與翻譯服務語別碼的對照 |
+| `mtboth.py` | 翻譯服務兩個方向的用戶端（`asrmt/mtclient.py` 刻意只做族→華） |
+| `asr_run.py` | 影片抽音軌送 sapolita，回傳 SRT 原樣存 |
+| `mt_run.py` | 字幕句對兩個方向送翻譯服務，結果進快取 |
+| `metrics.py` | WER、CER、BLEU、chrF++ 與正規化 |
+| `score.py` | 切塊對齊、算分、bootstrap 信賴區間、寫報表 |
+
 ## mt/——族語新聞 → 機器翻譯訓練語料（計算引擎）
 
 sapolita 族語辨識段落配華語燒印字幕，

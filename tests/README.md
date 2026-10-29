@@ -20,6 +20,7 @@ tests/
 ├── news/         族語新聞編排層測試（來源選擇、月份計畫、完整性、
 │                 asrmt_run、smkul、tracker、refine、paths 保護…）
 ├── mt/           族語新聞平行語料：對齊、補洞、兩種時間、分層、CSV、3-srt-paragraph、交件、調參（對照表佇該目錄ê README）
+├── modeleval/    用《開會了》OCR 字幕評測 sapolita 與翻譯服務（WER／CER／BLEU／chrF++；對照表在該目錄的 README）
 ├── aiyalaeho/    《開會了》編排層測試（檔名解析、雙槽驗版型、雙列
 │   │             組裝、九欄進度表、0-cue 交付、離線重建）
 │   ├── langcheck/  逐條語言判定（對照表佇該目錄ê README）
