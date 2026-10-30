@@ -159,6 +159,31 @@ class TestRename(unittest.TestCase):
         proc = run("rename", "/home/a.partial", "/home/a\nb.mkv")
         self.assertNotEqual(proc.returncode, 0)
 
+    def test_rename_keeps_an_apostrophe_and_chinese_whole(self):
+        # 195 个拉阿魯哇ê成果檔名有撇號；撇號佇雙引號內底是普通字元，
+        # 愛原樣送去，莫予吞去抑是轉義。
+        proc = run(
+            "rename",
+            "/home/mkv-raw/110.01-110.10/1月原始mxf檔/20210103s0800.mkv",
+            "/home/news/mkv/2021-01/20210103_003_晨間_Hla'alua_拉阿魯哇.mkv")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(
+            proc.stdout,
+            'rename "/home/mkv-raw/110.01-110.10/1月原始mxf檔/'
+            '20210103s0800.mkv" "/home/news/mkv/2021-01/'
+            '20210103_003_晨間_Hla\'alua_拉阿魯哇.mkv"\n')
+
+    def test_rename_refuses_a_double_quote_in_either_argument(self):
+        # 兩个引數攏愛擋：批次內底雙引號會共引數提早收煞。
+        self.assertEqual(run("rename", '/a"b.mkv', "/ok.mkv").returncode, 2)
+        self.assertEqual(run("rename", "/ok.mkv", '/a"b.mkv').returncode, 2)
+
+    def test_mkdir_keeps_an_apostrophe_too(self):
+        proc = run("mkdir", "/home/news/mkv/Hla'alua")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stdout,
+                         '-mkdir "/home/news/mkv/Hla\'alua"\n')
+
     def test_rename_takes_exactly_two_paths(self):
         self.assertNotEqual(run("rename", "/home/a").returncode, 0)
         self.assertNotEqual(
@@ -173,3 +198,36 @@ class TestRename(unittest.TestCase):
         """
         proc = run("rename", "/home/a.partial", "/home/a.mkv")
         self.assertFalse(proc.stdout.startswith("-"))
+
+
+class TestRmdir(unittest.TestCase):
+    """rmdir：搬空ê舊資料夾最後才清（`video_names prune`）。
+
+    **袂使加頭前彼个 "-"**：mkdir 用 "-" 是因為「已經有矣」是正常狀況，
+    rmdir 倒反——伊失敗就是資料夾其實毋是空ê（列出了後有人囥檔入去），
+    彼个失敗愛顯出來，毋是吞掉。伺服器遇著非空資料夾本來就會拒絕，這是
+    第二層保險。
+    """
+
+    def test_rmdir_builds_one_quoted_line(self):
+        proc = run("rmdir", "/home/mkv-raw/110.01-110.10/1月原始mxf檔")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(
+            proc.stdout,
+            'rmdir "/home/mkv-raw/110.01-110.10/1月原始mxf檔"\n')
+
+    def test_rmdir_does_not_tolerate_failure(self):
+        proc = run("rmdir", "/home/mkv-raw/a")
+        self.assertFalse(proc.stdout.startswith("-"))
+
+    def test_rmdir_refuses_a_double_quote_or_a_newline(self):
+        self.assertEqual(run("rmdir", '/a"b').returncode, 2)
+        self.assertEqual(run("rmdir", "/a\nb").returncode, 2)
+
+    def test_rmdir_takes_exactly_one_path(self):
+        self.assertEqual(run("rmdir").returncode, 2)
+        self.assertEqual(run("rmdir", "/a", "/b").returncode, 2)
+
+    def test_rmdir_keeps_an_apostrophe_whole(self):
+        proc = run("rmdir", "/home/mkv-raw/Hla'alua")
+        self.assertEqual(proc.stdout, 'rmdir "/home/mkv-raw/Hla\'alua"\n')

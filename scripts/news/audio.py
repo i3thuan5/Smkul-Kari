@@ -23,17 +23,22 @@ import os
 import subprocess
 
 from scripts.news import paths
-from scripts.news import resolve_slug
-from scripts.news import sources
+from scripts.news import video_names
 from scripts.errors import PipelineError
 
 SFTP_SCRIPT = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "sftp.sh")
 
 
-def video_source(entry):
-    """(local, remote) for this episode's video: the archived mkv, else
-    a remote path chosen by `sources.pick`.
+def video_source(entry, sftp=None, say=print):
+    """(local, remote) for this episode's video: the archived mkv, else the
+    place it is on the server.
+
+    The server place is the canonical one derived from the name
+    (`paths.video_path`); only when the server says that is *not found* does
+    `video_names.locate` fall back to `原始影片檔案位置` (and say so), so an
+    episode not yet moved into place can still be read. A failure that is
+    not "not found" (timeout, permission) is raised, not papered over.
 
     暫存區裡切 cue 時可能留下的原檔 SHALL NOT 被當作捷徑讀——它的
     生命是切 cue 那一步自己的；兩爿引擎對仝一集才會走仝一條路。
@@ -42,30 +47,19 @@ def video_source(entry):
     archived = paths.mkv_path(name)
     if os.path.exists(archived):
         return archived, ""
-    chosen, problem = sources.pick(entry)
-    if not chosen:
-        raise PipelineError("%s：本機無封存 mkv，節目目錄嘛揀袂出來源（%s）"
-                            % (name, problem))
-    return "", resolve_slug.server_path(chosen)
+    located = video_names.locate(entry, sftp or video_names.Sftp(), say=say)
+    return "", located.path
 
 
-def _remote_size(remote):
-    out = subprocess.run(["bash", SFTP_SCRIPT, "ls", remote],
-                         capture_output=True, text=True)
-    for line in out.stdout.splitlines():
-        if line.startswith("-"):
-            return int(line.split()[4])
-    return None
-
-
-def fetch_video(remote, local):
+def fetch_video(remote, local, sftp=None):
     """SFTP get, verified by byte count.
 
     一份位元組數已經對的本機檔案重用、不重抓（CLAUDE.md〈長時間的
     背景工作〉的既有做法）；抓完位元組數不符就刪掉不完整的檔並
-    中止，不留半個檔給下一步誤用。
+    中止，不留半個檔給下一步誤用。伺服器問大小失敗：講「揣無」ê干焦
+    伺服器明講 not found ê時，逾時、權限這款失敗直接 raise。
     """
-    size = _remote_size(remote)
+    size = (sftp or video_names.Sftp()).stat(remote)
     if size is None:
         raise PipelineError("SFTP 揣無：%s" % remote)
     os.makedirs(os.path.dirname(local), exist_ok=True)
@@ -91,18 +85,20 @@ def extract_audio(local_video, out):
     return out
 
 
-def get_audio(entry, out):
+def get_audio(entry, out, sftp=None):
     """取這集ê音檔到 out：有封存 mkv 就直接抽，SFTP 抓ê話抽煞就刪。
 
     封存 mkv 是逐集的正本備份，永遠不刪；自 SFTP 抓來的只是這一步
     的暫存，磁碟放袂落逐集 2.2 GB 累積，抽煞就愛清。
     """
     name = entry["srt_name"]
-    local, remote = video_source(entry)
+    local, remote = video_source(entry, sftp=sftp)
     fetched = False
     if not local:
-        local = paths.staged_path(name, entry["file"])
-        fetch_video(remote, local)
+        # 暫存檔名是伺服器頂彼支ê名：正規位置就是 <成果檔名>.mkv，退回
+        # 原始位置就是來源ê原名。
+        local = paths.staged_path(name, remote)
+        fetch_video(remote, local, sftp=sftp)
         fetched = True
     extract_audio(local, out)
     if fetched:

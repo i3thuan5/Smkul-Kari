@@ -110,8 +110,8 @@ aiyalaeho，依賴ê方向就顛倒去（這馬是 aiyalaeho → news），所�
 
 | 檔 | 做什麼 |
 |---|---|
-| `paths.py` | 語料路徑的單一出處（`stage_path()` 是階段目錄唯一出口，逐集檔案囥佇月份一層；`--var` 供 shell 取值；版面與保護轉出自 `scripts/datadirs.py`） |
-| `audio.py` | 取這集辨識用ê音檔：封存 mkv → SFTP（位元組數比對），抽煞就刪抓來ê原檔——kaldi 佮 whisper 兩條線公家，暫存區既有ê原檔無算捷徑 |
+| `paths.py` | 語料路徑的單一出處（`stage_path()` 是階段目錄唯一出口，逐集檔案囥佇月份一層；`video_path()` 算影片佇伺服器ê正規位置 `/home/news/mkv/<年-月>/<成果檔名>.mkv`；`--var` 供 shell 取值；版面與保護轉出自 `scripts/datadirs.py`） |
+| `audio.py` | 取這集辨識用ê音檔：本機封存 mkv → 伺服器ê正規位置（揣無才退回 `原始影片檔案位置`，位元組數比對），抽煞就刪抓來ê原檔——kaldi 佮 whisper 兩條線公家，暫存區既有ê原檔無算捷徑 |
 | `asrmt_batch.py` | 語音側（kaldi）整批：逐集 抓音檔→解碼→投影＋render→刪音檔 |
 | `asrmt_run.py` | 語音側（kaldi）單集步驟（預設 words→raw；翻譯佮品質判斷 `--step` 指名） |
 | `whisper_run.py` | 語音側（whisper／sapolita）逐集佮整批：取音檔→查語別碼（`新聞語言別代號.csv`）→辨識→原樣存 SRT→寫辨識紀錄→刪暫存音檔；一次一集、可續跑（SRT 佮紀錄兩者都在才算做完） |
@@ -120,10 +120,10 @@ aiyalaeho，依賴ê方向就顛倒去（這馬是 aiyalaeho → news），所�
 | `pairs_tune.py` | 調合併門檻：`--sample` 對新聞抽樣寫裁判請求（一批四个 50 組ê檔）、`--ingest NN` 收回覆、`--report` 出各格比例表佮選值；攏囥 `kithann/out/mt/調參/`，毋入 Kari-SRT |
 | `paragraph_export.py` | 雙語字幕交件：`--export 年-月…` 對 Kari-SRT 原樣複製 `3-srt-paragraph` 佮 `2-csv-analysis`、出一集一逝ê清單（時長用 CSV ê時間，含留白）；`--spot-sample`／`--spot-report` 抽高信心組予 Opus 裁判（請求格式佮 `pairs_tune` 仝款；核對 CSV 用延伸後ê時間）。攏囥 `kithann/out/news/雙語字幕*/`，毋入 Kari-SRT |
 | `anchors_ami.json` | 阿美語錨點表（數詞＋借詞專名，拼法對照模型 lexicon） |
-| `plan_month.py` | 一批＝一个播出月份：揀來源、出跳過報告（**唯讀**，無寫任何檔）|
+| `plan_month.py` | 一批＝一个播出月份：列這个月ê集數佮影片ê正規位置（**唯讀、離線**，無寫任何檔、毋連伺服器；退路佇實際取檔ê時處理）|
 | `sources.py` | 一集配一支檔的規則（母帶優先→時段相符→同名不同夾→一檔一集） |
-| `episodes.py`／`resolve_slug.py` | 節目目錄讀出來ê逐集條目（`slug`／`file`／`pending` 攏是推導ê）；目錄索引與命名 |
-| `fetch_sftp.sh`／`run_cues.sh`／`sftp.sh`／`sftp-askpass.sh` | 影像側抓檔與切 cue（吃播出月份，清單對節目目錄提；密碼只以檔案存在；`sftp.sh` 收動詞＋獨立參數，路徑不進指令字串） |
+| `episodes.py`／`resolve_slug.py` | 節目目錄讀出來ê逐集條目（`slug`／`remote`／`pending` 攏是推導ê，`remote` 是影片ê正規位置，全流程取遠端路徑ê唯一出口）；目錄索引與命名 |
+| `fetch_sftp.sh`／`run_cues.sh`／`sftp.sh`／`sftp-askpass.sh` | 影像側抓檔與切 cue（吃播出月份，清單對節目目錄提；密碼只以檔案存在；`sftp.sh` 收動詞（get／put／mkdir／ls／rename／rmdir）＋獨立參數，路徑不進指令字串；`fetch_sftp.sh` 正規位置揣無時叫 `video_names locate` 取退路） |
 | `cut_months.py` | 一個月接一個月跑 `fetch_sftp.sh`（預設 2021-11～2024-11）；每月開始前看磁碟，不夠就等；每月一列寫 `logs/cut-progress.tsv` |
 | `namebars.py` | 受訪者名條 → 段落表「受訪者語言別代號」：`grab` 照逐秒 `name` 特徵逐擺名條截一格、裁右爿、仝款ê歸組；`apply` 讀者答案（族名）換代號寫入 |
 | `refine_cues.py`／`verify_band.py` | cue 邊界精修（一集一支 ffmpeg、原生格率；**愛 `--preset`／`--presets`**，精修愛佮切 cue 用仝一款判準，無講就拒絕走）、字幕帶前驗（順紲驗欄方向：字幕ê右緣有無猶佇比對遮罩內底） |
@@ -131,11 +131,12 @@ aiyalaeho，依賴ê方向就顛倒去（這馬是 aiyalaeho → news），所�
 | `blank_runs.py` | 掠 vision TSV 內底ê長連紲空白：字幕印佇帶外ê段會規段變空白 |
 | `rescan_band.py` | 用改正ê帶重切一段，接轉原本ê cue 排、規集重新編號（讀字了後ê補救；重切接回ê算術佇 `splice.py`） |
 | `splice.py` | 重切一段、接轉時間軸ê純算術（照號碼、照秒數）佮重切本身；`rescan_band` 佮 `segment_recut` 公家 |
-| `opening.py` | 片頭辨識：切 cue 時截 20／30／40 秒三格（已入庫ê集數用 curl 抓頭尾兩段補截）、組合圖、讀者 TSV → `1-ocr/片頭辨識.csv`，語別佮目錄無仝就擋 |
+| `opening.py` | 片頭辨識：切 cue 時截 20／30／40 秒三格（已入庫ê集數用 curl 抓頭尾兩段補截；先問影片ê正規位置，揣無才退回原始位置）、組合圖、讀者 TSV → `1-ocr/片頭辨識.csv`，語別佮目錄無仝就擋 |
 | `shots.py` | 影片 → 逐秒畫面特徵（160×90 縮圖：節目框在毋在、紅條、棚內參考格、語別牌、單元標誌），截判不準ê原圖；參考格佇 `shot_refs/<年>/` |
 | `segments.py` | 逐秒特徵 → 段落表（兩層判法）、讀者確認、段落表ê把關（`publish` 佮 `rebuild --verify` 攏用） |
-| `relabel.py` | 片頭辨識查出目錄語別標毋著：改目錄那一列（族語別、代號、成果檔名、備註），store 內佮語別無關ê檔改名、用毋著語言做ê（whisper、平行語料、kaldi）刪掉等重跑 |
-| `redate.py` | 目錄查出某集播出日期、集數標毋著（例：檔名是 10-01，目錄寫 09-30）：改目錄那一列（年度、集數、播出日期、節目名稱〔跨 2024-08-01 時跟咧換〕、成果檔名、備註），store 內逐階段ê檔（含 whisper、平行語料、kaldi，因為內容猶是仝一集）攏改名、毋刪，跨月ê月份資料夾嘛換，三張紀錄表ê列跟咧改 |
+| `relabel.py` | 片頭辨識查出目錄語別標毋著：改目錄那一列（族語別、代號、成果檔名、備註），store 內佮語別無關ê檔改名、用毋著語言做ê（whisper、平行語料、kaldi）刪掉等重跑；**伺服器頂ê影片嘛先綴咧搬去新成果檔名ê位置**（失敗整个毋動本機，本機失敗會搬轉去） |
+| `redate.py` | 目錄查出某集播出日期、集數標毋著（例：檔名是 10-01，目錄寫 09-30）：改目錄那一列（年度、集數、播出日期、節目名稱〔跨 2024-08-01 時跟咧換〕、成果檔名、備註），store 內逐階段ê檔（含 whisper、平行語料、kaldi，因為內容猶是仝一集）攏改名、毋刪，跨月ê月份資料夾嘛換，三張紀錄表ê列跟咧改；**伺服器頂ê影片嘛先綴咧搬去新成果檔名ê位置** |
+| `video_names.py` | 伺服器上ê新聞影片搬去 `/home/news/mkv/<年-月>/<成果檔名>.mkv`（rename，毋是複製）：`plan` 規劃、`probe` 探針、`apply` 搬、`check` 核對、`undo` 還原、`prune`（最後一步：清掉搬空ê舊資料夾，只刪空ê）、`locate` 揣影片（新位置揣無才退回 `原始影片檔案位置`）、`rename_episode`（改成果檔名時影片綴咧改名） |
 | `offband_backfill.py` | 已經讀完字ê集數補切一段帶外字幕（2021 帶外專題）：`prepare` 重切、精修、照時間算新編號、干焦為新 cue 出組合圖；`apply` 照時間徙 store ê TSV 編號、收讀者 TSV、時間軸佮 SRT 入庫 |
 | `segment_recut.py` | 段落表上帶外ê段（島語時間、部落信箱…）用家己ê preset 重切、精修，讀字進前接轉時間軸，cue 記 `area` |
 | `split_cue.py` | 佇量出來ê時間點kā一條 cue 剖做兩條，後壁ê重新編號 |

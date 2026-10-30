@@ -30,6 +30,25 @@ def _entry(**over):
     return one
 
 
+NAME = "20210201_032_午間_Atayal_泰雅"
+CANON = "/home/news/mkv/2021-02/20210201_032_午間_Atayal_泰雅.mkv"
+
+
+class _Sftp(object):
+    """假ê伺服器：`{路徑: 大小}`；`broken` 內底ê路徑回別款失敗。"""
+
+    def __init__(self, files=None, broken=()):
+        self.files = dict(files or {})
+        self.broken = set(broken)
+        self.asked = []
+
+    def stat(self, path):
+        self.asked.append(path)
+        if path in self.broken:
+            raise PipelineError("sftp ls 失敗：Connection timed out")
+        return self.files.get(path)
+
+
 class TestVideoSource(unittest.TestCase):
     def test_the_archived_mkv_is_used_first(self):
         tmp = tempfile.mkdtemp()
@@ -55,37 +74,66 @@ class TestVideoSource(unittest.TestCase):
         open(staged, "w").close()
         with mock.patch.object(audio.paths, "STAGE", stage_tmp), \
                 mock.patch.object(audio.paths, "MKV_ARCHIVE", mkv_tmp):
-            local, remote = audio.video_source(_entry())
+            local, remote = audio.video_source(
+                _entry(), sftp=_Sftp({CANON: 5}), say=lambda line: None)
         self.assertEqual(local, "")
-        self.assertTrue(remote.startswith("/docker/ilrdf-corpus/"), remote)
+        self.assertEqual(remote, CANON)
 
-    def test_no_mkv_falls_back_to_the_remote_video(self):
+    def test_no_mkv_uses_the_canonical_place_on_the_server(self):
         tmp = tempfile.mkdtemp()
         self.addCleanup(__import__("shutil").rmtree, tmp, True)
+        fake = _Sftp({CANON: 5})
         with mock.patch.object(audio.paths, "MKV_ARCHIVE", tmp):
-            local, remote = audio.video_source(_entry())
+            local, remote = audio.video_source(_entry(), sftp=fake)
         self.assertEqual(local, "")
-        self.assertEqual(
-            remote,
-            "/docker/ilrdf-corpus/族語新聞/110.1-110.10/2月原始mxf檔/"
-            "20NL003_32午間族語新聞.mxf")
+        self.assertEqual(remote, CANON)
 
-    def test_a_mkv_raw_source_is_fetched_from_its_own_root(self):
-        # 2026-09-23 新母帶佇 /home/mkv-raw，毋是 /docker 底下
+    def test_the_original_column_is_not_read_when_the_canonical_exists(self):
+        # 原始欄亂寫抑是有幾若條候選，攏無影響；干焦問新位置一擺。
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, tmp, True)
+        for cell in ("", "ilrdf-corpus/亂寫.mxf;ilrdf-corpus/別支.mp4"):
+            fake = _Sftp({CANON: 5})
+            with mock.patch.object(audio.paths, "MKV_ARCHIVE", tmp):
+                _local, remote = audio.video_source(
+                    _entry(原始影片檔案位置=cell), sftp=fake)
+            self.assertEqual(remote, CANON)
+            self.assertEqual(fake.asked, [CANON])
+
+    def test_a_missing_canonical_falls_back_to_the_original_and_says_so(self):
+        # 2026-09-23 新母帶佇 /home/mkv-raw，毋是 /docker 底下；猶無搬
+        # 進正式位置ê集數（新批次剛匯入）就退回遐。
         raw = "home/mkv-raw/112/7月/23NL003_183_族語午間新聞_Kanakanavu.mkv"
         tmp = tempfile.mkdtemp()
         self.addCleanup(__import__("shutil").rmtree, tmp, True)
+        said = []
         with mock.patch.object(audio.paths, "MKV_ARCHIVE", tmp):
-            local, remote = audio.video_source(_entry(原始影片檔案位置=raw))
+            local, remote = audio.video_source(
+                _entry(原始影片檔案位置=raw), sftp=_Sftp({"/" + raw: 5}),
+                say=said.append)
         self.assertEqual(remote, "/" + raw)
+        self.assertIn("退回原始位置", "\n".join(said))
 
-    def test_no_source_anywhere_is_named(self):
+    def test_no_source_anywhere_names_both_places(self):
         tmp = tempfile.mkdtemp()
         self.addCleanup(__import__("shutil").rmtree, tmp, True)
         with mock.patch.object(audio.paths, "MKV_ARCHIVE", tmp):
             with self.assertRaises(PipelineError) as caught:
-                audio.video_source(_entry(原始影片檔案位置=""))
+                audio.video_source(_entry(原始影片檔案位置=""),
+                                   sftp=_Sftp({}))
         self.assertIn("20210201_032", str(caught.exception))
+        self.assertIn(CANON, str(caught.exception))
+
+    def test_a_failure_that_is_not_not_found_does_not_fall_back(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, tmp, True)
+        raw = "home/mkv-raw/112/7月/a.mkv"
+        fake = _Sftp({"/" + raw: 5}, broken=[CANON])
+        with mock.patch.object(audio.paths, "MKV_ARCHIVE", tmp):
+            with self.assertRaises(PipelineError) as caught:
+                audio.video_source(_entry(原始影片檔案位置=raw), sftp=fake)
+        self.assertIn("timed out", str(caught.exception))
+        self.assertEqual(fake.asked, [CANON])
 
     def test_kaldis_extracted_mp3_is_never_consulted(self):
         # whisper 不看 kaldi 工作目錄裡已抽好的 audio.mp3——
@@ -101,7 +149,8 @@ class TestVideoSource(unittest.TestCase):
         open(bogus_mp3, "w").close()
         with mock.patch.object(audio.paths, "MKV_ARCHIVE", mkv_tmp), \
                 mock.patch.object(audio.paths, "ASRMT_WORK", kaldi_work):
-            local, remote = audio.video_source(_entry())
+            local, remote = audio.video_source(_entry(),
+                                               sftp=_Sftp({CANON: 5}))
         self.assertNotEqual(local, bogus_mp3)
         self.assertEqual(local, "")
         self.assertTrue(remote)
@@ -175,6 +224,19 @@ class TestFetchVideo(unittest.TestCase):
         self.assertIn(self.REMOTE, str(caught.exception))
         self.assertFalse(os.path.exists(local))
 
+    def test_a_connection_failure_is_not_reported_as_a_missing_file(self):
+        # 本底 `_remote_size` 干焦看標準輸出，逾時嘛講「揣無」，網路一抖
+        # 就誤判做缺檔。
+        def fake_run(cmd, **kw):
+            return subprocess.CompletedProcess(
+                cmd, 255, stdout="", stderr="Connection timed out")
+
+        with mock.patch.object(audio.subprocess, "run", fake_run):
+            with self.assertRaises(PipelineError) as caught:
+                audio.fetch_video(self.REMOTE, "/tmp/wont-be-written")
+        self.assertIn("timed out", str(caught.exception))
+        self.assertNotIn("揣無", str(caught.exception))
+
     def test_remote_missing_is_named(self):
         def fake_run(cmd, **kw):
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
@@ -197,7 +259,7 @@ class TestGetAudio(unittest.TestCase):
 
         written_video_path = {}
 
-        def fake_fetch(remote, local):
+        def fake_fetch(remote, local, sftp=None):
             written_video_path["path"] = local
             os.makedirs(os.path.dirname(local), exist_ok=True)
             with open(local, "wb") as handle:
@@ -214,10 +276,13 @@ class TestGetAudio(unittest.TestCase):
                 mock.patch.object(audio.paths, "STAGE", stage_tmp), \
                 mock.patch.object(audio, "fetch_video", fake_fetch), \
                 mock.patch.object(audio, "extract_audio", fake_extract):
-            audio.get_audio(_entry(), out)
+            audio.get_audio(_entry(), out, sftp=_Sftp({CANON: 5}))
 
         self.assertTrue(os.path.exists(out))
         self.assertFalse(os.path.exists(written_video_path["path"]))
+        # 暫存檔名佮成果檔名仝款，毋是來源ê原名。
+        self.assertEqual(os.path.basename(written_video_path["path"]),
+                         NAME + ".mkv")
 
     def test_the_archived_mkv_is_never_deleted(self):
         mkv_tmp = tempfile.mkdtemp()

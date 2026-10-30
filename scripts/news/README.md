@@ -211,8 +211,41 @@ python3 -m scripts.news.whisper_run --server URL ...    # 換伺服器（測試�
 **約 1,065 支、2.3 TB**。下載實測 **75 MB/s**，比本機那顆 NTFS-FUSE
 外接碟（42 MB/s）還快，所以從 SFTP 抓比從本機碟讀更划算。
 
-檔名跟節目目錄的「原始影片檔案位置」欄一一對應，整批可以直接由
-那份目錄驅動，不必再爬遠端。
+節目目錄的「原始影片檔案位置」欄記的是**交付時**的位置，整批由目錄驅動，
+不必爬遠端；但流程找影片不再靠這一欄，見下一節。
+
+### 影片現在放哪裡（正規位置）
+
+新聞的影片搬到 `/home/news/mkv/<年-月>/<成果檔名>.mkv`（rename，不是複製；
+年-月取自成果檔名，不取自原資料夾），跟 SRT、預覽檔同名同月份排法。位置是
+成果檔名的純函式（`paths.video_path()`），目錄不另設欄；`episodes.py` 為每集
+算一個 `remote` 欄，全流程取遠端路徑只有這個出口。`原始影片檔案位置` 原樣保留，
+作追蹤紀錄，也是**正規位置找不到時的退路**：
+
+```bash
+python3 -m scripts.news.video_names locate 20210101_001_午間_Rukai_魯凱
+# 路徑<TAB>大小<TAB>來源（正規／原始）；退回原始位置時 stderr 會說
+```
+
+- 只有伺服器明確回報「找不到」才退；連線逾時、權限錯誤直接報錯，不退。
+- 抓檔的三個地方（`audio.py`、`opening.py grab-remote`、`fetch_sftp.sh`）都走這套；
+  `plan_month` 是離線唯讀，只列正規位置。
+- 排除影片（`排除影片.csv`）與開會了不搬。
+
+搬移工具 `video_names.py`（一支一支 rename，用 `sftp.sh`，不複製）：
+
+```bash
+python3 -m scripts.news.video_names                  # plan：唯讀，不連伺服器
+python3 -m scripts.news.video_names probe 成果檔名    # 先搬一支過去再搬回來
+python3 -m scripts.news.video_names apply            # 先寫清單 kithann/out/news/video-rename/<時間>.csv，再搬
+python3 -m scripts.news.video_names check            # 對伺服器核對（新位置恰為目錄每列各一支、大小同清單）
+python3 -m scripts.news.video_names undo 清單         # 依清單反向搬
+python3 -m scripts.news.video_names prune [--execute]  # 最後一步：清掉搬空的舊資料夾（只刪空的）
+```
+
+`apply` 可中斷續跑，兩邊都有就停下不覆寫。改成果檔名（`relabel`／`redate`）時
+影片會跟著 rename，伺服器那步先做；兩個位置都找不到就拒絕。新批次匯入目錄後，
+要先 `plan`／`apply` 才算收進來（見 `smkul-catalogue-import`）。
 
 ### 連線
 
@@ -1398,7 +1431,7 @@ sheet 讀了一遍，還多花了建兩次 contact sheet 的工。真正的價�
 | `migrate_strips.py` | Strip 檔名對序號換做起始時間；`scripts/ocr/stripname.py` 是號名ê所在 |
 | `redump_store.py` | 店面ê JSON 重排做人讀有ê形（縮排、鍵排序、漢字免跳脫）；JSONL 一逝一筆免縮排。干焦改排版，內容無動 |
 | `plan_month.py` | 一批＝一个播出月份：揀來源、登記 pending、出跳過報告 |
-| `sources.py` | 一集配一支檔的四條規則；揀袂出來就跳過並回報 |
+| `sources.py` | 一集配一支檔的四條規則——新批次匯入目錄時用，退回原始位置揀候選時嘛用；執行時流程毋閣用伊揀檔（影片位置改由成果檔名推導） |
 | `resolve_slug.py` | 用 `news/smkul.csv` 把路徑對成 work dir／SRT 名稱 |
 | `paths.py` | 全部路徑的單一出處；`stage_path()` 是階段目錄唯一出口；`--var` 供 shell 取值 |
 | `publish.py` | 逐集把關→清 `pending`、遷 `cues`、定版 `smkul.csv`（未完成的集只擋自己，不擋同批其他集）|

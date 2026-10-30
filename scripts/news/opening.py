@@ -108,19 +108,6 @@ def sparse_copy(remote, size, target, fetch=_curl):
     return target
 
 
-def remote_size(remote):
-    """伺服器頂懸這个檔幾 byte（`sftp.sh ls`；`curl -I` 提袂著）。"""
-    folder, name = os.path.split(remote)
-    here = os.path.dirname(os.path.abspath(__file__))
-    done = subprocess.run([os.path.join(here, "sftp.sh"), "ls", folder],
-                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    for line in _decode(done.stdout).splitlines():
-        parts = line.split(None, 8)
-        if len(parts) == 9 and parts[8].strip() == name:
-            return int(parts[4])
-    raise PipelineError("伺服器頂懸無 %s" % remote)
-
-
 def _decode(raw):
     """sftp 印非 ASCII 檔名用八進位 `\\ooo`，先解轉來。"""
     text = raw.decode("utf-8", "replace")
@@ -136,13 +123,55 @@ def _decode(raw):
     return out.decode("utf-8", "replace")
 
 
-def grab_remote(remote, work, stage=None):
-    """已入庫ê集數補做：頭尾兩段抓落來截三格，稀疏檔隨刪。"""
+def _located(remote, sftp, say, entry_for):
+    """(實際路徑, 大小)：先問 `remote`，揣無才退回原始位置。
+
+    退路干焦 `remote` 是由成果檔名推導ê正規位置ê時才有（需要查目錄揣
+    原始欄）；人家己指定ê路徑揣無就直接報錯。連線逾時、權限錯誤這款
+    毋是「揣無」ê失敗，`stat` 會 raise，這爿袂退。
+    """
+    size = sftp.stat(remote)
+    if size is not None:
+        return remote, size
+    name = os.path.basename(remote)[:-len(".mkv")]
+    try:
+        canonical = paths.video_path(name) == remote
+    except PipelineError:
+        canonical = False
+    if not canonical:
+        raise PipelineError("伺服器頂懸無 %s" % remote)
+    from scripts.news import video_names
+    if entry_for is None:
+        from scripts.news import episodes
+        entry_for = _entry_finder(episodes.load())
+    found = video_names.locate(entry_for(name), sftp, say=say)
+    return found.path, found.size
+
+
+def _entry_finder(entries):
+    def find(name):
+        for entry in entries:
+            if entry["srt_name"] == name:
+                return entry
+        raise PipelineError("節目目錄內底無 %s" % name)
+    return find
+
+
+def grab_remote(remote, work, stage=None, sftp=None, say=print,
+                entry_for=None):
+    """已入庫ê集數補做：頭尾兩段抓落來截三格，稀疏檔隨刪。
+
+    `remote` 是正規位置（由成果檔名推導）；伺服器頂揣無才退回 `原始影片
+    檔案位置`，退ê時會講。
+    """
+    from scripts.news import video_names
+    sftp = sftp or video_names.Sftp()
+    path, size = _located(remote, sftp, say, entry_for)
     folder = stage or os.path.join(paths.STAGE, "opening")
     os.makedirs(folder, exist_ok=True)
-    target = os.path.join(folder, os.path.basename(remote))
+    target = os.path.join(folder, os.path.basename(path))
     try:
-        sparse_copy(remote, remote_size(remote), target)
+        sparse_copy(path, size, target)
         return grab(target, work)
     finally:
         if os.path.exists(target):

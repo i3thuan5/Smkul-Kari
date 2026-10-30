@@ -117,10 +117,27 @@ class TestEntryShape(Fixture):
 
     def test_the_keys_the_callers_index_are_all_there(self):
         got = episodes.load(self._table(row()), srt_dir=set())[0]
-        for name in ("srt_name", "slug", "file", "video", "節目名稱",
+        for name in ("srt_name", "slug", "file", "video", "remote", "節目名稱",
                      "年度", "集數", "播出日期", "播出時段",
                      "族語別(英)", "族語別(中)"):
             self.assertIn(name, got)
+
+    def test_remote_is_the_canonical_location_of_the_name(self):
+        # 全流程取遠端路徑ê唯一出口：由成果檔名推導，毋是讀原始欄。
+        got = episodes.load(self._table(row()), srt_dir=set())[0]
+        self.assertEqual(
+            got["remote"],
+            "/home/news/mkv/2021-02/20210201_032_午間_Atayal_泰雅.mkv")
+
+    def test_remote_does_not_depend_on_the_original_column(self):
+        # 原始欄空白抑是有幾若條候選，正規位置攏仝；video／file 兩欄猶原
+        # 是原始欄ê值，留作紀錄佮退路。
+        plain = episodes.load(self._table(row()), srt_dir=set())[0]
+        for cell in ("", "ilrdf-corpus/a/母帶.mxf;ilrdf-corpus/b/轉檔.mp4"):
+            got = episodes.load(self._table(row(原始影片檔案位置=cell)),
+                                srt_dir=set())[0]
+            self.assertEqual(got["remote"], plain["remote"])
+            self.assertEqual(got["video"], cell)
 
     def test_the_three_retired_keys_are_gone(self):
         """`truncated`／`partial`／`文稿位置` 無矣。

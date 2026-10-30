@@ -39,16 +39,21 @@ python3 -m scripts.news.plan_month <月份>        # 唯讀，列出這個月有
 bash    scripts/news/fetch_sftp.sh <月份>        # add --limit 2 for a dry run
 ```
 
-`plan_month` picks each episode's source from `news/smkul.csv` by rule
-(master first, then the slot word in the file name, then
-same-name-two-folders) and prints the month's episodes with the path chosen
-for each. **It is read-only** — the節目目錄 covers every episode from day
-one, so there is no registration step and nothing is written.
+`plan_month` prints the month's episodes with each one's **canonical place**
+on the server, `/home/news/mkv/<年-月>/<成果檔名>.mkv` — derived from the
+name, not picked from the catalogue's `原始影片檔案位置` by rule (the old
+"master first, slot word, same-name-two-folders" selection is now only for
+importing a new batch, see `smkul-catalogue-import`). **It is read-only and
+offline** — the節目目錄 covers every episode from day one, so there is no
+registration step, nothing is written and the server is not asked.
 
-Episodes the rules cannot decide are **skipped and reported**, never guessed
-— across the whole corpus that is 8 of 983, and none in 2021-01 or 2021-02.
-Show the user the skip list. Episodes with no video are not in the table at
-all (983 → 969), so there is nothing to decide about them.
+Nothing is skipped as undecidable any more. If the canonical place turns out
+empty when the video is actually fetched, `fetch_sftp.sh` asks
+`python3 -m scripts.news.video_names locate <成果檔名>`, which falls back to
+`原始影片檔案位置` (only when the server says *not found*; a timeout or a
+permission error is an error, not a fallback) and says so in the log. An
+episode with neither place fails by name. Episodes with no video are not in
+the table at all, so there is nothing to decide about them.
 
 This downloads one video at a time, checks its byte count against the
 server's, verifies the subtitle band, cuts cues, refines the cue
@@ -56,14 +61,11 @@ boundaries to ≤0.05s while the video is still on disk, and **deletes the
 video** before moving on. Never hold more than one video locally.
 
 Filling a gap rather than doing a month — a few named episodes — takes
-`--only`, an extended regex matched against the file name, or
-`add_episodes.py` with the paths spelled out (that is also how a skipped
-episode gets done once someone has judged it):
+`--only`, an extended regex matched against the file name (which is now
+`<成果檔名>.mkv`):
 
 ```bash
-bash scripts/news/fetch_sftp.sh 2021-02 \
-     --only '^(21NL005_37晨間|21NL004_37晚間)族語新聞\.mp4$'
-python3 -m scripts.news.add_episodes '族語新聞/110.1-110.10/7月/…mp4' …
+bash scripts/news/fetch_sftp.sh 2024-09 --only '^20240930_274_晚間_Amis_阿美\.mkv$'
 ```
 
 Before committing to a whole month, run the fetch with `--limit 2` and look

@@ -273,6 +273,37 @@ def mkv_path(srt_name):
     return stage_path(MKV_ARCHIVE, srt_name, ".mkv")
 
 
+# 影片在伺服器上ê正規位置：`<VIDEO_ROOT>/<年-月>/<成果檔名>.mkv`。
+# 位置是成果檔名ê純函式，目錄毋另設欄記；年-月對成果檔名來，毋是對影片
+# 本底囥ê資料夾（48 逝ê資料夾月份佮播出月份無仝）。本底寫佇
+# `transcode/archive_batch.py`，流程到處攏愛用，所以搬來遮。
+VIDEO_ROOT = "/home/news/mkv"
+
+
+def video_dir(srt_name):
+    """<root>/<年-月> on the server."""
+    return "%s/%s" % (VIDEO_ROOT, month_of(srt_name))
+
+
+def video_path(srt_name):
+    """Where this episode's mkv lives on the server."""
+    return "%s/%s.mkv" % (video_dir(srt_name), check_srt_name(srt_name))
+
+
+def video_dirs_to_make(srt_name):
+    """Every level of the video folder, outermost first.
+
+    sftp's `mkdir` makes one level at a time; handed a path whose parent is
+    missing it just fails, and `/home/news` does not exist on the server
+    until the first file goes there.
+    """
+    parts = video_dir(srt_name).strip("/").split("/")
+    out = []
+    for index in range(len(parts)):
+        out.append("/" + "/".join(parts[:index + 1]))
+    return out
+
+
 def asrmt_dir(srt_name):
     """The speech side's working folder for one episode."""
     return stage_path(ASRMT_WORK, srt_name)

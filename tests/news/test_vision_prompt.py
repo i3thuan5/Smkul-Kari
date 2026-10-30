@@ -63,8 +63,7 @@ class VisionPromptCase(unittest.TestCase):
 
     NAME = "20210224_055_午間_Cou_鄒"
     SLUG = "2021_055_2021-02-24_午間_Cou_鄒"
-    REMOTE = ("/docker/ilrdf-corpus/族語新聞/110.1-110.10/2月/"
-              "21NL003_55午間族語新聞.mp4")
+    REMOTE = "/home/news/mkv/2021-02/20210224_055_午間_Cou_鄒.mkv"
 
     def setUp(self):
         # 來源路徑本底愛讀節目目錄；測試離線，換做固定值
@@ -682,6 +681,55 @@ class TestCeiling(unittest.TestCase):
         self.assertFalse(hasattr(prompt, "MIN_TAIL"))
 
 
+class TestRemoteOf(unittest.TestCase):
+    """讀者要抓ê影片現此時佇佗：先問正規位置，揣無才退回原始位置。"""
+
+    NAME = "20210224_055_午間_Cou_鄒"
+    CANON = "/home/news/mkv/2021-02/20210224_055_午間_Cou_鄒.mkv"
+    ORIG = "/home/mkv-raw/110.01-110.10/2月/21NL003_55午間族語新聞.mkv"
+
+    class Sftp(object):
+        def __init__(self, files):
+            self.files = files
+
+        def stat(self, path):
+            return self.files.get(path)
+
+    def setUp(self):
+        entry = {"srt_name": self.NAME, "video": self.ORIG[1:],
+                 "原始影片檔案位置": self.ORIG[1:], "節目名稱": "午間族語新聞"}
+        patcher = mock.patch.object(prompt.episodes, "load",
+                                    return_value=[entry])
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.said = []
+
+    def test_the_canonical_place_when_it_exists(self):
+        got = prompt.remote_of(self.NAME, sftp=self.Sftp({self.CANON: 1}),
+                               say=self.said.append)
+        self.assertEqual(got, self.CANON)
+        self.assertEqual(self.said, [])
+
+    def test_a_missing_canonical_falls_back_to_the_original(self):
+        got = prompt.remote_of(self.NAME, sftp=self.Sftp({self.ORIG: 1}),
+                               say=self.said.append)
+        self.assertEqual(got, self.ORIG)
+        self.assertIn("退回原始位置", "\n".join(self.said))
+
+    def test_an_unknown_name_is_named(self):
+        with self.assertRaises(PipelineError) as caught:
+            prompt.remote_of("20990101_001_午間_Cou_鄒",
+                             sftp=self.Sftp({}), say=self.said.append)
+        self.assertIn("20990101_001_午間_Cou_鄒", str(caught.exception))
+
+    def test_neither_place_names_both(self):
+        with self.assertRaises(PipelineError) as caught:
+            prompt.remote_of(self.NAME, sftp=self.Sftp({}),
+                             say=self.said.append)
+        self.assertIn(self.CANON, str(caught.exception))
+        self.assertIn(self.ORIG, str(caught.exception))
+
+
 class TestNativeFrameSource(VisionPromptCase):
     """讀者抽原生格ê影片：有封存 mkv 用 mkv，無就愛講按怎抓 mp4。
 
@@ -691,14 +739,16 @@ class TestNativeFrameSource(VisionPromptCase):
     2026-09-15：沒有 mkv 就看 mp4。
     """
 
-    def test_without_an_archive_the_reader_is_told_how_to_fetch_the_mp4(self):
+    def test_without_an_archive_the_reader_is_told_how_to_fetch_it(self):
         with mock.patch.object(prompt, "MKV_DIR", "/nonexistent-mkv"):
             text = self.brief(40, 1)
         self.assertIn("sftp.sh get", text)
         self.assertIn(self.REMOTE, text)
-        # 暫存也照月份分層
+        # 暫存也照月份分層，檔名佮成果檔名仝款（毋是來源ê原名）
         self.assertIn(os.path.join(prompt.READ_STAGE, "2021-02",
-                                   "21NL003_55午間族語新聞.mp4"), text)
+                                   self.NAME + ".mkv"), text)
+        # 影片攏是 mkv，無閣有「先抓 mp4」ê講法
+        self.assertNotIn("抓 mp4", text)
 
     def test_the_fetch_command_uses_the_server_path_as_is(self):
         # remote_of 已經是伺服器絕對路徑；閣加 /docker/ilrdf-corpus 就

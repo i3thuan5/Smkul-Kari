@@ -153,8 +153,18 @@ def _rename_opening(path, old, new, chinese):
     _write(path, rows, head)
 
 
-def relabel(name, chinese, reason, catalogue=None):
-    """改目錄（照成果檔名重排）、搬 store；回 (新成果檔名, Report)。"""
+def relabel(name, chinese, reason, catalogue=None, store=None, sftp=None,
+            say=print):
+    """改目錄（照成果檔名重排）、搬 store；回 (新成果檔名, Report)。
+
+    成果檔名換了，伺服器頂ê影片嘛愛綴咧搬去新名稱ê位置（`paths.video_path`）。
+    **伺服器彼步先做**——伊上有可能失敗（網路、權限），失敗ê時本機猶無動；
+    現在位置照 `video_names.locate` 揣（正規位置，揣無才原始位置），兩位
+    攏無就拒絕，免得目錄佮伺服器悄悄分家。伺服器成功了本機彼幾步若失敗，
+    會試著共影片搬轉去舊位置才報錯。
+    """
+    from scripts.news import episodes
+    from scripts.news import video_names
     target = catalogue or paths.TRACKER_STORE
     rows, head = name_catalogue.read(target)
     found = None
@@ -165,10 +175,17 @@ def relabel(name, chinese, reason, catalogue=None):
         raise PipelineError("目錄內底無 %s" % name)
     new_row = relabel_row(rows[found], chinese, reason)
     new = new_row["成果檔名"]
-    report = move_store(name, new, chinese)
-    rows[found] = new_row
-    rows.sort(key=lambda row: row["成果檔名"])
-    name_catalogue.write(target, rows, head)
+    sftp = sftp or video_names.Sftp()
+    renamed = video_names.rename_episode(
+        episodes.entry_of(rows[found], set()), new, sftp, say=say)
+    try:
+        report = move_store(name, new, chinese, store=store)
+        rows[found] = new_row
+        rows.sort(key=lambda row: row["成果檔名"])
+        name_catalogue.write(target, rows, head)
+    except Exception:
+        video_names.rename_back(renamed, sftp, say=say)
+        raise
     return new, report
 
 

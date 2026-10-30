@@ -129,6 +129,52 @@ class TestStagePath(unittest.TestCase):
                 paths.month_of(bad)
 
 
+class TestVideoPath(unittest.TestCase):
+    """影片在伺服器上ê正規位置：`/home/news/mkv/<年-月>/<成果檔名>.mkv`。"""
+
+    def test_it_is_the_root_the_month_and_the_name(self):
+        # 使用者舉ê例：110.01-110.10/1月原始mxf檔/20210101S1100.mkv 搬去遮。
+        self.assertEqual(
+            paths.video_path("20210101_001_午間_Rukai_魯凱"),
+            "/home/news/mkv/2021-01/20210101_001_午間_Rukai_魯凱.mkv")
+
+    def test_the_month_comes_from_the_name_not_the_old_folder(self):
+        # 20241001_275 本底囥佇「9月」資料夾；48 逝ê資料夾月份佮播出月份無仝。
+        self.assertEqual(
+            paths.video_path("20241001_275_晚間_Amis_阿美"),
+            "/home/news/mkv/2024-10/20241001_275_晚間_Amis_阿美.mkv")
+
+    def test_the_folder_is_what_gets_made_first(self):
+        self.assertEqual(
+            paths.video_dir("20210201_032_晚間_Amis_阿美"),
+            "/home/news/mkv/2021-02")
+
+    def test_every_level_is_made_because_sftp_mkdir_is_not_recursive(self):
+        # `/home/news` 伺服器頂猶無；sftp ê mkdir 一改干焦一層，中間彼層
+        # 無ê時就規句失敗。
+        self.assertEqual(
+            paths.video_dirs_to_make("20210201_032_晚間_Amis_阿美"),
+            ["/home", "/home/news", "/home/news/mkv",
+             "/home/news/mkv/2021-02"])
+
+    def test_an_apostrophe_and_chinese_are_kept_whole(self):
+        # 195 个拉阿魯哇ê名內底有撇號。
+        got = paths.video_path("20210103_003_晨間_Hla'alua_拉阿魯哇")
+        self.assertEqual(
+            got,
+            "/home/news/mkv/2021-01/20210103_003_晨間_Hla'alua_拉阿魯哇.mkv")
+
+    def test_a_name_that_is_not_a_name_makes_no_path(self):
+        # 空字串、集數兩碼：莫組出一个無人揣會著ê路徑。
+        for bad in ("", "20210201_32_午間_Atayal_泰雅", "../x", None):
+            with self.assertRaises(PipelineError):
+                paths.video_path(bad)
+
+    def test_an_impossible_month_stops(self):
+        with self.assertRaises(PipelineError):
+            paths.video_path("20219901_001_午間_Rukai_魯凱")
+
+
 class TestVarCli(unittest.TestCase):
     def _var(self, name, env_extra):
         env = dict(os.environ)

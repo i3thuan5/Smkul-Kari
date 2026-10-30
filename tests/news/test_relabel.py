@@ -16,7 +16,9 @@ import tempfile
 import unittest
 
 from scripts.errors import PipelineError
+from scripts.news import paths
 from scripts.news import relabel
+from tests.news.test_video_names import FakeSftp
 
 OLD = "20210116_016_晚間_Paiwan_排灣"
 NEW = "20210116_016_晚間_Pinuyumayan_卑南"
@@ -177,6 +179,76 @@ class TestTheStore(unittest.TestCase):
         with self.assertRaises(PipelineError):
             relabel.move_store(OLD, NEW, "卑南", store=store.root)
         self.assertTrue(store.exists("1-ocr/1-cues/2021-01/%s.json" % OLD))
+
+
+class TestTheVideoFollows(unittest.TestCase):
+    """改語別換成果檔名：伺服器頂ê影片綴咧搬去新名稱ê位置，伺服器先做。"""
+
+    HEAD = ["成果檔名", "節目名稱", "年度", "集數", "播出日期", "族語別(英)",
+            "族語別(中)", "語言別", "語言別代號", "原始影片檔案位置", "備註"]
+    OLD_VIDEO = paths.video_path(OLD)
+    NEW_VIDEO = paths.video_path(NEW)
+
+    def setUp(self):
+        self.store = Store(self)
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.path = os.path.join(tmp.name, "smkul.csv")
+        with open(self.path, "w", encoding="utf-8-sig", newline="") as handle:
+            writer = csv.DictWriter(handle, self.HEAD, lineterminator="\r\n")
+            writer.writeheader()
+            writer.writerow(catalogue_row())
+        self.fake = FakeSftp({self.OLD_VIDEO: 5})
+        self.said = []
+
+    def relabel(self):
+        return relabel.relabel(OLD, "卑南", "片頭語別牌三格攏是卑南",
+                               catalogue=self.path, store=self.store.root,
+                               sftp=self.fake, say=self.said.append)
+
+    def catalogue_bytes(self):
+        with open(self.path, "rb") as handle:
+            return handle.read()
+
+    def test_the_video_moves_to_the_new_names_place(self):
+        new, _report = self.relabel()
+        self.assertEqual(new, NEW)
+        self.assertEqual(self.fake.files, {self.NEW_VIDEO: 5})
+        self.assertTrue(self.store.exists("1-ocr/3-srt/2021-01/%s.srt" % NEW))
+
+    def test_a_server_refusal_leaves_the_catalogue_and_store_alone(self):
+        self.fake.fail_rename.add(self.OLD_VIDEO)
+        before = self.catalogue_bytes()
+        with self.assertRaises(PipelineError):
+            self.relabel()
+        self.assertEqual(self.catalogue_bytes(), before)
+        self.assertTrue(self.store.exists("1-ocr/3-srt/2021-01/%s.srt" % OLD))
+
+    def test_a_video_nowhere_refuses_by_naming_both_places(self):
+        self.fake.files.clear()
+        before = self.catalogue_bytes()
+        with self.assertRaises(PipelineError) as caught:
+            self.relabel()
+        self.assertIn(self.OLD_VIDEO, str(caught.exception))
+        self.assertEqual(self.catalogue_bytes(), before)
+
+    def test_a_local_failure_puts_the_video_back(self):
+        clash = os.path.join(self.store.root,
+                             "1-ocr/3-srt/2021-01/%s.srt" % NEW)
+        with open(clash, "w") as handle:
+            handle.write("other")
+        with self.assertRaises(PipelineError):
+            self.relabel()
+        self.assertEqual(self.fake.files, {self.OLD_VIDEO: 5})
+
+    def test_an_episode_never_moved_in_moves_in_from_its_original(self):
+        original = ("/docker/ilrdf-corpus/族語新聞/110.1-110.10/1月/"
+                    "卑南語-20210116s1800.mp4")
+        self.fake.files = {original: 9}
+        self.fake._add_parents(original)
+        self.relabel()
+        self.assertEqual(self.fake.files, {self.NEW_VIDEO: 9})
+        self.assertIn("退回原始位置", "\n".join(self.said))
 
 
 if __name__ == "__main__":

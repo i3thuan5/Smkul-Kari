@@ -9,6 +9,7 @@ import os
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 from scripts.errors import PipelineError
 from scripts.news import opening
@@ -141,6 +142,90 @@ class TestSparseFetch(unittest.TestCase):
 
             opening.sparse_copy(self.REMOTE, size, target, fetch=fetch)
             self.assertEqual(os.path.getsize(target), size)
+
+
+NAME = "20210103_003_晨間_Hla'alua_拉阿魯哇"
+CANON = "/home/news/mkv/2021-01/20210103_003_晨間_Hla'alua_拉阿魯哇.mkv"
+ORIG = "/home/mkv-raw/110.01-110.10/1月原始mxf檔/20210103s0800.mkv"
+
+
+class _Sftp(object):
+    def __init__(self, files=None, broken=()):
+        self.files = dict(files or {})
+        self.broken = set(broken)
+
+    def stat(self, path):
+        if path in self.broken:
+            raise PipelineError("sftp ls 失敗：Connection timed out")
+        return self.files.get(path)
+
+
+def _entry():
+    return {"srt_name": NAME, "video": ORIG[1:],
+            "原始影片檔案位置": ORIG[1:], "節目名稱": "晨間族語新聞"}
+
+
+class TestGrabRemoteFindsTheVideo(unittest.TestCase):
+    """片頭補抓：先問正規位置，揣無才退回原始位置。"""
+
+    def setUp(self):
+        self.copied = []
+        self.said = []
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.stage = os.path.join(tmp.name, "stage")
+
+        def fake_copy(remote, size, target, fetch=None):
+            self.copied.append((remote, size, os.path.basename(target)))
+            with open(target, "wb") as handle:
+                handle.write(b"x")
+            return target
+
+        self.patches = [
+            mock.patch.object(opening, "sparse_copy", fake_copy),
+            mock.patch.object(opening, "grab", lambda target, work: work)]
+        for patch in self.patches:
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def grab(self, remote, sftp, **kw):
+        return opening.grab_remote(remote, "/work", stage=self.stage,
+                                   sftp=sftp, say=self.said.append,
+                                   entry_for=lambda name: _entry(), **kw)
+
+    def test_the_canonical_place_is_used_when_it_exists(self):
+        self.grab(CANON, _Sftp({CANON: 100}))
+        self.assertEqual(self.copied, [(CANON, 100, NAME + ".mkv")])
+        self.assertEqual(self.said, [])
+
+    def test_a_missing_canonical_falls_back_to_the_original_and_says_so(self):
+        self.grab(CANON, _Sftp({ORIG: 77}))
+        self.assertEqual(self.copied,
+                         [(ORIG, 77, "20210103s0800.mkv")])
+        self.assertIn("退回原始位置", "\n".join(self.said))
+
+    def test_neither_place_names_both(self):
+        with self.assertRaises(PipelineError) as caught:
+            self.grab(CANON, _Sftp({}))
+        self.assertIn(CANON, str(caught.exception))
+        self.assertIn(ORIG, str(caught.exception))
+        self.assertEqual(self.copied, [])
+
+    def test_a_failure_that_is_not_not_found_does_not_fall_back(self):
+        with self.assertRaises(PipelineError) as caught:
+            self.grab(CANON, _Sftp({ORIG: 77}, broken=[CANON]))
+        self.assertIn("timed out", str(caught.exception))
+        self.assertEqual(self.copied, [])
+
+    def test_an_explicit_non_canonical_path_that_is_missing_just_fails(self):
+        # 人家己指定一个路徑（毋是由成果檔名推導ê）：無退路，直接報。
+        with self.assertRaises(PipelineError) as caught:
+            self.grab("/home/mkv-raw/x/不存在.mkv", _Sftp({}))
+        self.assertIn("不存在.mkv", str(caught.exception))
+
+    def test_the_sparse_copy_is_removed_afterwards(self):
+        self.grab(CANON, _Sftp({CANON: 100}))
+        self.assertEqual(os.listdir(self.stage), [])
 
 
 class TestSheetCrop(unittest.TestCase):

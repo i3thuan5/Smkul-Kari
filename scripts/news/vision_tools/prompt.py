@@ -17,8 +17,6 @@ import sys
 from scripts.errors import PipelineError
 from scripts.news import episodes
 from scripts.news import paths
-from scripts.news import resolve_slug
-from scripts.news import sources
 from scripts.ocr import sheetsize
 
 # 一批ê大細照「這批會予讀者累積偌濟 context」決定，毋是照張數。
@@ -38,8 +36,8 @@ CEILING = 120000
 BASE = 69184
 PER_ROW = 17
 BRIEF = os.path.join(os.path.dirname(__file__), "brief.md")
-# 讀者抽原生格ê影片。mp4 來源ê集數無封存 mkv，愛對 SFTP 抓 mp4 落來，
-# 抓來囥 READ_STAGE。使用者裁定 2026-09-15：沒有 mkv 就看 mp4。
+# 讀者抽原生格ê影片。本機有封存 mkv 就用；無，就對伺服器抓落來囥
+# READ_STAGE（先問正規位置，揣無才退回原始位置，見 `video_names.locate`）。
 # Relative to the checkout, because the brief is read by an agent standing
 # in it; both have a month folder under them, like the rest of out/news/.
 MKV_DIR = os.path.relpath(paths.MKV_ARCHIVE, paths.ROOT)
@@ -65,14 +63,18 @@ def episode(slug):
     raise PipelineError("節目目錄內底揣無 slug：%s" % slug)
 
 
-def remote_of(name):
-    """這集ê來源影片，照 `sources` ê規則揀ê彼條（伺服器上ê絕對路徑）。"""
+def remote_of(name, sftp=None, say=print):
+    """這集影片現此時佇伺服器佗位（絕對路徑）。
+
+    先問由成果檔名推導ê正規位置；伺服器講揣無才退回 `原始影片檔案位置`，
+    退ê時會講。兩位攏無就報錯，兩个路徑攏指名。
+    """
+    from scripts.news import video_names
     for entry in episodes.load():
         if entry["srt_name"] == name:
-            path, problem = sources.pick(entry)
-            if not path:
-                raise PipelineError("%s 揀無來源影片：%s" % (name, problem))
-            return resolve_slug.server_path(path)
+            found = video_names.locate(entry, sftp or video_names.Sftp(),
+                                       say=say)
+            return found.path
     raise PipelineError("節目目錄內底揣無：%s" % name)
 
 
@@ -85,7 +87,7 @@ def video_source(name):
     remote = remote_of(name)
     folder = os.path.join(READ_STAGE, month)
     local = os.path.join(folder, os.path.basename(remote))
-    fetch = ('——這集無封存 mkv，愛先抓 mp4：`mkdir -p %s && [ -f "%s" ] || '
+    fetch = ('——這集無本機封存 mkv，愛先對伺服器抓：`mkdir -p %s && [ -f "%s" ] || '
              '{ bash scripts/news/sftp.sh get "%s" "%s.part.$$" && '
              'mv "%s.part.$$" "%s"; }`（檔案已經佇咧就免閣抓，仝一集另外'
              '一批ê讀者可能抓好矣）'

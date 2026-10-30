@@ -156,6 +156,15 @@ class TestRemoteArchivePath(unittest.TestCase):
             ["/home", "/home/news", "/home/news/mkv",
              "/home/news/mkv/2021-02"])
 
+    def test_the_archive_functions_are_the_shared_ones(self):
+        # 位置ê算法搬去 paths 了，這爿干焦留名；值若無仝，兩份就漂開。
+        self.assertEqual(archive_batch.remote_archive_path(self.NAME),
+                         paths.video_path(self.NAME))
+        self.assertEqual(archive_batch.remote_archive_dir(self.NAME),
+                         paths.video_dir(self.NAME))
+        self.assertEqual(archive_batch.remote_dirs_to_make(self.NAME),
+                         paths.video_dirs_to_make(self.NAME))
+
     def test_the_month_comes_from_the_name(self):
         self.assertIn("/1999-01/",
                       archive_batch.remote_archive_path(

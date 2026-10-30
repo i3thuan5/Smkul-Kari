@@ -53,6 +53,31 @@
 | episode-catalogue | 工作區名 `2024_337_2024-12-02_晚間_…` 不隨節目名稱改名而變（變了切好的工作區就找不到）；`--check` 對新舊名稱並存的目錄算出同樣的成果檔名 | `test_episodes.py`、`test_name_catalogue.py` |
 | episode-sourcing | 新名稱「看見族語（晚間）」的候選檔裡，檔名寫晚間的勝過寫午間的——挑檔靠 `slot_of` 解出時段，解不出就挑錯檔 | `test_sources.py` |
 
+## 影片位置與搬移（`scripts/news/video_names.py`、`paths.py`）
+
+全部離線：怎麼對伺服器下指令由外面傳進來，測試傳假的伺服器（`test_video_names.FakeSftp`：mkdir 一次一層、rename 不覆寫、可模擬逾時與跨子卷）。
+
+| spec | scenario | 測試檔 |
+|---|---|---|
+| episode-video-location | 位置只由成果檔名決定：`20210101_001_午間_Rukai_魯凱` → `/home/news/mkv/2021-01/…mkv`；年-月取自成果檔名，不取自原資料夾（48 列原資料夾月份與播出月份不同，如 20241001_275 原放在 9 月資料夾） | `test_paths.py`、`test_video_names.py` |
+| episode-video-location | 成果檔名不合規格（空字串、集數兩碼）時拒絕算位置，不可組出沒人找得到的路徑 | `test_paths.py` |
+| episode-video-location | 含撇號又含中文的名稱（195 個拉阿魯哇）：rename／mkdir／rmdir 的批次指令完整保留撇號；含雙引號、換行的路徑被擋 | `test_sftp_cli.py` |
+| episode-video-location | 規劃：每列恰好一組（舊→新）；排除清單上的路徑（含與目錄所用影片串流相同的 20241002S2000.mkv）不進規劃；兩列同舊位置或同新位置整份拒絕；不在 `/home/mkv-raw/` 的列（開會了）、分號候選清單、空白來源都拒絕 | `test_video_names.py` |
+| episode-video-location | 搬移：先寫清單再搬第一支（第三支失敗時清單已完整）；資料夾逐層建、每月只建一次、已存在不算錯（`/home/news` 伺服器上本來沒有）；一個資料夾問一次而不是逐支問（逐支問光問就要個把鐘頭） | `test_video_names.py` |
+| episode-video-location | 續跑：新有舊無跳過、舊有新無搬、兩邊都有停下不覆寫、都沒有指名該列；完成的組不再碰伺服器 | `test_video_names.py` |
+| episode-video-location | 探針：搬過去再搬回來、狀態與探針前相同；過去失敗就停止並提示跨子卷備案；搬回失敗要明講檔案現在在哪；目標已被佔用不動 | `test_video_names.py` |
+| episode-video-location | 核對：新位置恰為目錄每列各一支、大小同清單；缺、多、大小不同、沒搬、舊位置多出的檔，逐一指名；排除檔與搬走的檔在同一資料夾不算問題；排除清單記的檔本來就不在伺服器上（22 列有 4 列搬進前就沒了）、或路徑不在 `/home/mkv-raw` 底下（有一列在 `/docker/…`，那個資料夾有幾百個別的檔）都不算問題 | `test_video_names.py` |
+| episode-video-location | 還原：依清單反向搬、舊位置被佔用拒絕不覆寫、舊資料夾已被清掉要一層一層重建；再還原一次什麼都不做 | `test_video_names.py` |
+| episode-video-location | 清空資料夾只刪空的：含排除檔的資料夾不刪、由深到淺、永遠不刪 `/home/mkv-raw`、預設只列出、`rmdir` 被拒絕時停下並指名（不吞）、已不存在的跳過 | `test_video_names.py`、`test_sftp_cli.py` |
+| episode-video-location | `rmdir` 子動作不加前導 `-`（mkdir 加是因為「已有」正常；rmdir 失敗＝資料夾其實不空，要顯出來） | `test_sftp_cli.py` |
+| episode-video-location | 正規位置在就用它（原始欄空白或亂寫不影響、只問一次）；伺服器回「找不到」才退回原始位置並說出來；兩處都沒有指名兩個路徑；原始欄有分號候選依挑檔規則選（母帶優先、不取第一條） | `test_video_names.py`、`test_audio.py`、`test_opening.py`、`test_vision_prompt.py` |
+| episode-video-location | 連線逾時、權限錯誤不是「找不到」：不退回，直接報錯（網路一抖就讀到過時位置是最糟的情形）；本來 `audio._remote_size` 把所有失敗都當沒有 | `test_video_names.py`、`test_audio.py`、`test_opening.py` |
+| episode-sourcing | 規劃（離線）列出的是正規位置：目錄列有分號候選或空白都照樣規劃、不再有「揀不出來被略過」；刪掉 2021-02 mxf 輕量副本的死程式 | `test_plan_month.py` |
+| episode-sourcing | 本機暫存檔名由來源原名（`20241202S2000.mkv`）變成 `<成果檔名>.mkv`，讀者的下載指令用實際找到的位置，不再說「先抓 mp4」 | `test_audio.py`、`test_vision_prompt.py` |
+| episode-sourcing | `fetch_sftp.sh` 大小表查不到某集時，先叫 `video_names locate` 取退路才 FAIL；語法要通過 | `test_fetch_sftp_config.py` |
+| episode-video-location | 改成果檔名（改語別、改日期、可能跨月）時伺服器上的影片一併 rename：伺服器那步先做、失敗整個不動本機；正規位置沒有但原始位置在，從原始位置搬到新名稱的正規位置；兩處都沒有拒絕；本機失敗時試著搬回；名稱沒變就什麼都不搬 | `test_relabel.py`、`test_redate.py`、`test_video_names.py` |
+| episode-video-location | 封存位置函式只有一份：`archive_batch.remote_archive_*` 與 `paths.video_*` 值逐字相同 | `test_archive_batch.py` |
+
 ## 已讀字集數的帶外補切（`scripts/news/offband_backfill.py`）
 
 | spec | scenario | 測試檔 |

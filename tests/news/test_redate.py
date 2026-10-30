@@ -12,7 +12,9 @@ import unittest
 
 from scripts import catalogue_checks as checks
 from scripts.errors import PipelineError
+from scripts.news import paths
 from scripts.news import redate
+from tests.news.test_video_names import FakeSftp
 
 OLD = "20240930_274_晚間_Amis_阿美"
 NEW = "20241001_275_晚間_Amis_阿美"
@@ -233,7 +235,8 @@ class TestTheCatalogue(unittest.TestCase):
                                          播出日期="2024-09-23"),
                            catalogue_row()])
         new, report = redate.redate(OLD, "2024-10-01", 275, "OCR 內容是 10-01",
-                                    catalogue=path, store=store.root)
+                                    catalogue=path, store=store.root,
+                                    sftp=FakeSftp({paths.video_path(OLD): 5}))
         self.assertEqual(new, NEW)
         with open(path, encoding="utf-8-sig", newline="") as handle:
             rows = list(csv.DictReader(handle))
@@ -250,7 +253,7 @@ class TestTheCatalogue(unittest.TestCase):
                                          播出日期="2024-09-23")])
         with self.assertRaises(PipelineError):
             redate.redate(OLD, "2024-10-01", 275, "x", catalogue=path,
-                          store=store.root)
+                          store=store.root, sftp=FakeSftp({}))
         self.assertTrue(store.exists("1-ocr/3-srt/2024-09/%s.srt" % OLD))
 
     def test_a_new_name_already_in_the_catalogue_is_refused(self):
@@ -259,8 +262,86 @@ class TestTheCatalogue(unittest.TestCase):
             成果檔名=NEW, 集數="275", 播出日期="2024-10-01")])
         with self.assertRaises(PipelineError):
             redate.redate(OLD, "2024-10-01", 275, "x", catalogue=path,
-                          store=store.root)
+                          store=store.root, sftp=FakeSftp({}))
         self.assertTrue(store.exists("1-ocr/3-srt/2024-09/%s.srt" % OLD))
+
+
+class TestTheVideoFollows(unittest.TestCase):
+    """改日期（可能跨月）：伺服器頂ê影片綴咧搬去新名稱ê位置，伺服器先做。"""
+
+    HEAD = TestTheCatalogue.HEAD
+    write = TestTheCatalogue.write
+    OLD_VIDEO = paths.video_path(OLD)
+    NEW_VIDEO = paths.video_path(NEW)
+
+    def setUp(self):
+        self.store = Store(self)
+        self.path = self.write([catalogue_row()])
+        self.fake = FakeSftp({self.OLD_VIDEO: 5})
+
+    def redate(self, **kw):
+        return redate.redate(OLD, "2024-10-01", 275, "x", catalogue=self.path,
+                             store=self.store.root, sftp=self.fake, **kw)
+
+    def catalogue_bytes(self):
+        with open(self.path, "rb") as handle:
+            return handle.read()
+
+    def test_the_video_moves_across_the_month_with_the_rest(self):
+        self.redate()
+        self.assertEqual(self.fake.files, {self.NEW_VIDEO: 5})
+        self.assertIn("/home/news/mkv/2024-10", self.fake.dirs)
+        self.assertTrue(self.store.exists("1-ocr/3-srt/2024-10/%s.srt" % NEW))
+
+    def test_the_server_goes_first_and_a_refusal_changes_nothing_local(self):
+        self.fake.fail_rename.add(self.OLD_VIDEO)
+        before = self.catalogue_bytes()
+        with self.assertRaises(PipelineError):
+            self.redate()
+        self.assertEqual(self.catalogue_bytes(), before)
+        self.assertTrue(self.store.exists("1-ocr/3-srt/2024-09/%s.srt" % OLD))
+        self.assertFalse(self.store.exists("1-ocr/3-srt/2024-10/%s.srt" % NEW))
+
+    def test_a_video_nowhere_refuses_and_changes_nothing(self):
+        self.fake.files.clear()
+        before = self.catalogue_bytes()
+        with self.assertRaises(PipelineError) as caught:
+            self.redate()
+        self.assertIn(self.OLD_VIDEO, str(caught.exception))
+        self.assertEqual(self.catalogue_bytes(), before)
+        self.assertTrue(self.store.exists("1-ocr/3-srt/2024-09/%s.srt" % OLD))
+
+    def test_a_local_failure_puts_the_video_back(self):
+        # 伺服器彼步成功了，本機彼步（store 新位置已經有檔）失敗：愛搬轉去。
+        clash = os.path.join(self.store.root,
+                             "1-ocr/3-srt/2024-10/%s.srt" % NEW)
+        os.makedirs(os.path.dirname(clash))
+        with open(clash, "w") as handle:
+            handle.write("other")
+        with self.assertRaises(PipelineError):
+            self.redate()
+        self.assertEqual(self.fake.files, {self.OLD_VIDEO: 5})
+
+    def test_an_episode_never_moved_in_moves_in_from_its_original(self):
+        original = "/home/mkv-raw/113/10月/20241001S2000.mkv"
+        self.fake.files = {original: 7}
+        self.fake._add_parents(original)
+        self.redate()
+        self.assertEqual(self.fake.files, {self.NEW_VIDEO: 7})
+
+    def test_crossing_the_programme_rename_day_renames_the_programme_too(self):
+        # 07-31 → 08-01：伺服器頂ê位置用新成果檔名算，節目名稱嘛換。
+        old = "20240731_213_晚間_Amis_阿美"
+        new = "20240801_214_晚間_Amis_阿美"
+        self.path = self.write([catalogue_row(
+            成果檔名=old, 節目名稱="晚間族語新聞", 集數="213",
+            播出日期="2024-07-31")])
+        self.fake = FakeSftp({paths.video_path(old): 3})
+        got, _report = redate.redate(old, "2024-08-01", 214, "x",
+                                     catalogue=self.path,
+                                     store=self.store.root, sftp=self.fake)
+        self.assertEqual(got, new)
+        self.assertEqual(self.fake.files, {paths.video_path(new): 3})
 
 
 if __name__ == "__main__":

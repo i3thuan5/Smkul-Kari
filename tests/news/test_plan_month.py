@@ -77,32 +77,48 @@ class Fixture(unittest.TestCase):
 
 
 class TestSelection(Fixture):
-    def test_a_month_may_span_two_source_folders(self):
-        self.assertEqual(len(self._plan().added), 2)
+    def test_a_month_plans_every_episode_whichever_folder_it_sat_in(self):
+        # 2021-02 ê四集（頭三集），來源本底散佇兩个資料夾；這馬位置是由
+        # 成果檔名推導ê，毋閣看資料夾，也毋閣挑檔。
+        self.assertEqual(len(self._plan().added), 3)
 
     def test_other_months_in_the_same_folder_are_not_taken(self):
         for name in self._names(self._plan()):
             self.assertTrue(name.startswith("202102"), name)
 
-    def test_each_entry_carries_its_own_remote_path(self):
+    def test_each_entry_carries_its_canonical_place(self):
         for entry in self._plan().added:
-            self.assertTrue(entry["video"].endswith((".mxf", ".mp4")))
+            self.assertEqual(entry["video"],
+                             paths.video_path(entry["srt_name"]))
+            self.assertTrue(
+                entry["video"].startswith("/home/news/mkv/2021-02/"))
 
     def test_a_month_with_no_episodes_says_so(self):
         with self.assertRaises(PipelineError):
             self._plan(month="1999-01")
 
 
-class TestSkipped(Fixture):
-    def test_an_undecidable_episode_is_reported_not_planned(self):
-        report = self._plan()
-        self.assertEqual(len(report.skipped), 1)
-        for name in self._names(report):
-            self.assertNotIn("_044_", name)
+class TestNothingIsSkippedAnymore(Fixture):
+    """本底「揀袂出來」ê集數會被略過；位置改由成果檔名推導了，無這款代誌。"""
 
-    def test_the_skip_report_is_not_cut_by_the_limit(self):
-        """揀袂出來ê逐擺攏報，才袂等 limit 拄好行到彼跡才現形。"""
-        self.assertEqual(len(self._plan(limit=1).skipped), 1)
+    def test_an_episode_with_several_candidates_is_planned_like_the_rest(self):
+        report = self._plan()
+        self.assertEqual(report.skipped, [])
+        self.assertIn("20210213_044_晚間_Paiwan_排灣",
+                      self._names(report))
+
+    def test_a_blank_original_column_does_not_stop_the_plan(self):
+        blank = row("45", "2021-02-14", "晚間", "Paiwan", "排灣", "pwn", [])
+        with open(self.table, "a", encoding="utf-8-sig", newline="") as out:
+            csv.DictWriter(out, fieldnames=HEAD).writerow(blank)
+        report = self._plan()
+        self.assertIn(blank["成果檔名"], self._names(report))
+        self.assertEqual(report.skipped, [])
+
+    def test_the_plan_never_asks_the_server(self):
+        # 規劃是離線唯讀ê；找袂著ê時ê退路佇實際取檔ê時處理。
+        for entry in self._plan().added:
+            self.assertNotIn("sftp", entry["video"])
 
 
 class TestLimit(Fixture):
@@ -110,7 +126,7 @@ class TestLimit(Fixture):
         self.assertEqual(len(self._plan(limit=1).added), 1)
 
     def test_zero_means_the_whole_month(self):
-        self.assertEqual(len(self._plan(limit=0).added), 2)
+        self.assertEqual(len(self._plan(limit=0).added), 3)
 
     def test_broadcast_order_is_kept(self):
         # 列序照成果檔名排，所以 limit 提著ê是上頭前彼幾集。
@@ -143,27 +159,25 @@ FEB22 = "ilrdf-corpus/族語新聞/111.1-111.5/2月/"
 MAY21 = "ilrdf-corpus/族語新聞/110.1-110.10/5月/"
 
 
-class TestTodoFetchesOneChosenFile(unittest.TestCase):
-    """`--todo` 是 `fetch_sftp.sh` 真正拿去下載的清單，要先照規則挑檔。
+class TestTodoListsTheCanonicalPlace(unittest.TestCase):
+    """`--todo` 是 `fetch_sftp.sh` 真正拿去下載的清單。
 
-    `原始影片檔案位置` 是候選清單，122 列用分號接了好幾條。報表
-    （`plan`）有照 `sources.resolve` 挑，`todo` 卻直接把整格原樣交出去，
-    `fetch_sftp.sh` 拿「a.mp4;b.mp4」去伺服器找，當然找不到。2026-09-14
-    量到還沒切的集數裡有 59 集這樣被跳過：2022-01 一整批同檔名同時在
-    「1月」「2月」、2022-04 同時在「4月」「5月」，另有 090午間鄒、
-    122晨間拉阿魯哇這種午間／晨間兩個檔名擺在一起的。
+    本底愛先照 `sources.resolve` 挑檔（`原始影片檔案位置` 是候選清單，
+    122 列用分號接幾若條，2026-09-14 有 59 集因為拿整格原樣去伺服器找
+    著跳過）。位置改由成果檔名推導了，`todo` 交出ê就是正規位置，毋管
+    原始欄寫啥——揣無ê時ê退路佇 `fetch_sftp.sh` 取檔ê時處理。
     """
 
     ROWS = [
-        # 規則 3：同一個檔名在兩個資料夾，是同一支檔
+        # 同一个檔名佇兩个資料夾
         row("1", "2022-01-01", "晨間", "Thau", "邵", "ssf",
             [JAN22 + "22NL005_001晨間族語新聞.mp4",
              FEB22 + "22NL005_001晨間族語新聞.mp4"]),
-        # 挑不出來：同時段、不同檔名
+        # 本底挑袂出來：同時段、不同檔名
         row("2", "2022-01-02", "晨間", "Hla'alua", "拉阿魯哇", "sxr",
             [JAN22 + "22NL005_002晨間族語新聞.mp4",
              JAN22 + "22NL004_002晨間族語新聞.mp4"]),
-        # 規則 2：檔名上的時段字對得上的那一條
+        # 檔名上ê時段字對會著ê彼一條
         row("122", "2021-05-02", "晨間", "Hla'alua", "拉阿魯哇", "sxr",
             [MAY21 + "21NL005_122午間族語新聞.mp4",
              MAY21 + "21NL005_122晨間族語新聞.mp4"]),
@@ -188,29 +202,30 @@ class TestTodoFetchesOneChosenFile(unittest.TestCase):
             found[slug] = video
         return found
 
-    def test_one_file_name_in_two_folders_fetches_one_path(self):
+    def test_the_path_is_the_canonical_one_not_a_candidate(self):
         found = self._todo("2022-01")
         video = found["2022_001_2022-01-01_晨間_Thau_邵"]
         self.assertNotIn(";", video)
-        self.assertTrue(video.endswith("111.1-111.5/1月/22NL005_001晨間族語新聞.mp4"))
+        self.assertEqual(
+            video, "/home/news/mkv/2022-01/20220101_001_晨間_Thau_邵.mkv")
 
-    def test_the_file_named_for_the_slot_is_the_one_fetched(self):
+    def test_the_slot_word_in_the_candidates_no_longer_matters(self):
         found = self._todo("2021-05")
         video = found["2021_122_2021-05-02_晨間_Hla'alua_拉阿魯哇"]
-        self.assertNotIn(";", video)
-        self.assertTrue(video.endswith("5月/21NL005_122晨間族語新聞.mp4"))
+        self.assertEqual(
+            video,
+            "/home/news/mkv/2021-05/20210502_122_晨間_Hla'alua_拉阿魯哇.mkv")
 
-    def test_an_undecidable_episode_is_not_on_the_fetch_list(self):
+    def test_an_episode_that_used_to_be_undecidable_is_listed_now(self):
         found = self._todo("2022-01")
-        self.assertNotIn("2022_002_2022-01-02_晨間_Hla'alua_拉阿魯哇", found)
+        self.assertIn("2022_002_2022-01-02_晨間_Hla'alua_拉阿魯哇", found)
 
 
 class TestTodoGivesServerPaths(unittest.TestCase):
-    """`--todo` 交出伺服器上的絕對路徑，`fetch_sftp.sh` 毋免閣加根目錄。
+    """`--todo` 交出伺服器上ê絕對路徑，`fetch_sftp.sh` 毋免閣加根目錄。
 
-    新母帶（2026-09-23，1223 集）佇 `/home/mkv-raw/`，毋是 `/docker/
-    ilrdf-corpus/`；`fetch_sftp.sh` 若照舊加 `/docker/ilrdf-corpus/`，
-    規批攏揣無。
+    影片攏佇 `/home/news/mkv/<年-月>/`，毋管本底佇 `/home/mkv-raw/`
+    抑是 `/docker/ilrdf-corpus/`——位置由成果檔名推導，來源是佗位無關係。
     """
 
     RAW = "home/mkv-raw/112/7月/23NL003_183_族語午間新聞_Kanakanavu.mkv"
@@ -237,14 +252,25 @@ class TestTodoGivesServerPaths(unittest.TestCase):
         return dict(plan_month.todo(month, entries,
                                     already_cut=lambda entry: False))
 
-    def test_a_mkv_raw_episode_is_fetched_from_home(self):
+    def test_a_mkv_raw_episode_is_fetched_from_the_canonical_place(self):
         found = self._todo("2023-07")
-        self.assertEqual(list(found.values()), ["/" + self.RAW])
+        self.assertEqual(
+            list(found.values()),
+            ["/home/news/mkv/2023-07/20230702_183_午間_Kanakanavu_"
+             "卡那卡那富.mkv"])
 
-    def test_a_corpus_episode_is_fetched_from_docker(self):
+    def test_a_corpus_episode_is_fetched_from_the_canonical_place_too(self):
         found = self._todo("2021-05")
-        self.assertEqual(list(found.values()),
-                         ["/docker/" + JUL + "21NL005_122晨間族語新聞.mp4"])
+        self.assertEqual(
+            list(found.values()),
+            ["/home/news/mkv/2021-05/20210502_122_晨間_Hla'alua_"
+             "拉阿魯哇.mkv"])
+
+    def test_the_todo_is_offline(self):
+        # 退路（正規位置揣無）佇實際取檔ê時處理；列清單毋連伺服器。
+        for entry in episodes.load(self.table, srt_dir=set()):
+            self.assertEqual(entry["remote"],
+                             paths.video_path(entry["srt_name"]))
 
 
 class TestOpeningTodo(TestTodoGivesServerPaths):
@@ -262,25 +288,19 @@ class TestOpeningTodo(TestTodoGivesServerPaths):
 
     def test_a_cut_episode_without_an_opening_is_listed(self):
         found = self._opening("2021-05")
-        self.assertEqual(list(found.values()),
-                         ["/docker/" + JUL + "21NL005_122晨間族語新聞.mp4"])
+        self.assertEqual(
+            list(found.values()),
+            ["/home/news/mkv/2021-05/20210502_122_晨間_Hla'alua_"
+             "拉阿魯哇.mkv"])
 
     def test_an_episode_already_read_is_not(self):
         name = "20210502_122_晨間_Hla'alua_拉阿魯哇"
         self.assertEqual(self._opening("2021-05", done=[name]), {})
 
-    def test_the_mp4_copy_is_preferred_over_the_mxf_master(self):
-        # 2021-02 揀著 `2月原始mxf檔` ê母帶：mxf 位元率懸，頭 60 MB 干焦
-        # 幾秒，20／30／40 秒三格攏是片頭前ê廣告卡（63 集 62 集讀袂著）。
-        # 仝一集 7 月資料夾有 mp4 轉檔，頭尾稀疏抓對 mp4 有效。
-        master = "ilrdf-corpus/族語新聞/110.1-110.10/2月原始mxf檔/21NL003_35午間族語新聞.mxf"
-        copy = JUL + "21NL003_35午間族語新聞.mp4"
-        with open(self.table, "a", encoding="utf-8-sig", newline="") as out:
-            writer = csv.DictWriter(out, fieldnames=HEAD)
-            writer.writerow(row("35", "2021-02-04", "午間", "Truku", "太魯閣",
-                                "trv-x-truku", [master, copy]))
-        found = self._opening("2021-02")
-        self.assertEqual(list(found.values()), ["/docker/" + copy])
+    def test_there_is_no_light_copy_swap_anymore(self):
+        # 本底 2021-02 揀著 mxf 母帶ê時愛換抓 mp4 轉檔（mxf 頭 60 MB 干焦
+        # 幾秒，三格攏是廣告卡）。這馬每集攏是單一 mkv，彼段無閣有路用。
+        self.assertFalse(hasattr(plan_month, "_light_copy"))
 
     def test_an_uncut_episode_is_left_to_the_normal_fetch(self):
         # 猶未切ê集數切 cue ê時就會截片頭，毋免另外抓。

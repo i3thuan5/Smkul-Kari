@@ -61,6 +61,10 @@ def entry_of(row, delivered):
     entry["slug"] = slug_of(row)
     entry["file"] = file_of(row)
     entry["video"] = row["原始影片檔案位置"]
+    # 影片佇伺服器頂ê正規位置：由成果檔名推導，全流程取遠端路徑ê唯一
+    # 出口。算出來ê名，毋保證檔案佇咧——實際欲讀檔ê所在用
+    # `video_names.locate()` 確認，揣無才退回 `video` 彼欄。
+    entry["remote"] = paths.video_path(row["成果檔名"])
     entry["播出時段"] = checks.slot_of(row["節目名稱"])
     entry["pending"] = row["成果檔名"] not in delivered
     return entry

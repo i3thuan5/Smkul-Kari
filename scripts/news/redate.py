@@ -107,8 +107,16 @@ def move_store(old, new, store=None):
     return relabel.Report(renamed, [])
 
 
-def redate(name, date, episode, reason, catalogue=None, store=None):
-    """改目錄（照成果檔名重排）、搬 store；回 (新成果檔名, Report)。"""
+def redate(name, date, episode, reason, catalogue=None, store=None,
+           sftp=None, say=print):
+    """改目錄（照成果檔名重排）、搬 store；回 (新成果檔名, Report)。
+
+    成果檔名換了（可能跨月），伺服器頂ê影片嘛綴咧搬去新名稱ê位置，**伺服器
+    彼步先做**；現在位置佮 `relabel` 仝款照 `video_names.locate` 揣，兩位
+    攏無就拒絕。伺服器成功了本機若失敗，會試著共影片搬轉去才報錯。
+    """
+    from scripts.news import episodes
+    from scripts.news import video_names
     target = catalogue or paths.TRACKER_STORE
     rows, head = name_catalogue.read(target)
     found = None
@@ -122,10 +130,17 @@ def redate(name, date, episode, reason, catalogue=None, store=None):
     for row in rows:
         if row["成果檔名"] == new and new != name:
             raise PipelineError("目錄已經有 %s，無改任何物件" % new)
-    report = move_store(name, new, store=store)
-    rows[found] = new_row
-    rows.sort(key=lambda row: row["成果檔名"])
-    name_catalogue.write(target, rows, head)
+    sftp = sftp or video_names.Sftp()
+    renamed = video_names.rename_episode(
+        episodes.entry_of(rows[found], set()), new, sftp, say=say)
+    try:
+        report = move_store(name, new, store=store)
+        rows[found] = new_row
+        rows.sort(key=lambda row: row["成果檔名"])
+        name_catalogue.write(target, rows, head)
+    except Exception:
+        video_names.rename_back(renamed, sftp, say=say)
+        raise
     return new, report
 
 

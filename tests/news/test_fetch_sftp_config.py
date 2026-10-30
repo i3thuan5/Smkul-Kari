@@ -258,5 +258,32 @@ class TestOpeningOnly(unittest.TestCase):
         self.assertIn("exit", block)
 
 
+class TestFallbackWhenTheCanonicalPlaceIsEmpty(unittest.TestCase):
+    """正規位置揣無ê時，退回 `原始影片檔案位置`（`video_names locate`）。
+
+    shell 這爿干焦負責呼叫；退不退、退去佗，攏是 `locate` ê代誌（測試佇
+    `test_video_names.py`）。這爿驗：語法會過、揣無ê分支有先問 `locate`
+    才 FAIL。
+    """
+
+    def text(self):
+        with open(FETCH, encoding="utf-8") as handle:
+            return handle.read()
+
+    def test_the_script_is_valid_bash(self):
+        proc = subprocess.run(["bash", "-n", FETCH], capture_output=True,
+                              text=True)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+
+    def test_a_missing_size_asks_locate_before_it_fails(self):
+        text = self.text()
+        self.assertIn("scripts.news.video_names locate", text)
+        self.assertLess(text.index("scripts.news.video_names locate"),
+                        text.index("伺服器頂懸無"))
+
+    def test_the_fallback_says_so(self):
+        self.assertIn("退回原始位置", self.text())
+
+
 if __name__ == "__main__":
     unittest.main()

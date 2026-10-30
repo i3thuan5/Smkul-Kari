@@ -18,10 +18,11 @@ The entries are written `pending`, which is what lets the store name an
 episode it cannot yet rebuild; `publish` clears the flag when the batch is
 done.
 
-Episodes the rules cannot decide are skipped and listed, not guessed at --
-see `sources.py`. Skipped episodes are not written to the inventory, so the
-batch can still be published without one of them holding it open forever;
-揀袂出來ê集數逐擺攏報，等人判好才做。
+Each episode's video is the **canonical place** derived from its name
+(`paths.video_path`, `/home/news/mkv/<年-月>/<成果檔名>.mkv`), not a choice
+among the catalogue's candidates -- so planning never asks the server and
+nothing is skipped as undecidable. When that place turns out empty at fetch
+time, `video_names.locate` falls back to `原始影片檔案位置` there.
 """
 import argparse
 import collections
@@ -31,8 +32,6 @@ import sys
 
 from scripts.news import episodes
 from scripts.news import paths
-from scripts.news import resolve_slug
-from scripts.news import sources
 from scripts.errors import PipelineError
 
 Report = collections.namedtuple(
@@ -71,16 +70,10 @@ def plan(month, entries, limit=0):
     if not rows:
         raise PipelineError("節目目錄內底無 %s 這个月的集數" % month)
 
-    picked = sources.resolve(rows)
     planned = []
     skipped = []
-    for row, (video, problem) in zip(rows, picked):
-        if problem is sources.NO_SOURCE:
-            continue
-        if not video:
-            skipped.append((label_of(row), problem))
-            continue
-        planned.append(dict(row, video=video))
+    for row in rows:
+        planned.append(dict(row, video=row["remote"]))
     if limit:
         planned = planned[:limit]
     return Report(month, rows, planned, skipped, 0)
@@ -147,30 +140,22 @@ def todo(month, entries, already_cut=already_cut):
     can ever ask for a second cut of an episode -- the failure that would
     renumber every cue under a delivered SRT.
 
-    Paths come back absolute on the server (`resolve_slug.server_path`):
-    most sources sit under `/docker/ilrdf-corpus/`, but the 2026-09-23 mkv
-    delivery is under `/home/mkv-raw/`, so the caller cannot add one fixed
-    root itself.
-
-    The path is the one `sources.resolve` chose, the same as `plan` reports
-    -- `原始影片檔案位置` is a candidate list, and handing the raw cell to
-    `fetch_sftp.sh` asked the server for "a.mp4;b.mp4" (59 episodes skipped
-    that way before this was fixed). An episode the rules cannot decide is
-    left off; `plan` is what names it.
+    Paths come back absolute on the server: each entry's `remote`, the
+    canonical place derived from its name. The old rule picked one file
+    from `原始影片檔案位置` (a candidate list) with `sources.resolve`; that
+    is gone, so a list like "a.mp4;b.mp4" can no longer reach the fetch.
     """
     rows = []
     for entry in entries:
         if entry["播出日期"].startswith(month):
             rows.append(entry)
     out = []
-    for entry, (video, _problem) in zip(rows, sources.resolve(rows)):
-        if not video:
-            continue
+    for entry in rows:
         if not entry.get("pending"):
             continue
         if already_cut(entry):
             continue
-        out.append((entry["slug"], resolve_slug.server_path(video)))
+        out.append((entry["slug"], entry["remote"]))
     return out
 
 
@@ -179,7 +164,8 @@ def opening_todo(month, entries, done=None, already_cut=already_cut):
 
     猶未切ê集數毋免列：切 cue ê時影片佇磁碟，片頭就綴咧截矣。切過ê
     （2021 年 660 集）影片早就刣掉，`opening grab-remote` 干焦抓頭尾兩
-    段補截。`done` 是 `片頭辨識.csv` 已經有ê成果檔名。
+    段補截。`done` 是 `片頭辨識.csv` 已經有ê成果檔名。路徑是正規位置；
+    揣無ê時退回原始位置佇 `opening.grab_remote` 處理。
     """
     if done is None:
         from scripts.news import opening
@@ -191,30 +177,13 @@ def opening_todo(month, entries, done=None, already_cut=already_cut):
         if entry["播出日期"].startswith(month):
             rows.append(entry)
     out = []
-    for entry, (video, _problem) in zip(rows, sources.resolve(rows)):
-        if not video or entry["srt_name"] in done:
+    for entry in rows:
+        if entry["srt_name"] in done:
             continue
         if not already_cut(entry):
             continue
-        video = _light_copy(entry, video)
-        out.append((entry["slug"], resolve_slug.server_path(video)))
+        out.append((entry["slug"], entry["remote"]))
     return out
-
-
-def _light_copy(entry, chosen):
-    """片頭補抓用ê來源：切 cue 揀母帶，這爿有 mp4／mkv 轉檔就用轉檔。
-
-    2021-02 揀著 `2月原始mxf檔`：mxf 位元率懸，頭 60 MB 干焦幾秒，20／30
-    ／40 秒三格攏是片頭前ê廣告卡（63 集 62 集讀袂著）。頭尾稀疏抓對 mp4
-    有效（索引佇檔尾）。
-    """
-    if not chosen.lower().endswith(".mxf"):
-        return chosen
-    for part in (entry.get("原始影片檔案位置") or "").split(";"):
-        part = part.strip()
-        if part.lower().endswith((".mp4", ".mkv")):
-            return part
-    return chosen
 
 
 def preset_for(month, presets=None):

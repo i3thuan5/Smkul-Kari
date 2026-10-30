@@ -72,8 +72,10 @@ def _expand(chosen):
 
 
 # Where the archival copies also live, on the server, laid out by broadcast
-# month the same way the store is.
-REMOTE_ARCHIVE_ROOT = "/home/news/mkv"
+# month the same way the store is. The layout itself is `paths.video_*`
+# now -- the pipeline reads videos from there too, so it cannot live in this
+# side line -- and the names below are kept as aliases of it.
+REMOTE_ARCHIVE_ROOT = paths.VIDEO_ROOT
 
 MASTER_EXT = ".mxf"
 
@@ -106,15 +108,8 @@ def staged_path(srt_name, remote):
                         stage_name(srt_name, remote))
 
 
-def remote_archive_dir(srt_name):
-    """<root>/<年-月> on the server."""
-    return "%s/%s" % (REMOTE_ARCHIVE_ROOT, paths.month_of(srt_name))
-
-
-def remote_archive_path(srt_name):
-    """Where this episode's mkv goes on the server."""
-    return "%s/%s.mkv" % (remote_archive_dir(srt_name),
-                          paths.check_srt_name(srt_name))
+remote_archive_dir = paths.video_dir
+remote_archive_path = paths.video_path
 
 
 def master_episodes(entries):
@@ -187,17 +182,8 @@ def probe_duration(path):
 
 
 def remote_dirs_to_make(srt_name):
-    """Every level of the archive folder, outermost first.
-
-    sftp's `mkdir` makes one level at a time; handed a path whose parent is
-    missing it just fails, and the first upload into a new month is exactly
-    that case.
-    """
-    parts = remote_archive_dir(srt_name).strip("/").split("/")
-    out = []
-    for index in range(len(parts)):
-        out.append("/" + "/".join(parts[:index + 1]))
-    return out
+    """Every level of the archive folder, outermost first (`paths`' list)."""
+    return paths.video_dirs_to_make(srt_name)
 
 
 def needs_upload(local_size, remote_size):

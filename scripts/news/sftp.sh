@@ -7,6 +7,7 @@
 #         scripts/news/sftp.sh mkdir REMOTE         (tolerates "already there")
 #         scripts/news/sftp.sh ls REMOTE            (long form, as parsed)
 #         scripts/news/sftp.sh rename OLD NEW       (remote -> remote)
+#         scripts/news/sftp.sh rmdir REMOTE         (fails if not empty)
 #         printf 'ls\n' | scripts/news/sftp.sh -    (ad-hoc batch on stdin)
 #
 # Paths are separate arguments, never pieces of a command string. `sftp -b`
@@ -41,7 +42,7 @@ SFTP_HOST="${SFTP_HOST:-ilrdf-corpus@192.168.35.10}"
 # 印用法、回傳離開碼；離開由呼叫端做，函式才有明確的出口
 usage() {
     echo "usage: $0 {get REMOTE LOCAL | put LOCAL REMOTE |" \
-         "mkdir REMOTE | ls REMOTE | rename OLD NEW | -}" >&2
+         "mkdir REMOTE | ls REMOTE | rename OLD NEW | rmdir REMOTE | -}" >&2
     return 2
 }
 
@@ -114,6 +115,16 @@ case "$verb" in
         check_path "$arg2"
         check_path "$arg3"
         printf 'rename "%s" "%s"\n' "$arg2" "$arg3" > "$batch"
+        ;;
+    rmdir)
+        # Deliberately without a leading "-" (unlike mkdir): a failure here
+        # means the folder was not empty after all -- someone put a file in
+        # it after we looked. That has to surface, not be swallowed; the
+        # server refuses to remove a non-empty folder, which is the second
+        # line of defence behind `video_names prune` checking it is empty.
+        [[ $# -eq 2 ]] || { usage; exit $?; }
+        check_path "$arg2"
+        printf 'rmdir "%s"\n' "$arg2" > "$batch"
         ;;
     *)
         usage
