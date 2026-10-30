@@ -10,6 +10,7 @@ import os
 import tempfile
 import unittest
 
+from scripts import catalogue_checks as checks
 from scripts.errors import PipelineError
 from scripts.news import redate
 
@@ -26,7 +27,7 @@ STAGES = (("1-ocr/1-cues", ".json"), ("1-ocr/3-srt", ".srt"),
 
 
 def catalogue_row(**over):
-    row = {"成果檔名": OLD, "節目名稱": "晚間族語新聞", "年度": "2024",
+    row = {"成果檔名": OLD, "節目名稱": "看見族語（晚間）", "年度": "2024",
            "集數": "274", "播出日期": "2024-09-30", "族語別(英)": "Amis",
            "族語別(中)": "阿美", "語言別": "海岸", "語言別代號": "ami-x-pswl",
            "原始影片檔案位置": "home/mkv-raw/113/10月/20241001S2000.mkv",
@@ -62,6 +63,28 @@ class TestTheRow(unittest.TestCase):
         self.assertTrue(got["備註"].startswith("檔名寫 10-01"))
         self.assertIn("2024-09-30", got["備註"])
         self.assertIn("OCR 內容是 10-01", got["備註"])
+
+    def test_crossing_into_the_renamed_programme_changes_its_name(self):
+        """07-31 → 08-01：節目名稱跟咧換成《看見族語（晚間）》。
+
+        無換ê話，剛改好ê這逝會予 `row_problems` ê日期對照擋落來。
+        """
+        row = catalogue_row(播出日期="2024-07-31", 集數="273",
+                            節目名稱="晚間族語新聞")
+        got = redate.redate_row(row, "2024-08-01", 274, "x")
+        self.assertEqual(got["節目名稱"], "看見族語（晚間）")
+        self.assertEqual(checks.row_problems([got]), [])
+
+    def test_crossing_back_before_it_changes_the_name_back(self):
+        row = catalogue_row(播出日期="2024-08-01", 集數="274",
+                            節目名稱="看見族語（晚間）")
+        got = redate.redate_row(row, "2024-07-31", 273, "x")
+        self.assertEqual(got["節目名稱"], "晚間族語新聞")
+        self.assertEqual(checks.row_problems([got]), [])
+
+    def test_staying_on_one_side_leaves_the_name_alone(self):
+        got = redate.redate_row(catalogue_row(), "2024-10-01", 275, "x")
+        self.assertEqual(got["節目名稱"], "看見族語（晚間）")
 
     def test_a_malformed_date_is_refused(self):
         for bad in ("2024/10/01", "20241001", "2024-10-1", ""):

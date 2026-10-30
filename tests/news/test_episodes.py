@@ -54,6 +54,17 @@ class TestSlug(Fixture):
         got = episodes.slug_of(row(節目名稱="晚間族語新聞"))
         self.assertIn("_晚間_", got)
 
+    def test_the_renamed_programme_keeps_the_same_work_dir_name(self):
+        # 節目名稱改成《看見族語（晚間）》，work dir 名若跟咧變，切好ê工作區
+        # 就揣袂著。
+        old = row(節目名稱="晚間族語新聞", 年度="2024", 集數="337",
+                  播出日期="2024-12-02",
+                  **{"族語別(英)": "Amis", "族語別(中)": "阿美"})
+        new = dict(old, 節目名稱="看見族語（晚間）")
+        self.assertEqual(episodes.slug_of(old),
+                         "2024_337_2024-12-02_晚間_Amis_阿美")
+        self.assertEqual(episodes.slug_of(new), episodes.slug_of(old))
+
     def test_an_unknown_programme_stops_instead_of_blanking_the_slot(self):
         # 空時段會組出一个無人揣會著ê work dir 名。
         with self.assertRaises(PipelineError):

@@ -24,13 +24,30 @@ HEAD_AFTER = ("族語別(英)", "族語別(中)", "語言別", "語言別代號"
 NEWS_KEYS = ("年度", "集數", "播出日期")
 EPISODE_KEYS = ("集數",)
 
-# 節目名稱 → 播出時段。量過 983 逝，一對一、零例外，而且時段本底就
-# 佇 `成果檔名` 內底矣——仝一件代誌三份拷貝，留一份就好。
-SLOTS = {
-    "午間族語新聞": "午間",
-    "晚間族語新聞": "晚間",
-    "晨間族語新聞": "晨間",
+# 節目名稱 → 播出時段。一對一、零例外，而且時段本底就佇 `成果檔名`
+# 內底矣——仝一件代誌三份拷貝，留一份就好。
+#
+# 2024-08-01 起《族語新聞》改名《看見族語》（原視 2024-07-30 報導），
+# 三个時段猶原各別存在，所以新名稱保留時段，括號限定全形。舊名稱
+# 留咧：2024-07-31 以前猶是用伊。名稱佮日期對會著，由 `row_problems`
+# 檢查（`_programme_problems`）。
+RENAMED_ON = "2024-08-01"
+
+PROGRAMMES_BEFORE = {
+    "午間": "午間族語新聞",
+    "晚間": "晚間族語新聞",
+    "晨間": "晨間族語新聞",
 }
+PROGRAMMES_FROM = {
+    "午間": "看見族語（午間）",
+    "晚間": "看見族語（晚間）",
+    "晨間": "看見族語（晨間）",
+}
+
+SLOTS = {}
+for _table in (PROGRAMMES_BEFORE, PROGRAMMES_FROM):
+    for _slot, _programme in _table.items():
+        SLOTS[_programme] = _slot
 
 AIYALAEHO = "開會了"
 
@@ -38,6 +55,16 @@ AIYALAEHO = "開會了"
 def head(keys):
     """The leading columns a table with these episode-identifying keys has."""
     return HEAD_BEFORE + tuple(keys) + HEAD_AFTER
+
+
+def programme_for(slot, date):
+    """這个時段、這一工（YYYY-MM-DD），節目名稱愛寫啥。
+
+    改名生效日是 `RENAMED_ON`：當工以後寫《看見族語（時段）》，以前寫
+    《某時段族語新聞》。檢查佮 `redate` 攏用這一支，界線干焦一个所在。
+    """
+    table = PROGRAMMES_FROM if date >= RENAMED_ON else PROGRAMMES_BEFORE
+    return table[slot]
 
 
 def slot_of(programme):
@@ -48,8 +75,12 @@ def slot_of(programme):
     """
     if programme in SLOTS:
         return SLOTS[programme]
-    raise PipelineError("節目名稱 %r 對袂著任何一个播出時段（有ê是：%s）"
-                        % (programme, "、".join(sorted(SLOTS))))
+    hint = ""
+    fixed = programme.replace("(", "（").replace(")", "）")
+    if fixed != programme and fixed in SLOTS:
+        hint = "；括號愛用全形（），應該寫 %r" % fixed
+    raise PipelineError("節目名稱 %r 對袂著任何一个播出時段（有ê是：%s）%s"
+                        % (programme, "、".join(sorted(SLOTS)), hint))
 
 
 def srt_name_of(row):
@@ -105,6 +136,7 @@ def row_problems(rows, source_column="原始影片檔案位置"):
                 problems.append("第 %d 逝：成果檔名 %r 佮識別欄推出來ê "
                                 "%r 無仝" % (index, name, want))
 
+        problems.extend(_programme_problems(index, row))
         problems.extend(_language_problems(index, row))
 
         if not (row.get(source_column) or "").strip():
@@ -112,6 +144,30 @@ def row_problems(rows, source_column="原始影片檔案位置"):
 
     problems.extend(_order_problems(rows))
     return problems
+
+
+DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _programme_problems(index, row):
+    """新聞ê節目名稱愛佮播出日期對會著（界線 `RENAMED_ON`）。
+
+    干焦管「名稱有認得、日期有寫對，毋過兩个對袂起來」。《開會了》無
+    播出日期，名稱嘛毋是新聞ê，免管；日期空白抑是格式毋著、名稱無佇
+    對照表內，彼兩款成果檔名推袂出來ê問題已經有人指名矣，這爿閣報
+    一擺就變兩條講仝一件代誌。
+    """
+    programme = row.get("節目名稱", "")
+    date = row.get("播出日期", "")
+    if programme not in SLOTS or not DATE.match(date or ""):
+        return []
+    want = programme_for(SLOTS[programme], date)
+    if programme == want:
+        return []
+    period = ("%s 起" % RENAMED_ON if date >= RENAMED_ON
+              else "%s 之前" % RENAMED_ON)
+    return ["第 %d 逝：節目名稱 %r 佮播出日期 %s 對袂起來（%s應該寫 %r）"
+            % (index, programme, date, period, want)]
 
 
 def _language_problems(index, row):

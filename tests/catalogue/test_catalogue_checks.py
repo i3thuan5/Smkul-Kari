@@ -45,6 +45,51 @@ class TestSlotComesFromTheProgramme(unittest.TestCase):
         self.assertIn("特別節目", str(caught.exception))
 
 
+class TestTheRenamedProgramme(unittest.TestCase):
+    """2024-08-01 起《族語新聞》改名《看見族語》，時段留佇名內底。"""
+
+    def test_the_three_new_names_resolve(self):
+        self.assertEqual(checks.slot_of("看見族語（午間）"), "午間")
+        self.assertEqual(checks.slot_of("看見族語（晚間）"), "晚間")
+        self.assertEqual(checks.slot_of("看見族語（晨間）"), "晨間")
+
+    def test_the_old_names_still_resolve(self):
+        # 2024-07-31 以前 2,816 逝猶是用舊名，愛解會出來。
+        self.assertEqual(checks.slot_of("晚間族語新聞"), "晚間")
+
+    def test_half_width_parentheses_are_refused_with_a_hint(self):
+        # Excel 手拍上濟犯ê毋著：看起來差不多、其實是兩款名。毋是推一个
+        # 空字串，是指名彼个名佮講愛全形。
+        with self.assertRaises(PipelineError) as caught:
+            checks.slot_of("看見族語(晚間)")
+        self.assertIn("看見族語(晚間)", str(caught.exception))
+        self.assertIn("全形", str(caught.exception))
+
+    def test_the_name_without_a_slot_does_not_resolve(self):
+        # 三个時段仝名，推袂出是佗一个。
+        with self.assertRaises(PipelineError) as caught:
+            checks.slot_of("看見族語")
+        self.assertIn("看見族語", str(caught.exception))
+
+    def test_renaming_does_not_change_the_srt_name(self):
+        # 改名若連動改成果檔名，3,153 支 SRT 規堆變孤兒檔。
+        old = news_row(成果檔名="20241202_337_晚間_Amis_阿美",
+                       節目名稱="晚間族語新聞", 年度="2024", 集數="337",
+                       播出日期="2024-12-02",
+                       **{"族語別(英)": "Amis", "族語別(中)": "阿美"})
+        new = dict(old, 節目名稱="看見族語（晚間）")
+        self.assertEqual(checks.srt_name_of(old), "20241202_337_晚間_Amis_阿美")
+        self.assertEqual(checks.srt_name_of(new), checks.srt_name_of(old))
+
+    def test_programme_for_gives_the_name_that_day_used(self):
+        self.assertEqual(checks.programme_for("晚間", "2024-07-31"),
+                         "晚間族語新聞")
+        self.assertEqual(checks.programme_for("晚間", "2024-08-01"),
+                         "看見族語（晚間）")
+        self.assertEqual(checks.programme_for("晨間", "2024-12-31"),
+                         "看見族語（晨間）")
+
+
 class TestSrtNameDerivation(unittest.TestCase):
     def test_news_name_is_date_episode_slot_language(self):
         self.assertEqual(checks.srt_name_of(news_row()),
@@ -115,6 +160,63 @@ class TestRowProblems(unittest.TestCase):
         self.assertEqual(
             checks.row_problems([row],
                                 source_column="來源文字檔檔案位置"), [])
+
+
+def row_on(date, programme, slot="晚間", episode=214):
+    """節目名稱佮播出日期對無對ê實驗用一逝；成果檔名照欄位寫好。"""
+    name = "%s_%03d_%s_Amis_阿美" % (date.replace("-", ""), episode, slot)
+    return news_row(成果檔名=name, 節目名稱=programme, 年度=date[:4],
+                    集數=str(episode), 播出日期=date,
+                    **{"族語別(英)": "Amis", "族語別(中)": "阿美",
+                       "語言別代號": "ami"})
+
+
+class TestProgrammeMatchesTheDate(unittest.TestCase):
+    """改名生效日 2024-08-01：之前寫族語新聞、之後寫看見族語（時段）。"""
+
+    def test_each_side_of_the_line_with_its_own_name_passes(self):
+        self.assertEqual(checks.row_problems(
+            [row_on("2024-07-31", "晚間族語新聞")]), [])
+        self.assertEqual(checks.row_problems(
+            [row_on("2024-08-01", "看見族語（晚間）")]), [])
+
+    def test_the_old_name_on_the_first_day_is_named(self):
+        # 界線若寫成 `>` 毋是 `>=`，08-01 彼工就漏。
+        problems = checks.row_problems(
+            [row_on("2024-08-01", "晚間族語新聞")])
+        self.assertEqual(len(problems), 1)
+        self.assertIn("第 2 逝", problems[0])
+        self.assertIn("節目名稱", problems[0])
+        self.assertIn("看見族語（晚間）", problems[0])
+
+    def test_the_new_name_the_day_before_is_named(self):
+        problems = checks.row_problems(
+            [row_on("2024-07-31", "看見族語（晚間）")])
+        self.assertEqual(len(problems), 1)
+        self.assertIn("2024-07-31", problems[0])
+        self.assertIn("晚間族語新聞", problems[0])
+        self.assertNotIn("推袂出來", problems[0])
+
+    def test_both_names_in_one_table_are_legal(self):
+        rows = [row_on("2024-07-31", "晚間族語新聞", episode=213),
+                row_on("2024-08-01", "看見族語（晚間）", episode=214)]
+        self.assertEqual(checks.row_problems(rows), [])
+
+    def test_the_aiyalaeho_table_is_not_touched(self):
+        # 開會了ê表無播出日期欄，節目名稱是「開會了」。
+        self.assertEqual(checks.row_problems([aiya_row()]), [])
+
+    def test_a_blank_date_does_not_hide_the_other_problem(self):
+        # 日期空白ê時成果檔名佮識別欄對袂起來，彼條已經指名矣；日期對照
+        # 莫閣加一條「節目名稱毋著」，嘛毋通拋例外。
+        problems = checks.row_problems([news_row(播出日期="")])
+        self.assertEqual(len(problems), 1)
+        self.assertIn("成果檔名", problems[0])
+
+    def test_a_malformed_date_does_not_raise(self):
+        problems = checks.row_problems([news_row(播出日期="2024/08/01")])
+        self.assertEqual(len(problems), 1)
+        self.assertIn("成果檔名", problems[0])
 
 
 class TestRowOrder(unittest.TestCase):

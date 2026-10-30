@@ -14,7 +14,12 @@
 
 | spec | scenario | 測試檔 |
 |---|---|---|
-| episode-catalogue | 播出時段由節目名稱推導（983 列零例外）；節目名稱不在三種新聞之列時指名中止，不可推出空字串——空時段會組出一個沒人找得到的成果檔名 | `test_catalogue_checks.py` |
+| episode-catalogue | 播出時段由節目名稱推導（一對一、零例外）；節目名稱不在六個合法名稱之列時指名中止，不可推出空字串——空時段會組出一個沒人找得到的成果檔名 | `test_catalogue_checks.py` |
+| episode-catalogue | 三個新名稱「看見族語（午間／晚間／晨間）」各解出對的時段；舊的三個仍解得出，因為 2024-07-31 以前的列還在用 | `test_catalogue_checks.py` |
+| episode-catalogue | 半形括號 `看見族語(晚間)` 不認、指名並提示全形，不推空字串（Excel 手打最常犯、看起來幾乎一模一樣）；只寫「看見族語」不帶時段也對不到（三個時段共用同名，推不出是哪個） | `test_catalogue_checks.py` |
+| episode-catalogue | 改名不可連動改成果檔名：`看見族語（晚間）` ＋ 2024-12-02 與舊名稱組出同一個 `20241202_337_晚間_Amis_阿美`——連動的話所有 SRT 變孤兒檔 | `test_catalogue_checks.py`、`test_name_catalogue.py` |
+| episode-catalogue | 節目名稱要與播出日期相符，界線兩側各測：07-31 配舊名稱過、08-01 配新名稱過；08-01 配舊名稱被擋、07-31 配新名稱被擋（防 `>` 與 `>=` 寫反）；同一張表兩種名稱並存合法 | `test_catalogue_checks.py` |
+| episode-catalogue | 日期對照不波及開會了（無播出日期欄）；播出日期空白或格式壞掉時不拋例外、不多報，只留成果檔名與識別欄不一致那一條 | `test_catalogue_checks.py` |
 | episode-catalogue | 集數要補三碼：`2021_32_…` 和 `2021_032_…` 排起來位置不同，而且找不到檔 | `test_catalogue_checks.py` |
 | episode-catalogue | 還沒切 cue 的集數也推得出成果檔名——一列一建立就有名 | `test_catalogue_checks.py` |
 | episode-catalogue | 成果檔名與識別欄推出來的不一致時指名該列，不可就地改寫那一格 | `test_catalogue_checks.py` |

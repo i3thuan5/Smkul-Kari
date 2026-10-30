@@ -34,7 +34,7 @@ LOGS = ("1-ocr/片頭辨識.csv", "2-asr-whisper/1-srt-sapolita/辨識紀錄.csv
 
 
 def redate_row(row, date, episode, reason):
-    """目錄一列換做 `date` 第 `episode` 集：年度、集數、播出日期、成果檔名、備註。"""
+    """目錄一列換做 `date` 第 `episode` 集：年度、集數、播出日期、節目名稱、成果檔名、備註。"""
     if not DATE.match(date or ""):
         raise PipelineError("播出日期愛寫 YYYY-MM-DD：%r" % date)
     try:
@@ -45,6 +45,10 @@ def redate_row(row, date, episode, reason):
     out["年度"] = date[:4]
     out["集數"] = str(int(episode))
     out["播出日期"] = date
+    # 跨過改名生效日（2024-08-01）ê時節目名稱嘛愛換，無就會予日期對照
+    # 檢查擋落來。
+    out["節目名稱"] = checks.programme_for(
+        checks.slot_of(row["節目名稱"]), date)
     out["成果檔名"] = checks.srt_name_of(out)
     note = "播出日期本底標 %s（第 %s 集），改 %s（第 %s 集）：%s" % (
         row["播出日期"], int(row["集數"]), date, int(episode), reason)

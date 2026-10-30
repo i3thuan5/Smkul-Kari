@@ -54,6 +54,18 @@ class TestNameOf(unittest.TestCase):
     def test_a_non_numeric_episode_is_empty_too(self):
         self.assertEqual(name_catalogue.name_of(row(集數="待補")), "")
 
+    def test_the_renamed_programme_names_the_same_episode_the_same(self):
+        # 2024-08-01 起節目名稱改《看見族語（晚間）》；成果檔名若跟咧變，
+        # 規堆 SRT 就變孤兒檔。
+        old = row(節目名稱="晚間族語新聞", 年度="2024", 集數="337",
+                  播出日期="2024-12-02",
+                  **{"族語別(英)": "Amis", "族語別(中)": "阿美"})
+        new = dict(old, 節目名稱="看見族語（晚間）")
+        self.assertEqual(name_catalogue.name_of(old),
+                         "20241202_337_晚間_Amis_阿美")
+        self.assertEqual(name_catalogue.name_of(new),
+                         name_catalogue.name_of(old))
+
 
 class TestNamed(unittest.TestCase):
     def test_the_name_column_goes_first(self):
@@ -87,6 +99,19 @@ class TestNamed(unittest.TestCase):
 class TestCheck(unittest.TestCase):
     def test_a_consistent_catalogue_reports_nothing(self):
         out, head = name_catalogue.named([row(), unnameable_row()], HEAD)
+        self.assertEqual(name_catalogue.check(out), [])
+
+    def test_a_catalogue_with_both_programme_names_reports_nothing(self):
+        # 界線兩側ê列攏佇仝一張表，--check 逐格重算，新舊名稱攏愛算會著。
+        before = row(節目名稱="晚間族語新聞", 播出日期="2024-07-31",
+                     年度="2024", 集數="213")
+        after = row(節目名稱="看見族語（晚間）", 播出日期="2024-08-01",
+                    年度="2024", 集數="214")
+        out, head = name_catalogue.named([before, after], HEAD)
+        # 推袂出名ê列是空字串，重算嘛是空字串，自己佮自己相等——所以愛
+        # 先講明兩列攏有名。
+        self.assertEqual(out[0]["成果檔名"], "20240731_213_晚間_Rukai_魯凱")
+        self.assertEqual(out[1]["成果檔名"], "20240801_214_晚間_Rukai_魯凱")
         self.assertEqual(name_catalogue.check(out), [])
 
     def test_a_hand_edited_cell_is_caught(self):

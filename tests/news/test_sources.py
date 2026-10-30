@@ -69,6 +69,16 @@ class TestPick(unittest.TestCase):
         self.assertEqual(path, paths[1])
         self.assertEqual(problem, "")
 
+    def test_the_renamed_programme_still_breaks_the_tie_by_slot(self):
+        # 節目名稱改成《看見族語（晚間）》了後，挑檔是靠 slot_of 解出時段。
+        # 解袂出來就變成「無時段資訊」，兩條候選攏賰咧，揀袂出來或是揀毋著。
+        paths = [CORPUS + "7月/24NL003_37午間族語新聞.mkv",
+                 CORPUS + "7月/24NL004_37晚間族語新聞.mkv"]
+        entry = row("晚間", paths, 節目名稱="看見族語（晚間）")
+        path, problem = sources.pick(entry)
+        self.assertEqual(path, paths[1])
+        self.assertEqual(problem, "")
+
     def test_an_unreadable_slot_word_is_not_read_as_another_slot(self):
         # 「五間」是「午間」拍毋著。若kā伊當做某一个時段，這集就會去
         # 配著別集的檔。無時段資訊就是無時段資訊。

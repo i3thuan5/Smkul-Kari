@@ -49,6 +49,9 @@
 | srt-data-store | 內容還是同一集、語言沒變，whisper 辨識結果、平行語料、kaldi 各階段**一個都不能刪**（relabel 才刪），逐階段改名；跨月 09 → 10 時月份資料夾也要換，否則 `rebuild --verify` 找到孤兒檔 | `test_redate.py` |
 | srt-data-store | 片頭辨識、辨識紀錄兩張表原本照成果檔名排好，改名後仍要排好，否則一次改名重寫出整張表的 diff；辨識紀錄那列的音長秒、段數不可以變 | `test_redate.py` |
 | episode-catalogue | 改名目標已存在（store 裡或目錄裡）時一個都不搬、不改；目錄查無這集也不搬；日期格式 `2024/10/01`、`20241001`、`2024-10-1` 要擋；跨年改日期時年度欄跟著變 | `test_redate.py` |
+| episode-catalogue | 改日期跨過 2024-08-01 時節目名稱跟著換（07-31 → 08-01：晚間族語新聞 → 看見族語（晚間），反方向亦然），否則剛改好的列會被日期對照檢查擋下；留在界線同一側則名稱不動 | `test_redate.py` |
+| episode-catalogue | 工作區名 `2024_337_2024-12-02_晚間_…` 不隨節目名稱改名而變（變了切好的工作區就找不到）；`--check` 對新舊名稱並存的目錄算出同樣的成果檔名 | `test_episodes.py`、`test_name_catalogue.py` |
+| episode-sourcing | 新名稱「看見族語（晚間）」的候選檔裡，檔名寫晚間的勝過寫午間的——挑檔靠 `slot_of` 解出時段，解不出就挑錯檔 | `test_sources.py` |
 
 ## 已讀字集數的帶外補切（`scripts/news/offband_backfill.py`）
 
