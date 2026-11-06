@@ -94,6 +94,49 @@ def splice_time(cues, lo, hi, replacement):
     return out
 
 
+def seconds_label(lo, hi):
+    """「2004.602–2249 秒」：`name_area` 另存名字用的範圍寫法。"""
+    texts = []
+    for value in (lo, hi):
+        texts.append(("%.3f" % float(value)).rstrip("0").rstrip("."))
+    return "%s–%s 秒" % (texts[0], texts[1])
+
+
+def name_area(areas, kept, kind, setting, label):
+    """這次重切的設定記在 `areas` 的哪一格 → (新的 areas, 名字)。
+
+    一格一個名字，本來名字就是段落類型。同一類型第二次用別種設定切
+    （20210714_195_晚間 第一次 x 420、這輪 x 392），範圍外 `kept` 還有
+    cue 用舊設定的話，舊的留原名，這次的另存「類型（label）」，新 cue
+    要標回傳的名字；已經有一格是同一個設定就沿用那格。範圍外沒有 cue
+    再用舊設定，就直接換掉（留著只會誤導）。傳進來的 `areas` 不動。
+    """
+    out = dict(areas or {})
+    have = out.get(kind)
+    if have is None or have == setting:
+        out[kind] = setting
+        return out, kind
+    still_used = False
+    for item in kept:
+        if item.get("area") == kind:
+            still_used = True
+            break
+    if not still_used:
+        out[kind] = setting
+        return out, kind
+    for name in sorted(out):
+        if name.startswith(kind + "（") and out[name] == setting:
+            return out, name
+    base = "%s（%s）" % (kind, label)
+    name = base
+    number = 1
+    while out.get(name) is not None and out[name] != setting:
+        number += 1
+        name = "%s-%d" % (base, number)
+    out[name] = setting
+    return out, name
+
+
 def recut(video, start, duration, out, region=None, presets=None,
           preset=None, venv=None, runner=subprocess.run, keep=False):
     """對一段影片重新切 cue，回彼段ê cue（時間是規集ê絕對秒數）。

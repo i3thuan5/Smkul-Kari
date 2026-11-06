@@ -722,6 +722,48 @@ class TestWiring(unittest.TestCase):
             self.assertIn("\t甲\n", handle.read())
 
 
+class TestSecondPassKeepsTheFirstRegion(TestWiring):
+    """20210714_195_晚間：第一次用 x 420 補切 1349–2004.6 秒，這輪用 x 392
+    補切 2004.602–2249 秒，apply 把 `areas["帶外專題"]` 直接蓋成 392，
+    372–683 那幾條 420 切的 cue 紀錄跟著錯（199 晚、202 晚、218 午同樣）。
+    範圍外還有 cue 用舊設定時，舊的留原名，這次的另存
+    「帶外專題（起秒–迄秒 秒）」，新 cue 標那個名字。"""
+
+    OLD = {"preset": "titv-news-offband", "region": [420, 910, 1500, 122]}
+
+    def setUp(self):
+        super().setUp()
+        self.old[1] = cue(2, 20.0, 60.0, "帶外專題")      # 第一次補切的
+        self.write_json(self.timeline, {"cues": self.old, "duration": 200.0,
+                                        "areas": {"帶外專題": self.OLD}})
+
+    def test_the_first_region_stays_and_the_new_cues_say_theirs(self):
+        self.refined = [cue(1, 102.0, 110.0)]
+        plan = offband_backfill.prepare(self.NAME, self.LO, self.HI, "v")
+        offband_backfill.apply(self.NAME, self.reader(plan))
+        with open(self.timeline, encoding="utf-8") as handle:
+            book = self.json.load(handle)
+        second = "帶外專題（100–140 秒）"
+        self.assertEqual(book["areas"]["帶外專題"], self.OLD)
+        self.assertEqual(book["areas"][second]["region"], [0, 930, 1920, 110])
+        self.assertEqual(book["cues"][1]["area"], "帶外專題")
+        for number in plan["fresh"]:
+            self.assertEqual(book["cues"][number - 1]["area"], second)
+
+    def test_nothing_left_on_the_old_region_replaces_it(self):
+        self.old[1] = cue(2, 20.0, 60.0)
+        self.write_json(self.timeline, {"cues": self.old, "duration": 200.0,
+                                        "areas": {"帶外專題": self.OLD}})
+        self.refined = [cue(1, 102.0, 110.0)]
+        plan = offband_backfill.prepare(self.NAME, self.LO, self.HI, "v")
+        offband_backfill.apply(self.NAME, self.reader(plan))
+        with open(self.timeline, encoding="utf-8") as handle:
+            book = self.json.load(handle)
+        self.assertEqual(list(book["areas"]), ["帶外專題"])
+        self.assertEqual(book["areas"]["帶外專題"]["region"],
+                         [0, 930, 1920, 110])
+
+
 class TestProbeSunkenRows(TestWiring):
     """`prepare --probe`：2021 文化小辭典已讀字的集，重切前先量字幕列。
 

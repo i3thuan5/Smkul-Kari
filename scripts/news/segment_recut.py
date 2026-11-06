@@ -15,7 +15,8 @@ preset 重切、精修，換掉彼段本底ê cue，**佇讀字進前**：猶無
 徙號碼）。
 
 時間軸記錄：頂層 `areas` 列這集用著ê區域（preset 名佮 region），用帶
-外區域切ê cue 加 `area`；字幕帶切ê cue 無加欄位，所以無帶外段ê集數時
+外區域切ê cue 加 `area`（指 `areas` ê名，平常就是段落類型；仝類型兩段
+用無仝設定切，第二段另存「類型（起秒–迄秒 秒）」，見 `splice.name_area`）；字幕帶切ê cue 無加欄位，所以無帶外段ê集數時
 間軸逐 byte 無變。重切出來ê彼段也愛精修過才接——store 干焦收精修過ê
 時間軸。
 """
@@ -223,14 +224,17 @@ def run(work, video, recut=_recut, refine=_refine, presets=None,
         if not stretch.get("refined"):
             raise PipelineError("%s 第 %s–%s 秒重切了無精修，無接轉去"
                                 % (work, row["起秒"], row["迄秒"]))
+        kept = splice.splice_time(cues, lo, hi, [])
+        areas, label = splice.name_area(
+            areas, kept, kind, {"preset": name, "region": region},
+            splice.seconds_label(lo, hi))
         new = []
         for item in stretch["cues"]:
             item = dict(item)
-            item["area"] = kind
+            item["area"] = label
             new.append(item)
         _copy_strips(fresh, work)
         cues = splice.splice_time(cues, lo, hi, new)
-        areas[kind] = {"preset": name, "region": region}
     book["cues"] = cues
     book["areas"] = areas
     with open(timeline, "w", encoding="utf-8") as handle:

@@ -433,3 +433,119 @@ class TestSunkenRowsFollowTheText(unittest.TestCase):
         self.assertLessEqual(abs(bottom - (segment_recut.PROBE_TOP + 90)), 3)
         self.assertLessEqual(region[1], top)
         self.assertGreaterEqual(region[1] + region[3], bottom)
+
+
+OLD = {"preset": "titv-news-offband", "region": [420, 910, 1500, 122]}
+NEW = {"preset": "titv-news-offband", "region": [392, 910, 1528, 122]}
+
+
+def tagged(index, start, end, area=None):
+    item = {"index": index, "start": start, "end": end}
+    if area:
+        item["area"] = area
+    return item
+
+
+class TestOneKindTwoRegions(unittest.TestCase):
+    """時間軸 `areas` 一個段落類型只記一格：20210714_195_晚間 第一次用
+    x 420 補切 1349–2004.6 秒（cue 372–683），這輪用 x 392 補切
+    2004.602–2249 秒，`areas["帶外專題"]` 直接被蓋成 392——372–683 那幾條
+    還是 420 切的，紀錄卻說是 392（199 晚、202 晚、218 午同樣）。
+    範圍外還有 cue 用舊設定時，新設定另存一個名字，新 cue 標那個名字
+    （跟重播移植的 `port_areas` 同一套：舊的留原名）。"""
+
+    def test_no_area_yet_takes_the_kind_name(self):
+        got, name = splice.name_area({}, [tagged(1, 0, 5)], "帶外專題",
+                                     NEW, "2004.602–2249 秒")
+        self.assertEqual(name, "帶外專題")
+        self.assertEqual(got, {"帶外專題": NEW})
+
+    def test_the_same_setting_keeps_the_kind_name(self):
+        kept = [tagged(1, 1349.3, 1352.0, "帶外專題")]
+        got, name = splice.name_area({"帶外專題": dict(NEW)}, kept,
+                                     "帶外專題", NEW, "2004.602–2249 秒")
+        self.assertEqual(name, "帶外專題")
+        self.assertEqual(got, {"帶外專題": NEW})
+
+    def test_a_second_region_is_kept_beside_the_first(self):
+        areas = {"帶外專題": dict(OLD)}
+        kept = [tagged(372, 1349.3, 1352.0, "帶外專題"),
+                tagged(800, 2250.0, 2252.0)]
+        got, name = splice.name_area(areas, kept, "帶外專題", NEW,
+                                     "2004.602–2249 秒")
+        self.assertEqual(name, "帶外專題（2004.602–2249 秒）")
+        self.assertEqual(got, {"帶外專題": OLD,
+                               "帶外專題（2004.602–2249 秒）": NEW})
+        self.assertEqual(areas, {"帶外專題": OLD})          # 傳進來的不動
+
+    def test_a_setting_no_kept_cue_uses_any_more_is_replaced(self):
+        # 整段重切：範圍外沒有 cue 再用舊設定，舊的那格留著只是誤導
+        kept = [tagged(1, 0.0, 5.0), tagged(2, 2250.0, 2252.0)]
+        got, name = splice.name_area({"帶外專題": dict(OLD)}, kept,
+                                     "帶外專題", NEW, "0–2249 秒")
+        self.assertEqual(name, "帶外專題")
+        self.assertEqual(got, {"帶外專題": NEW})
+
+    def test_a_third_pass_with_a_setting_already_kept_reuses_its_name(self):
+        areas = {"帶外專題": dict(OLD),
+                 "帶外專題（2004.602–2249 秒）": dict(NEW)}
+        kept = [tagged(1, 1349.3, 1352.0, "帶外專題")]
+        got, name = splice.name_area(areas, kept, "帶外專題", NEW,
+                                     "1200–1300 秒")
+        self.assertEqual(name, "帶外專題（2004.602–2249 秒）")
+        self.assertEqual(len(got), 2)
+
+    def test_a_clashing_name_gets_a_number(self):
+        other = {"preset": "titv-news-offband-high",
+                 "region": [392, 868, 1528, 122]}
+        areas = {"帶外專題": dict(OLD), "帶外專題（10–20 秒）": other}
+        kept = [tagged(1, 1349.3, 1352.0, "帶外專題"),
+                tagged(2, 12.0, 14.0, "帶外專題（10–20 秒）")]
+        got, name = splice.name_area(areas, kept, "帶外專題", NEW,
+                                     "10–20 秒")
+        self.assertEqual(name, "帶外專題（10–20 秒）-2")
+        self.assertEqual(got[name], NEW)
+        self.assertEqual(got["帶外專題（10–20 秒）"], other)
+
+    def test_two_sunken_rows_measured_apart_keep_both_regions(self):
+        # 同一集兩段文化小辭典量到的字幕列不同（fitted region 不同），
+        # 第二段不可以把第一段的 region 蓋掉
+        table = [row("0", "100", "外景新聞"),
+                 row("100", "200", "文化小辭典"),
+                 row("200", "300", "外景新聞"),
+                 row("300", "400", "文化小辭典"),
+                 row("400", "600.000", "外景新聞")]
+        w = Work(self, band(30), table)
+        renamed = os.path.join(os.path.dirname(w.work),
+                               "2021_328_2021-11-24_晚間_Amis_阿美.work")
+        os.rename(w.work, renamed)
+        w.work = renamed
+        w.timeline = paths.refined_cues(renamed)
+        heights = iter([(40, 90), (60, 110)])
+
+        def probe(video, lo, hi):
+            top, bottom = next(heights)
+            return TestSunkenRowsFollowTheText.frames(None, top, bottom)
+
+        def recut(video, start, duration, out, preset, presets=None):
+            return w.recut(video, start, duration, out, preset)
+
+        def refine(video, coarse, preset, presets=None):
+            return w.refine(video, coarse, preset)
+
+        segment_recut.run(w.work, "v.mkv", recut=recut, refine=refine,
+                          probe=probe)
+        book = w.read()
+        self.assertEqual(len(book["areas"]), 2)
+        regions = []
+        for name in sorted(book["areas"]):
+            regions.append(book["areas"][name]["region"])
+        self.assertNotEqual(regions[0], regions[1])
+        by_name = {}
+        for item in book["cues"]:
+            if item.get("area"):
+                self.assertIn(item["area"], book["areas"])
+                by_name.setdefault(item["area"], []).append(item["start"])
+        firsts = sorted(by_name.values())
+        self.assertLess(max(firsts[0]), 200)
+        self.assertGreater(min(firsts[1]), 300)

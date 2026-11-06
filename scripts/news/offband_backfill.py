@@ -158,6 +158,32 @@ def fresh_numbers(spliced, old=None):
     return out
 
 
+def record_area(areas, plan):
+    """plan 的時間軸配上這次補切的區域 → (cues, areas)。
+
+    同一類型範圍外還有 cue 用別種設定切的（195 晚第一次 x 420、這輪
+    x 392），舊的留原名，這次的另存一格，新 cue 標那個名字
+    （`splice.name_area`）。plan 不動。
+    """
+    wanted = set(plan["fresh"])
+    kept = []
+    for item in plan["spliced"]:
+        if int(item["index"]) not in wanted:
+            kept.append(item)
+    setting = {"preset": plan.get("preset", PRESET),
+               "region": plan.get("region")}
+    out_areas, name = splicing.name_area(
+        areas, kept, plan_kind(plan), setting,
+        splicing.seconds_label(plan["lo"], plan["hi"]))
+    cues = []
+    for item in plan["spliced"]:
+        item = dict(item)
+        if int(item["index"]) in wanted:
+            item["area"] = name
+        cues.append(item)
+    return cues, out_areas
+
+
 def rewrite(rows, table, total):
     """[(舊號, 文字)] → [(新號, 文字)]；hőng換掉ê提掉，文字原樣。
 
@@ -634,11 +660,7 @@ def apply(name, reader, keep_store_table=False):
     target = os.path.join(folder, "b%02d.tsv" % next_tsv_number(existing))
     _write_tsv(target, sorted(rows))
 
-    book["cues"] = plan["spliced"]
-    areas = dict(book.get("areas", {}))
-    areas[plan_kind(plan)] = {"preset": plan.get("preset", PRESET),
-                              "region": plan.get("region")}
-    book["areas"] = areas
+    book["cues"], book["areas"] = record_area(book.get("areas"), plan)
     with open(store, "w", encoding="utf-8") as handle:
         handle.write(redump_store.dump(datadirs.store_timeline(book)))
 
