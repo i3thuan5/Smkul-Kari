@@ -284,6 +284,16 @@ class TestFallbackWhenTheCanonicalPlaceIsEmpty(unittest.TestCase):
     def test_the_fallback_says_so(self):
         self.assertIn("退回原始位置", self.text())
 
+    def test_the_message_follows_the_source_label_from_locate(self):
+        # 清單問ê是 /docker 月份資料夾，管理者猶未搬ê集數佇 /home，
+        # 同款走 locate；彼个時陣毋是「退回原始位置」，愛照來源標籤講。
+        text = self.text()
+        self.assertIn("cut -f3", text)
+        block = text[text.index("scripts.news.video_names locate"):]
+        block = block[:block.index("else\n")]
+        self.assertIn('"$label"', block)
+        self.assertIn('"原始"', block)
+
 
 if __name__ == "__main__":
     unittest.main()

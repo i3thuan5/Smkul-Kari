@@ -89,9 +89,9 @@ class TestSelection(Fixture):
     def test_each_entry_carries_its_canonical_place(self):
         for entry in self._plan().added:
             self.assertEqual(entry["video"],
-                             paths.video_path(entry["srt_name"]))
-            self.assertTrue(
-                entry["video"].startswith("/home/news/mkv/2021-02/"))
+                             paths.video_read_paths(entry["srt_name"])[0])
+            self.assertTrue(entry["video"].startswith(
+                paths.VIDEO_ROOT_DOCKER + "/2021-02/"))
 
     def test_a_month_with_no_episodes_says_so(self):
         with self.assertRaises(PipelineError):
@@ -207,14 +207,16 @@ class TestTodoListsTheCanonicalPlace(unittest.TestCase):
         video = found["2022_001_2022-01-01_晨間_Thau_邵"]
         self.assertNotIn(";", video)
         self.assertEqual(
-            video, "/home/news/mkv/2022-01/20220101_001_晨間_Thau_邵.mkv")
+            video, paths.VIDEO_ROOT_DOCKER
+            + "/2022-01/20220101_001_晨間_Thau_邵.mkv")
 
     def test_the_slot_word_in_the_candidates_no_longer_matters(self):
         found = self._todo("2021-05")
         video = found["2021_122_2021-05-02_晨間_Hla'alua_拉阿魯哇"]
         self.assertEqual(
             video,
-            "/home/news/mkv/2021-05/20210502_122_晨間_Hla'alua_拉阿魯哇.mkv")
+            paths.VIDEO_ROOT_DOCKER
+            + "/2021-05/20210502_122_晨間_Hla'alua_拉阿魯哇.mkv")
 
     def test_an_episode_that_used_to_be_undecidable_is_listed_now(self):
         found = self._todo("2022-01")
@@ -224,8 +226,9 @@ class TestTodoListsTheCanonicalPlace(unittest.TestCase):
 class TestTodoGivesServerPaths(unittest.TestCase):
     """`--todo` 交出伺服器上ê絕對路徑，`fetch_sftp.sh` 毋免閣加根目錄。
 
-    影片攏佇 `/home/news/mkv/<年-月>/`，毋管本底佇 `/home/mkv-raw/`
-    抑是 `/docker/ilrdf-corpus/`——位置由成果檔名推導，來源是佗位無關係。
+    影片位置由成果檔名推導（頭一个試ê是 `/docker/news/mkv/<年-月>/`），
+    毋管本底佇 `/home/mkv-raw/` 抑是 `/docker/ilrdf-corpus/`，來源是佗位
+    無關係。
     """
 
     RAW = "home/mkv-raw/112/7月/23NL003_183_族語午間新聞_Kanakanavu.mkv"
@@ -256,21 +259,22 @@ class TestTodoGivesServerPaths(unittest.TestCase):
         found = self._todo("2023-07")
         self.assertEqual(
             list(found.values()),
-            ["/home/news/mkv/2023-07/20230702_183_午間_Kanakanavu_"
-             "卡那卡那富.mkv"])
+            [paths.VIDEO_ROOT_DOCKER + "/2023-07/20230702_183_午間_"
+             "Kanakanavu_卡那卡那富.mkv"])
 
     def test_a_corpus_episode_is_fetched_from_the_canonical_place_too(self):
         found = self._todo("2021-05")
         self.assertEqual(
             list(found.values()),
-            ["/home/news/mkv/2021-05/20210502_122_晨間_Hla'alua_"
-             "拉阿魯哇.mkv"])
+            [paths.VIDEO_ROOT_DOCKER + "/2021-05/20210502_122_晨間_"
+             "Hla'alua_拉阿魯哇.mkv"])
 
     def test_the_todo_is_offline(self):
-        # 退路（正規位置揣無）佇實際取檔ê時處理；列清單毋連伺服器。
+        # 退路（/home、原始位置）佇實際取檔ê時處理；列清單毋連伺服器。
         for entry in episodes.load(self.table, srt_dir=set()):
-            self.assertEqual(entry["remote"],
-                             paths.video_path(entry["srt_name"]))
+            self.assertEqual(
+                entry["remote"],
+                paths.video_read_paths(entry["srt_name"])[0])
 
 
 class TestOpeningTodo(TestTodoGivesServerPaths):
@@ -290,8 +294,8 @@ class TestOpeningTodo(TestTodoGivesServerPaths):
         found = self._opening("2021-05")
         self.assertEqual(
             list(found.values()),
-            ["/home/news/mkv/2021-05/20210502_122_晨間_Hla'alua_"
-             "拉阿魯哇.mkv"])
+            [paths.VIDEO_ROOT_DOCKER + "/2021-05/20210502_122_晨間_"
+             "Hla'alua_拉阿魯哇.mkv"])
 
     def test_an_episode_already_read_is_not(self):
         name = "20210502_122_晨間_Hla'alua_拉阿魯哇"

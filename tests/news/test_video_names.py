@@ -1,4 +1,4 @@
-"""video_names：伺服器上ê新聞影片搬去 `/home/news/mkv/<年-月>/<成果檔名>.mkv`。
+"""video_names：伺服器上ê新聞影片搬去 `<暫放區>/<年-月>/<成果檔名>.mkv`。
 
 搬移是 rename（移動），毋是複製：全部約 7 TB，伺服器干焦賰 5.3 TB。
 所以逐支ê安全愛靠規劃、清單、續跑——一支搬毋著，無法度重來。
@@ -11,6 +11,7 @@ import os
 import posixpath
 import tempfile
 import unittest
+from unittest import mock
 
 from scripts.errors import PipelineError
 from scripts.news import paths
@@ -143,7 +144,7 @@ class TestPlan(unittest.TestCase):
 
     def test_one_move_per_row_old_from_the_column_new_from_the_name(self):
         # 使用者舉ê例：.../1月原始mxf檔/20210101S1100.mkv
-        #           → /home/news/mkv/2021-01/20210101_001_午間_Rukai_魯凱.mkv
+        #           → <暫放區>/2021-01/20210101_001_午間_Rukai_魯凱.mkv
         got = video_names.plan(rows(), [])
         self.assertEqual(len(got), 3)
         first = got[0]
@@ -153,7 +154,7 @@ class TestPlan(unittest.TestCase):
             "/home/mkv-raw/110.01-110.10/1月原始mxf檔/20210101S1100.mkv")
         self.assertEqual(
             first.new,
-            "/home/news/mkv/2021-01/20210101_001_午間_Rukai_魯凱.mkv")
+            paths.VIDEO_ROOT_HOME + "/2021-01/20210101_001_午間_Rukai_魯凱.mkv")
 
     def test_the_order_is_the_catalogue_order(self):
         names = []
@@ -230,13 +231,14 @@ class TestPlan(unittest.TestCase):
         self.assertEqual(move.new, paths.video_path(RUKAI))
 
 
-CANON = "/home/news/mkv/2021-01/20210101_001_午間_Rukai_魯凱.mkv"
+DOCKER = paths.VIDEO_ROOT_DOCKER + "/2021-01/20210101_001_午間_Rukai_魯凱.mkv"
+CANON = paths.VIDEO_ROOT_HOME + "/2021-01/20210101_001_午間_Rukai_魯凱.mkv"
 ORIG = "/home/mkv-raw/110.01-110.10/1月原始mxf檔/20210101S1100.mkv"
 ORIG_CELL = "home/mkv-raw/110.01-110.10/1月原始mxf檔/20210101S1100.mkv"
 
 
 class TestLocate(unittest.TestCase):
-    """新位置揣無才退回 `原始影片檔案位置`；退ê時愛大聲講。"""
+    """先 `/docker`、再 `/home`、最後才 `原始影片檔案位置`；退ê時愛大聲講。"""
 
     def setUp(self):
         self.said = []
@@ -244,18 +246,25 @@ class TestLocate(unittest.TestCase):
     def say(self, line):
         self.said.append(line)
 
-    def test_the_canonical_place_wins_and_the_original_is_not_read(self):
-        # 原始欄空白抑是亂寫攏無影響；只問新位置一擺。
+    def test_docker_wins_and_is_asked_only_once(self):
+        # 管理者搬過去矣就直接用，毋閣問 /home；原始欄空白抑是亂寫攏無影響。
         for cell in ("", "ilrdf-corpus/亂寫/無這檔.mkv"):
-            fake = FakeSftp({CANON: 123})
+            fake = FakeSftp({DOCKER: 123})
             got = video_names.locate(entry(RUKAI, cell), fake, say=self.say)
-            self.assertEqual(got.path, CANON)
-            self.assertEqual(got.size, 123)
-            self.assertEqual(got.source, "正規")
-            self.assertEqual(fake.calls, [("stat", CANON)])
+            self.assertEqual((got.path, got.size, got.source),
+                             (DOCKER, 123, "docker"))
+            self.assertEqual(fake.calls, [("stat", DOCKER)])
         self.assertEqual(self.said, [])
 
-    def test_missing_canonical_falls_back_and_says_so(self):
+    def test_home_is_asked_only_when_docker_says_not_found(self):
+        fake = FakeSftp({CANON: 77})
+        got = video_names.locate(entry(RUKAI, ""), fake, say=self.say)
+        self.assertEqual((got.path, got.size, got.source),
+                         (CANON, 77, "home"))
+        self.assertEqual(fake.calls, [("stat", DOCKER), ("stat", CANON)])
+        self.assertEqual(self.said, [])
+
+    def test_the_original_is_the_last_resort_and_says_so(self):
         fake = FakeSftp({ORIG: 456})
         got = video_names.locate(entry(RUKAI, ORIG_CELL), fake, say=self.say)
         self.assertEqual((got.path, got.size, got.source), (ORIG, 456, "原始"))
@@ -263,28 +272,61 @@ class TestLocate(unittest.TestCase):
         self.assertIn("退回原始位置", self.said[0])
         self.assertIn(ORIG, self.said[0])
 
-    def test_neither_place_names_both_paths(self):
+    def test_moving_in_progress_one_in_each_root_never_both(self):
+        # 管理者一支一支搬：同一月有ê已經佇 /docker、有ê猶佇 /home。
+        other = paths.video_path(HLAALUA)
+        fake = FakeSftp({DOCKER: 1, other: 2})
+        self.assertEqual(
+            video_names.locate(entry(RUKAI, ""), fake, say=self.say).source,
+            "docker")
+        self.assertEqual(
+            video_names.locate(entry(HLAALUA, ""), fake,
+                               say=self.say).source, "home")
+
+    def test_nothing_found_names_all_three_paths(self):
         with self.assertRaises(PipelineError) as caught:
             video_names.locate(entry(RUKAI, ORIG_CELL), FakeSftp({}),
                                say=self.say)
-        self.assertIn(CANON, str(caught.exception))
-        self.assertIn(ORIG, str(caught.exception))
+        for place in (DOCKER, CANON, ORIG):
+            self.assertIn(place, str(caught.exception))
 
     def test_a_blank_original_column_is_said_not_guessed(self):
         with self.assertRaises(PipelineError) as caught:
             video_names.locate(entry(RUKAI, ""), FakeSftp({}), say=self.say)
+        self.assertIn(DOCKER, str(caught.exception))
         self.assertIn(CANON, str(caught.exception))
         self.assertIn("空", str(caught.exception))
 
     def test_a_failure_that_is_not_not_found_does_not_fall_back(self):
-        # 連線逾時、權限錯誤：網路一抖就去讀原始位置，可能讀著過時ê檔。
-        fake = FakeSftp({ORIG: 456})
-        fake.broken.add(CANON)
-        with self.assertRaises(PipelineError) as caught:
-            video_names.locate(entry(RUKAI, ORIG_CELL), fake, say=self.say)
-        self.assertIn("timed out", str(caught.exception))
-        self.assertNotIn(("stat", ORIG), fake.calls)
+        # 連線逾時、權限錯誤：網路一抖就去讀下一位，可能讀著過時ê檔，
+        # 抑是（/docker 失敗）誤判猶佇 /home。
+        for broken in (DOCKER, CANON):
+            fake = FakeSftp({ORIG: 456})
+            fake.broken.add(broken)
+            with self.assertRaises(PipelineError) as caught:
+                video_names.locate(entry(RUKAI, ORIG_CELL), fake,
+                                   say=self.say)
+            self.assertIn("timed out", str(caught.exception))
+            self.assertNotIn(("stat", ORIG), fake.calls)
         self.assertEqual(self.said, [])
+
+    def test_docker_failure_does_not_ask_home(self):
+        fake = FakeSftp({CANON: 5})
+        fake.broken.add(DOCKER)
+        with self.assertRaises(PipelineError):
+            video_names.locate(entry(RUKAI, ""), fake, say=self.say)
+        self.assertNotIn(("stat", CANON), fake.calls)
+
+    def test_swapping_the_roots_swaps_the_order(self):
+        # 兩个根是全域變數，日後抽換；順序跟著變，毋是寫死 /docker。
+        with mock.patch.object(paths, "VIDEO_ROOT_DOCKER", "/srv/final"), \
+                mock.patch.object(paths, "VIDEO_ROOT_HOME", "/srv/draft"):
+            final = "/srv/final/2021-01/%s.mkv" % RUKAI
+            draft = "/srv/draft/2021-01/%s.mkv" % RUKAI
+            fake = FakeSftp({draft: 1})
+            got = video_names.locate(entry(RUKAI, ""), fake, say=self.say)
+            self.assertEqual((got.path, got.source), (draft, "home"))
+            self.assertEqual(fake.calls, [("stat", final), ("stat", draft)])
 
     def test_a_candidate_list_picks_by_the_sourcing_rules_not_the_first(self):
         # 母帶優先（`sources.pick` ê頭一條規矩），毋是提第一條。
@@ -340,7 +382,7 @@ class TestRealSftpTellsNotFoundFromOtherFailures(unittest.TestCase):
 
     def test_the_path_goes_through_sftp_sh_as_its_own_argument(self):
         client, calls = self.sftp(Result(0, self.LONG + "\n"))
-        path = "/home/news/mkv/2021-01/20210103_003_晨間_Hla'alua.mkv"
+        path = paths.VIDEO_ROOT_HOME + "/2021-01/20210103_003_晨間_Hla'alua.mkv"
         client.stat(path)
         self.assertEqual(calls[0][-1], path)
         self.assertEqual(calls[0][-2], "ls")
@@ -426,13 +468,14 @@ class TestApply(ApplyFixture):
             if call[0] == "mkdir":
                 made.append(call[1])
         self.assertEqual(sorted(made), sorted(set(made)))
+        home = paths.VIDEO_ROOT_HOME
         self.assertEqual(
-            made, ["/home", "/home/news", "/home/news/mkv",
-                   "/home/news/mkv/2021-01", "/home/news/mkv/2024-10"])
+            made, ["/home", "/home/news", home,
+                   home + "/2021-01", home + "/2024-10"])
 
     def test_an_existing_month_folder_is_not_an_error(self):
-        self.fake.dirs.update(["/home/news", "/home/news/mkv",
-                               "/home/news/mkv/2021-01"])
+        self.fake.dirs.update(["/home/news", paths.VIDEO_ROOT_HOME,
+                               paths.VIDEO_ROOT_HOME + "/2021-01"])
         self.assertEqual(len(self.apply().moved), 3)
 
     def test_the_run_after_an_interruption_finishes_the_rest(self):
@@ -465,6 +508,47 @@ class TestApply(ApplyFixture):
         self.assertEqual(self.fake.files[clash.new], 999)
         self.assertIn(clash.old, self.fake.files)
         self.assertNotIn("rename", self.fake.verbs())
+
+    def put_in_docker(self, move):
+        docker = paths.video_read_paths(move.name)[0]
+        self.fake.files[docker] = 555
+        self.fake._add_parents(docker)
+        return docker
+
+    def test_a_same_name_file_already_in_docker_stops_everything(self):
+        # 管理者已經搬一支同名ê去 /docker，若閣搬 /home，兩个根各一支。
+        # 規个停落來、指名、一支都毋搬，伺服器無任何變動。
+        clash = self.moves[1]
+        docker = self.put_in_docker(clash)
+        before = dict(self.fake.files)
+        with self.assertRaises(PipelineError) as caught:
+            self.apply()
+        self.assertIn(HLAALUA, str(caught.exception))
+        self.assertIn("/docker", str(caught.exception))
+        self.assertEqual(self.fake.files, before)
+        self.assertIn(docker, self.fake.files)
+        for verb in ("rename", "mkdir"):
+            self.assertNotIn(verb, self.fake.verbs())
+        self.assertFalse(os.path.exists(self.manifest_dir))
+
+    def test_docker_clash_with_a_move_already_done_is_also_named(self):
+        # 搬到 /home 新位置了後，管理者（抑是別人）閣放一支仝名佇 /docker。
+        self.apply()
+        docker = self.put_in_docker(self.moves[0])
+        with self.assertRaises(PipelineError) as caught:
+            self.apply(now="20261030-171000")
+        self.assertIn(RUKAI, str(caught.exception))
+        self.assertIn(docker, self.fake.files)
+
+    def test_an_episode_the_admin_already_moved_is_done_not_a_problem(self):
+        # mv 搬走：/home 新位置無、舊位置嘛無，干焦 /docker 有——算已完成。
+        done = self.moves[0]
+        del self.fake.files[done.old]
+        self.put_in_docker(done)
+        result = self.apply()
+        self.assertEqual(result.problems, [])
+        self.assertEqual(result.skipped, [RUKAI])
+        self.assertEqual(sorted(result.moved), sorted([HLAALUA, AMIS]))
 
     def test_a_move_with_neither_place_is_named_and_the_rest_go_on(self):
         gone = self.moves[0]
@@ -549,17 +633,21 @@ class TestProbe(ApplyFixture):
         for call in self.fake.calls:
             if call[0] == "mkdir":
                 made.append(call[1])
-        self.assertEqual(made, ["/home", "/home/news", "/home/news/mkv",
-                                "/home/news/mkv/2021-01"])
+        home = paths.VIDEO_ROOT_HOME
+        self.assertEqual(made, ["/home", "/home/news", home,
+                                home + "/2021-01"])
 
-    def test_a_refused_trip_over_stops_and_names_the_fallback(self):
+    def test_a_refused_trip_over_stops_and_says_cross_volume(self):
         # 跨子卷：mkv-raw 若是獨立子卷，rename 會失敗，頂懸 sftp 看袂出來。
+        # 探針已經成功過（同一个子卷），毋閣提備案路徑。
         self.fake.cross_device = True
         before = dict(self.fake.files)
         with self.assertRaises(PipelineError) as caught:
             video_names.probe(self.probe_move(), self.fake, say=self.say)
         self.assertIn("跨子卷", str(caught.exception))
-        self.assertIn("/home/mkv-raw/news/mkv", str(caught.exception))
+        self.assertNotIn("/home/mkv-raw/news/mkv", str(caught.exception))
+        self.assertNotIn("VIDEO_ROOT", str(caught.exception))
+        self.assertFalse(hasattr(video_names, "FALLBACK_ROOT"))
         self.assertEqual(self.fake.files, before)
         renames = [c for c in self.fake.calls if c[0] == "rename"]
         self.assertEqual(len(renames), 1)
@@ -623,6 +711,58 @@ class TestCheck(CheckFixture):
         self.assertIn(RUKAI, problems[0])
         self.assertIn(self.moves[0].new, problems[0])
 
+    def to_docker(self, move):
+        """管理者 mv：/home 新位置無，換 /docker 有（大小不變）。"""
+        docker = paths.video_read_paths(move.name)[0]
+        self.fake.files[docker] = self.fake.files.pop(move.new)
+        self.fake._add_parents(docker)
+        return docker
+
+    def test_the_two_roots_together_are_what_counts(self):
+        # 搬移進行中：有ê佇 /docker、有ê猶佇 /home，合起來才是全部。
+        self.to_docker(self.moves[0])
+        self.assertEqual(self.check(), [])
+        for move in self.moves[1:]:
+            self.to_docker(move)
+        self.assertEqual(self.check(), [])
+
+    def test_a_file_missing_from_both_roots_names_both_places(self):
+        docker = self.to_docker(self.moves[0])
+        del self.fake.files[docker]
+        problems = self.check()
+        self.assertEqual(len(problems), 1)
+        self.assertIn(RUKAI, problems[0])
+        self.assertIn(docker, problems[0])
+        self.assertIn(self.moves[0].new, problems[0])
+
+    def test_the_same_episode_in_both_roots_is_named(self):
+        # mv 本來袂留兩支；若出現，代表有人複製抑是搬到一半，愛指名。
+        move = self.moves[1]
+        docker = paths.video_read_paths(move.name)[0]
+        self.fake.files[docker] = SIZES[move.name]
+        self.fake._add_parents(docker)
+        problems = self.check()
+        self.assertEqual(len(problems), 1)
+        self.assertIn(HLAALUA, problems[0])
+        self.assertIn(docker, problems[0])
+        self.assertIn(move.new, problems[0])
+
+    def test_a_size_that_differs_in_docker_is_named_too(self):
+        docker = self.to_docker(self.moves[2])
+        self.fake.files[docker] = 1
+        problems = self.check()
+        self.assertEqual(len(problems), 1)
+        self.assertIn(AMIS, problems[0])
+        self.assertIn(docker, problems[0])
+
+    def test_a_stray_file_in_a_docker_month_folder_is_named(self):
+        docker = self.to_docker(self.moves[0])
+        stray = posixpath.dirname(docker) + "/亂入.mkv"
+        self.fake.files[stray] = 5
+        problems = self.check()
+        self.assertEqual(len(problems), 1)
+        self.assertIn(stray, problems[0])
+
     def test_a_size_that_differs_from_the_manifest_is_named(self):
         self.fake.files[self.moves[2].new] = 1
         problems = self.check()
@@ -631,7 +771,7 @@ class TestCheck(CheckFixture):
         self.assertIn("333", problems[0])
 
     def test_a_stray_file_among_the_new_ones_is_named(self):
-        stray = "/home/news/mkv/2021-01/亂入.mkv"
+        stray = paths.VIDEO_ROOT_HOME + "/2021-01/亂入.mkv"
         self.fake.files[stray] = 5
         problems = self.check()
         self.assertEqual(len(problems), 1)
@@ -719,6 +859,32 @@ class TestUndo(ApplyFixture):
         self.assertIn(taken.new, self.fake.files)
         self.assertEqual(sorted(got.moved), sorted([RUKAI, AMIS]))
 
+    def test_an_episode_the_admin_moved_to_docker_is_refused_and_named(self):
+        # /docker 唯讀，我們搬袂轉去；彼一集拒絕、指名，其他照搬。
+        gone = self.moves[1]
+        docker = paths.video_read_paths(gone.name)[0]
+        self.fake.files[docker] = self.fake.files.pop(gone.new)
+        self.fake._add_parents(docker)
+        got = self.undo()
+        self.assertEqual([name for name, _why in got.problems], [HLAALUA])
+        self.assertIn("/docker", got.problems[0][1])
+        self.assertEqual(sorted(got.moved), sorted([RUKAI, AMIS]))
+        self.assertIn(docker, self.fake.files)
+        self.assertNotIn(gone.old, self.fake.files)
+        for call in self.fake.calls:
+            if call[0] in ("rename", "mkdir", "rmdir"):
+                self.assertFalse(
+                    call[1].startswith(paths.VIDEO_ROOT_DOCKER), call)
+
+    def test_a_same_name_in_docker_and_home_is_refused_too(self):
+        clash = self.moves[0]
+        docker = paths.video_read_paths(clash.name)[0]
+        self.fake.files[docker] = 5
+        self.fake._add_parents(docker)
+        got = self.undo()
+        self.assertEqual([name for name, _why in got.problems], [RUKAI])
+        self.assertIn(clash.new, self.fake.files)
+
     def test_an_old_folder_that_was_pruned_is_made_again(self):
         # 清空資料夾那步做了才還原：舊資料夾愛重建，一層一層。
         old_folder = posixpath.dirname(self.moves[2].old)
@@ -736,14 +902,21 @@ class TestUndo(ApplyFixture):
 
 OLD_NAME = "20240930_274_晚間_Amis_阿美"
 NEW_NAME = "20241001_275_晚間_Amis_阿美"
-OLD_CANON = "/home/news/mkv/2024-09/20240930_274_晚間_Amis_阿美.mkv"
-NEW_CANON = "/home/news/mkv/2024-10/20241001_275_晚間_Amis_阿美.mkv"
+OLD_CANON = paths.VIDEO_ROOT_HOME + "/2024-09/20240930_274_晚間_Amis_阿美.mkv"
+NEW_CANON = paths.VIDEO_ROOT_HOME + "/2024-10/20241001_275_晚間_Amis_阿美.mkv"
+OLD_DOCKER = (paths.VIDEO_ROOT_DOCKER
+              + "/2024-09/20240930_274_晚間_Amis_阿美.mkv")
 OLD_ORIG = "/home/mkv-raw/113/10月/20241001S2000.mkv"
 OLD_ORIG_CELL = "home/mkv-raw/113/10月/20241001S2000.mkv"
 
 
 class TestRenameEpisode(unittest.TestCase):
-    """改成果檔名（改語別、改日期）：伺服器頂ê影片綴咧搬去新名稱ê位置。"""
+    """改成果檔名（改語別、改日期）：看影片現此時佇佗，四種做法。
+
+    `/home` 就佇 `/home` 內 rename；`/docker` 是管理者管ê唯讀定稿區，
+    拒絕；猶佇原始位置（新批次、語言別猶未確認）伺服器毋動；三位攏無就
+    拒絕。
+    """
 
     def setUp(self):
         self.said = []
@@ -755,36 +928,54 @@ class TestRenameEpisode(unittest.TestCase):
         return video_names.rename_episode(entry(OLD_NAME, cell), new, fake,
                                           say=self.say)
 
-    def test_from_the_canonical_place_to_the_new_names_place(self):
+    def writes(self, fake):
+        out = []
+        for call in fake.calls:
+            if call[0] in ("mkdir", "rename", "rmdir"):
+                out.append(call)
+        return out
+
+    def test_in_home_it_is_renamed_inside_home(self):
         fake = FakeSftp({OLD_CANON: 5})
         got = self.rename(fake)
-        self.assertEqual((got.old, got.new, got.source),
-                         (OLD_CANON, NEW_CANON, "正規"))
+        self.assertEqual((got.old, got.new, got.source, got.moved),
+                         (OLD_CANON, NEW_CANON, "home", True))
         self.assertEqual(fake.files, {NEW_CANON: 5})
         self.assertNotIn("退回原始位置", "\n".join(self.said))
 
     def test_a_date_change_across_months_makes_the_month_folder(self):
         fake = FakeSftp({OLD_CANON: 5})
         self.rename(fake)
-        self.assertIn("/home/news/mkv/2024-10", fake.dirs)
+        self.assertIn(paths.VIDEO_ROOT_HOME + "/2024-10", fake.dirs)
 
-    def test_a_never_moved_episode_is_moved_from_the_original_place(self):
-        # 還無搬進正式位置ê集數（新批次剛匯入）：改名順紲搬入去。
+    def test_in_docker_is_refused_and_the_server_is_untouched(self):
+        # /docker 是 root:root 755，我們寫袂入去；莫試，直接講清楚。
+        fake = FakeSftp({OLD_DOCKER: 5})
+        with self.assertRaises(PipelineError) as caught:
+            self.rename(fake)
+        self.assertIn("管理者", str(caught.exception))
+        self.assertIn(OLD_DOCKER, str(caught.exception))
+        self.assertEqual(self.writes(fake), [])
+        self.assertEqual(fake.files, {OLD_DOCKER: 5})
+
+    def test_still_at_the_original_place_the_server_is_not_touched(self):
+        # 新批次 OCR／whisper 階段：語言別猶未確認，名會閣改；等 apply
+        # 才用上尾ê名字搬。這陣只改目錄佮本機，影片罔佇原位。
         fake = FakeSftp({OLD_ORIG: 7})
         got = self.rename(fake)
-        self.assertEqual((got.old, got.new, got.source),
-                         (OLD_ORIG, NEW_CANON, "原始"))
-        self.assertEqual(fake.files, {NEW_CANON: 7})
+        self.assertEqual((got.old, got.new, got.source, got.moved),
+                         (OLD_ORIG, OLD_ORIG, "原始", False))
+        self.assertEqual(fake.files, {OLD_ORIG: 7})
+        self.assertEqual(self.writes(fake), [])
         self.assertIn("退回原始位置", "\n".join(self.said))
 
-    def test_neither_place_refuses_and_names_both(self):
+    def test_none_of_the_three_refuses_and_names_all(self):
         fake = FakeSftp({})
         with self.assertRaises(PipelineError) as caught:
             self.rename(fake)
-        self.assertIn(OLD_CANON, str(caught.exception))
-        self.assertIn(OLD_ORIG, str(caught.exception))
-        self.assertNotIn("rename", fake.verbs())
-        self.assertNotIn("mkdir", fake.verbs())
+        for place in (OLD_DOCKER, OLD_CANON, OLD_ORIG):
+            self.assertIn(place, str(caught.exception))
+        self.assertEqual(self.writes(fake), [])
 
     def test_an_occupied_new_place_is_refused_and_nothing_moves(self):
         fake = FakeSftp({OLD_CANON: 5, NEW_CANON: 9})
@@ -794,29 +985,41 @@ class TestRenameEpisode(unittest.TestCase):
         self.assertEqual(fake.files, {OLD_CANON: 5, NEW_CANON: 9})
 
     def test_a_failure_that_is_not_not_found_is_not_papered_over(self):
-        fake = FakeSftp({OLD_ORIG: 7})
-        fake.broken.add(OLD_CANON)
-        with self.assertRaises(PipelineError):
-            self.rename(fake)
-        self.assertEqual(fake.files, {OLD_ORIG: 7})
+        for broken in (OLD_DOCKER, OLD_CANON):
+            fake = FakeSftp({OLD_ORIG: 7})
+            fake.broken.add(broken)
+            with self.assertRaises(PipelineError):
+                self.rename(fake)
+            self.assertEqual(fake.files, {OLD_ORIG: 7})
 
     def test_the_same_name_moves_nothing(self):
         # 名無變（抑是 relabel／redate 算出仝一个名）：毋是「新位置已經有
         # 檔」ê錯誤，是無代誌愛做。
-        fake = FakeSftp({OLD_CANON: 5})
-        got = video_names.rename_episode(entry(OLD_NAME, OLD_ORIG_CELL),
-                                         OLD_NAME, fake, say=self.say)
-        self.assertEqual(got.old, got.new)
-        self.assertEqual(fake.files, {OLD_CANON: 5})
-        self.assertNotIn("rename", fake.verbs())
+        for where in (OLD_CANON, OLD_DOCKER, OLD_ORIG):
+            fake = FakeSftp({where: 5})
+            got = video_names.rename_episode(
+                entry(OLD_NAME, OLD_ORIG_CELL), OLD_NAME, fake,
+                say=self.say)
+            self.assertFalse(got.moved)
+            self.assertEqual(fake.files, {where: 5})
+            self.assertEqual(self.writes(fake), [])
 
     def test_rename_back_returns_the_file_to_where_it_was(self):
-        for files in ({OLD_CANON: 5}, {OLD_ORIG: 7}):
-            fake = FakeSftp(files)
-            before = dict(fake.files)
-            got = self.rename(fake)
-            video_names.rename_back(got, fake)
-            self.assertEqual(fake.files, before)
+        fake = FakeSftp({OLD_CANON: 5})
+        before = dict(fake.files)
+        got = self.rename(fake)
+        video_names.rename_back(got, fake)
+        self.assertEqual(fake.files, before)
+
+    def test_rename_back_does_not_undo_what_was_never_moved(self):
+        # 猶佇原始位置ê：本機後步失敗愛退，伺服器本來就無動，毋可共影片
+        # 對原始位置搬去別位。
+        fake = FakeSftp({OLD_ORIG: 7})
+        got = self.rename(fake)
+        before = list(fake.calls)
+        video_names.rename_back(got, fake)
+        self.assertEqual(fake.calls, before)
+        self.assertEqual(fake.files, {OLD_ORIG: 7})
 
     def test_the_apostrophe_name_renames_whole(self):
         old = "20210103_003_晨間_Hla'alua_拉阿魯哇"
@@ -824,6 +1027,58 @@ class TestRenameEpisode(unittest.TestCase):
         fake = FakeSftp({paths.video_path(old): 3})
         video_names.rename_episode(entry(old, ""), new, fake, say=self.say)
         self.assertEqual(list(fake.files), [paths.video_path(new)])
+
+
+class TestWritesOnlyUnderHome(CheckFixture):
+    """對伺服器ê寫入（mkdir／rename／rmdir）干焦佇 /home 底下發生。
+
+    `/docker` 是 root:root 755，管理者管；我們寫袂入去，嘛袂使試。
+    猶佇 /docker 有同名檔ê情形，攏愛佇寫入進前就停。
+    """
+
+    def writes(self):
+        out = []
+        for call in self.fake.calls:
+            if call[0] in ("mkdir", "rename", "rmdir"):
+                for place in call[1:]:
+                    out.append(place)
+        return out
+
+    def assert_none_in_docker(self):
+        for place in self.writes():
+            self.assertFalse(
+                place.startswith(paths.VIDEO_ROOT_DOCKER)
+                or place == "/docker", place)
+
+    def test_every_write_of_every_verb_stays_out_of_docker(self):
+        # 先予管理者搬走一支，才跑 undo、probe、apply（續跑）、prune、改名。
+        gone = self.moves[0]
+        docker = paths.video_read_paths(gone.name)[0]
+        self.fake.files[docker] = self.fake.files.pop(gone.new)
+        self.fake._add_parents(docker)
+        del self.fake.calls[:]
+        video_names.undo(self.manifest_path(), self.fake, say=self.say)
+        video_names.probe(self.moves[1], self.fake, say=self.say)
+        self.apply(now="20261030-172000")
+        video_names.prune(self.moves, self.fake, execute=True, say=self.say)
+        video_names.rename_episode(
+            entry(HLAALUA, ""), HLAALUA + "改", self.fake, say=self.say)
+        self.assertNotEqual(self.writes(), [])
+        self.assert_none_in_docker()
+
+    def test_a_docker_clash_writes_nothing_at_all(self):
+        clash = self.moves[2]
+        self.fake.files[clash.old] = 5
+        docker = paths.video_read_paths(clash.name)[0]
+        self.fake.files[docker] = 5
+        self.fake._add_parents(docker)
+        del self.fake.calls[:]
+        with self.assertRaises(PipelineError):
+            self.apply(now="20261030-173000")
+        self.assertEqual(self.writes(), [])
+
+    def manifest_path(self):
+        return os.path.join(self.manifest_dir, "20261030-170000.csv")
 
 
 RAW = "/home/mkv-raw"
@@ -1035,7 +1290,16 @@ class TestCli(CliFixture):
         code, out, _err = self.run_cli("locate", RUKAI)
         self.assertEqual(code, 0)
         self.assertEqual(out.splitlines(),
-                         ["%s\t42\t正規" % paths.video_path(RUKAI)])
+                         ["%s\t42\thome" % paths.video_path(RUKAI)])
+
+    def test_locate_of_an_episode_the_admin_moved_says_docker(self):
+        docker = paths.video_read_paths(RUKAI)[0]
+        self.fake.files[docker] = 43
+        self.fake._add_parents(docker)
+        code, out, err = self.run_cli("locate", RUKAI)
+        self.assertEqual(code, 0)
+        self.assertEqual(out.splitlines(), ["%s\t43\tdocker" % docker])
+        self.assertEqual(err, "")
 
     def test_locate_falling_back_says_so_on_stderr_only(self):
         code, out, err = self.run_cli("locate", RUKAI)
@@ -1045,12 +1309,14 @@ class TestCli(CliFixture):
         self.assertIn("退回原始位置", err)
         self.assertNotIn("退回", out)
 
-    def test_locate_with_nothing_found_exits_nonzero_and_names_both(self):
+    def test_locate_with_nothing_found_exits_nonzero_and_names_all_three(self):
         del self.fake.files[self.moves[0].old]
         code, out, err = self.run_cli("locate", RUKAI)
         self.assertEqual(code, 1)
         self.assertEqual(out, "")
-        self.assertIn(paths.video_path(RUKAI), err)
+        for place in paths.video_read_paths(RUKAI):
+            self.assertIn(place, err)
+        self.assertIn(self.moves[0].old, err)
 
 
 if __name__ == "__main__":

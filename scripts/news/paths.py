@@ -273,21 +273,44 @@ def mkv_path(srt_name):
     return stage_path(MKV_ARCHIVE, srt_name, ".mkv")
 
 
-# 影片在伺服器上ê正規位置：`<VIDEO_ROOT>/<年-月>/<成果檔名>.mkv`。
-# 位置是成果檔名ê純函式，目錄毋另設欄記；年-月對成果檔名來，毋是對影片
-# 本底囥ê資料夾（48 逝ê資料夾月份佮播出月份無仝）。本底寫佇
-# `transcode/archive_batch.py`，流程到處攏愛用，所以搬來遮。
-VIDEO_ROOT = "/home/news/mkv"
+# 影片在伺服器上ê位置：`<根>/<年-月>/<成果檔名>.mkv`。位置是成果檔名ê純函式，
+# 目錄毋另設欄記；年-月對成果檔名來，毋是對影片本底囥ê資料夾（48 逝ê資料夾
+# 月份佮播出月份無仝）。
+#
+# 有**兩个根**，各干焦佇遮定義一擺，日後抽換改這兩行就好：
+#   VIDEO_ROOT_DOCKER  定稿區。管理者（root）一支一支共影片對 /home 搬過來，
+#                      我們唯讀（資料夾 root:root 755）。
+#   VIDEO_ROOT_HOME    暫存區。語言別確認了後 `video_names apply` 共影片改名
+#                      入來；**我們唯一會寫ê所在**。
+# 讀ê順序是先 DOCKER、後 HOME（`video_read_paths`），揣無才退回目錄ê
+# `原始影片檔案位置`；寫（`video_path`／`video_dir`／`video_dirs_to_make`）
+# 一律認 HOME。
+VIDEO_ROOT_DOCKER = "/docker/news/mkv"
+VIDEO_ROOT_HOME = "/home/news/mkv"
 
 
 def video_dir(srt_name):
-    """<root>/<年-月> on the server."""
-    return "%s/%s" % (VIDEO_ROOT, month_of(srt_name))
+    """<暫存區>/<年-月> on the server（寫入ê位置）。"""
+    return "%s/%s" % (VIDEO_ROOT_HOME, month_of(srt_name))
 
 
 def video_path(srt_name):
-    """Where this episode's mkv lives on the server."""
+    """Where this episode's mkv is *written*: the home (staging) root."""
     return "%s/%s.mkv" % (video_dir(srt_name), check_srt_name(srt_name))
+
+
+def video_read_paths(srt_name):
+    """Where this episode's mkv may be *read* from, in the order to try.
+
+    `[定稿區, 暫存區]`。呼叫ê時才讀兩个全域變數，毋是事先存做元組——換
+    根（抑是測試改值）立刻綴咧變，毋會有一个漏落咧猶是舊ê。
+    """
+    name = check_srt_name(srt_name)
+    month = month_of(name)
+    out = []
+    for root in (VIDEO_ROOT_DOCKER, VIDEO_ROOT_HOME):
+        out.append("%s/%s/%s.mkv" % (root, month, name))
+    return out
 
 
 def video_dirs_to_make(srt_name):

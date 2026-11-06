@@ -63,7 +63,8 @@ class VisionPromptCase(unittest.TestCase):
 
     NAME = "20210224_055_午間_Cou_鄒"
     SLUG = "2021_055_2021-02-24_午間_Cou_鄒"
-    REMOTE = "/home/news/mkv/2021-02/20210224_055_午間_Cou_鄒.mkv"
+    REMOTE = (paths.VIDEO_ROOT_DOCKER
+              + "/2021-02/20210224_055_午間_Cou_鄒.mkv")
 
     def setUp(self):
         # 來源路徑本底愛讀節目目錄；測試離線，換做固定值
@@ -682,10 +683,12 @@ class TestCeiling(unittest.TestCase):
 
 
 class TestRemoteOf(unittest.TestCase):
-    """讀者要抓ê影片現此時佇佗：先問正規位置，揣無才退回原始位置。"""
+    """讀者要抓ê影片現此時佇佗：先問 /docker、/home，揣無才退回原始位置。"""
 
     NAME = "20210224_055_午間_Cou_鄒"
-    CANON = "/home/news/mkv/2021-02/20210224_055_午間_Cou_鄒.mkv"
+    CANON = (paths.VIDEO_ROOT_DOCKER
+             + "/2021-02/20210224_055_午間_Cou_鄒.mkv")
+    HOME = paths.VIDEO_ROOT_HOME + "/2021-02/20210224_055_午間_Cou_鄒.mkv"
     ORIG = "/home/mkv-raw/110.01-110.10/2月/21NL003_55午間族語新聞.mkv"
 
     class Sftp(object):
@@ -710,6 +713,12 @@ class TestRemoteOf(unittest.TestCase):
         self.assertEqual(got, self.CANON)
         self.assertEqual(self.said, [])
 
+    def test_home_when_the_admin_has_not_moved_it_yet(self):
+        got = prompt.remote_of(self.NAME, sftp=self.Sftp({self.HOME: 1}),
+                               say=self.said.append)
+        self.assertEqual(got, self.HOME)
+        self.assertEqual(self.said, [])
+
     def test_a_missing_canonical_falls_back_to_the_original(self):
         got = prompt.remote_of(self.NAME, sftp=self.Sftp({self.ORIG: 1}),
                                say=self.said.append)
@@ -727,6 +736,7 @@ class TestRemoteOf(unittest.TestCase):
             prompt.remote_of(self.NAME, sftp=self.Sftp({}),
                              say=self.said.append)
         self.assertIn(self.CANON, str(caught.exception))
+        self.assertIn(self.HOME, str(caught.exception))
         self.assertIn(self.ORIG, str(caught.exception))
 
 

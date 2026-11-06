@@ -227,7 +227,7 @@ def main(argv=None):
         if reason:
             print("skip  %-46s %s" % (entry["srt_name"], reason))
             continue
-        ready.append((entry, work))
+        ready.append((entry, work, inputs_of(work)))
         if args.check:
             print("ready %s" % entry["srt_name"])
 
@@ -242,20 +242,99 @@ def main(argv=None):
         return 0
 
     written = 0
-    for entry, work in ready:
-        if publish_one(entry, work):
+    failed = []
+    for entry, work, before in ready:
+        changed = None
+        try:
+            changed = publish_one(entry, work)
+            table = publish_segments(entry, work)
+        except Exception as exc:
+            now = inputs_of(work)
+            where = progress(changed)
+            if now == before:
+                # 判斷到現在 work dir 都沒變：是這集的資料、磁碟或程式
+                # 本身的問題，叫人等別人做完只會一直重複失敗。照舊停下來，
+                # traceback 帶集名和寫到哪裡
+                exc.add_note("publish 寫到 %s 停下：%s。work dir %s 從判斷"
+                             "到現在沒有變，不是別人改的"
+                             % (entry["srt_name"], where, work))
+                raise
+            failed.append(entry["srt_name"])
+            print("fail  %-46s %s：%s（%s: %s）" % (
+                entry["srt_name"], where, what_changed(before, now),
+                type(exc).__name__, exc))
+            continue
+        now = inputs_of(work)
+        if now != before:
+            # 讀得進去、沒有出錯，可是寫的時候 work dir 在變：抄進去的可能
+            # 是改到一半的版本（split_cue 先改 TSV 號碼、再寫時間軸）
+            failed.append(entry["srt_name"])
+            print("fail  %-46s 已經寫了，可是%s；入庫的可能是改到一半的版本"
+                  % (entry["srt_name"], what_changed(before, now)))
+            continue
+        if changed:
             written += 1
             print("write %s" % entry["srt_name"])
         else:
             print("same  %s" % entry["srt_name"])
-        table = publish_segments(entry, work)
         if table != "none":
             print("      段落表 %s" % table)
 
+    done = len(ready) - len(failed)
     print("\n%d 集ê時間軸入庫（%d 集內容相仝，無重寫）"
-          % (written, len(ready) - written))
+          % (written, done - written))
+    if failed:
+        print("%d 集判斷完以後 work dir 被改了（上面 fail 那幾行）：%s"
+              % (len(failed), "、".join(failed)))
+        print("改 work dir（換名、精修、補切）要先拿 store.lock，跟 publish "
+              "同一把；等改的人做完，再 publish 一次")
+        return 1
     print("next: python3 -m scripts.news.rebuild --verify")
     return 0
+
+
+# 判斷（publishable）到寫入之間，work dir 可能被沒拿 store.lock 的人改掉：
+# 時間軸被換名拿走、讀到寫一半的 JSON 或段落表（2026-10-28 全庫 publish
+# 在鎖裡停在 refined_timeline，看不出是哪一集，排在後面的集數全部沒入庫）。
+# 是不是被改了看證據——判斷那時記下 publish 會讀的兩個檔的大小和修改時間，
+# 出錯時再看一次——不看例外的種類：段落表起秒打錯的 ValueError、磁碟滿的
+# OSError 也是這幾種例外，可是 work dir 沒變，不是別人改的。
+def inputs_of(work):
+    """publish 會讀的兩個檔（時間軸、段落表）：{名: (路徑, 大小, 修改時間)
+    或 None}。"""
+    out = {}
+    for name, path in (("時間軸", paths.cues_to_read(work)),
+                       ("段落表", paths.segments_file(work))):
+        try:
+            stat = os.stat(path) if path else None
+        except FileNotFoundError:
+            stat = None
+        out[name] = None if stat is None else (path, stat.st_size,
+                                               stat.st_mtime_ns)
+    return out
+
+
+def what_changed(before, now):
+    """一句話：判斷完以後 work dir 哪裡變了、可能是誰造成的。"""
+    said = []
+    for name in sorted(before):
+        if before[name] == now.get(name):
+            continue
+        if now.get(name) is None:
+            said.append("%s不見了（被換名或清掉）" % name)
+        elif before[name] is None:
+            said.append("多了%s" % name)
+        else:
+            said.append("%s被改寫" % name)
+    return ("判斷完以後 work dir %s，是不是有人沒拿 store.lock 就改它？"
+            % "、".join(said))
+
+
+def progress(changed):
+    """寫到哪裡：publish_one 回來了（changed 不是 None）＝時間軸已經入庫。"""
+    if changed is None:
+        return "這集沒有入庫"
+    return "時間軸已經入庫、段落表沒有"
 
 
 if __name__ == "__main__":

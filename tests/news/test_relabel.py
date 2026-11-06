@@ -241,14 +241,52 @@ class TestTheVideoFollows(unittest.TestCase):
             self.relabel()
         self.assertEqual(self.fake.files, {self.OLD_VIDEO: 5})
 
-    def test_an_episode_never_moved_in_moves_in_from_its_original(self):
+    def test_an_episode_in_docker_is_refused_and_nothing_changes(self):
+        # /docker 是管理者管ê唯讀區：目錄、store、伺服器攏無動。
+        docker = paths.video_read_paths(OLD)[0]
+        self.fake.files = {docker: 5}
+        self.fake._add_parents(docker)
+        before = self.catalogue_bytes()
+        with self.assertRaises(PipelineError) as caught:
+            self.relabel()
+        self.assertIn("管理者", str(caught.exception))
+        self.assertEqual(self.catalogue_bytes(), before)
+        self.assertEqual(self.fake.files, {docker: 5})
+        self.assertTrue(self.store.exists("1-ocr/3-srt/2021-01/%s.srt" % OLD))
+        self.assertFalse(self.store.exists(
+            "1-ocr/3-srt/2021-01/%s.srt" % NEW))
+
+    def test_an_episode_never_moved_in_leaves_the_server_alone(self):
+        # 新批次：影片猶佇原始位置，語言別這馬才改。目錄佮 store 照改，
+        # 伺服器毋動，等 apply 才用最終名字搬。
         original = ("/docker/ilrdf-corpus/族語新聞/110.1-110.10/1月/"
                     "卑南語-20210116s1800.mp4")
         self.fake.files = {original: 9}
         self.fake._add_parents(original)
-        self.relabel()
-        self.assertEqual(self.fake.files, {self.NEW_VIDEO: 9})
+        before = list(self.fake.calls)
+        new, _report = self.relabel()
+        self.assertEqual(new, NEW)
+        self.assertEqual(self.fake.files, {original: 9})
+        for call in self.fake.calls[len(before):]:
+            self.assertNotIn(call[0], ("rename", "mkdir", "rmdir"))
+        self.assertTrue(self.store.exists("1-ocr/3-srt/2021-01/%s.srt" % NEW))
         self.assertIn("退回原始位置", "\n".join(self.said))
+
+    def test_a_local_failure_does_not_move_a_video_that_never_moved(self):
+        original = ("/docker/ilrdf-corpus/族語新聞/110.1-110.10/1月/"
+                    "卑南語-20210116s1800.mp4")
+        self.fake.files = {original: 9}
+        self.fake._add_parents(original)
+        clash = os.path.join(self.store.root,
+                             "1-ocr/3-srt/2021-01/%s.srt" % NEW)
+        with open(clash, "w") as handle:
+            handle.write("other")
+        before = list(self.fake.calls)
+        with self.assertRaises(PipelineError):
+            self.relabel()
+        self.assertEqual(self.fake.files, {original: 9})
+        for call in self.fake.calls[len(before):]:
+            self.assertNotIn(call[0], ("rename", "mkdir", "rmdir"))
 
 
 if __name__ == "__main__":

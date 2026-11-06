@@ -896,18 +896,136 @@ class TestSegments(unittest.TestCase):
             self.assertIn(row["依據"], segments.BASES)
         self.assertEqual(segments.check(got, TGT, 2900.0), [])
 
-    def test_areas_conflict_refused(self):
-        """一個類型只記一格：重播範圍外還有 cue 用同類型的別的 preset
-        （259、290 已有 island 的島語時間）→ 擋。"""
+    def test_segments_own_news_out_of_band_takes_target_language(self):
+        """187 晚←172 晚：紅衫小朋友唱歌那則新聞的歌詞是帶外專題，172 晚段落
+        表那列單元語別是「布農」（172 是布農那集自己的新聞），187 晚原本
+        那裡是自己的外景新聞「賽夏」。舊做法把「布農」原樣抄到 187，搬完
+        兩列要手改回「賽夏」。首播那列的語別就是首播那集的族語、重播被換
+        掉的列都是重播自己的新聞（攝影棚、外景新聞這類）而且是重播那集的
+        族語：那是重播自己新聞裡的帶外專題，沿用重播的語別。"""
+        target = [seg("1572.121", "2181", "外景新聞", "722", "848", "賽夏"),
+                  seg("2181", "2192", "其他", language="賽夏")]
+        source = [seg("1163", "1527.610", "外景新聞", "722", "848", "布農"),
+                  seg("1527.610", "1553", "帶外專題", "690", "1040", "布農"),
+                  seg("1553", "1564", "其他", language="布農")]
+        got = port.port_segments(target, source, 2156.305, 2181.362,
+                                 628.695, src_language="布農",
+                                 tgt_language="賽夏")
+        rows = []
+        for row in got:
+            rows.append((row["類型"], row["單元語別"]))
+        self.assertIn(("帶外專題", "賽夏"), rows)
+        self.assertNotIn(("帶外專題", "布農"), rows)
+
+    def test_segments_rebroadcast_unit_keeps_source_language(self):
+        """216 晚（賽夏）的帶外專題「賽夏」整段在 222 晚（布農）重播，222
+        自己的表那裡本來就寫帶外專題「賽夏」：首播那列的語別剛好也是首播
+        那集的族語，但重播那裡不是重播自己的新聞，語別照首播的「賽夏」，
+        不可以改成「布農」。島語時間這類單元也一樣照首播。"""
+        target = [seg("0", "1597", "攝影棚", "722", "848", "布農"),
+                  seg("1597", "2542", "帶外專題", "690", "1040", "賽夏"),
+                  seg("2542", "2900", "攝影棚", "722", "848", "布農")]
+        source = [seg("0", "1690", "攝影棚", "722", "848", "賽夏"),
+                  seg("1690", "2635", "帶外專題", "690", "1040", "賽夏"),
+                  seg("2635", "2900", "攝影棚", "722", "848", "賽夏")]
+        got = port.port_segments(target, source, 1597.0, 2542.0, -93.0,
+                                 src_language="賽夏", tgt_language="布農")
+        for row in got:
+            if row["類型"] == "帶外專題":
+                self.assertEqual(row["單元語別"], "賽夏")
+        target = [seg("0", "1199", "攝影棚", "722", "848", "賽夏"),
+                  seg("1199", "1319", "島語時間", "940", "1060", "賽夏"),
+                  seg("1319", "1400", "攝影棚", "722", "848", "賽夏")]
+        source = [seg("0", "1000", "攝影棚", "722", "848", "布農"),
+                  seg("1000", "1120", "島語時間", "940", "1060", "布農"),
+                  seg("1120", "1400", "攝影棚", "722", "848", "布農")]
+        got = port.port_segments(target, source, 1199.0, 1319.0, 199.0,
+                                 src_language="布農", tgt_language="賽夏")
+        for row in got:
+            if row["類型"] == "島語時間":
+                self.assertEqual(row["單元語別"], "布農")
+
+    def test_episode_language_from_name(self):
+        """段落表的預設單元語別是集名最後那段中文族名。"""
+        self.assertEqual(port.episode_language(
+            "20240705_187_晚間_SaySiyat_賽夏"), "賽夏")
+        self.assertEqual(port.episode_language(
+            "20220925_268_晨間_Hla'alua_拉阿魯哇"), "拉阿魯哇")
+
+    def test_areas_conflict_stored_under_new_name(self):
+        """一個類型只記一格：358 晨範圍外還有一段鄒語島語時間（cue 328，
+        1081–2001）用 island，首播這段用 flower；舊做法整段搬直接擋下
+        （port_areas raise），只能用 place_cue 逐條補，areas 也沒記首播的
+        設定。像分區搬一樣，首播的設定另存一個不衝突的名字，搬進來的 cue
+        標那個名字；範圍外重播自己的那段照舊。"""
         mine = {"島語時間": {"preset": "titv-news-island-high",
                          "region": [0, 900, 1920, 120]}}
         theirs = {"島語時間": {"preset": "titv-news-island",
                            "region": [0, 940, 1920, 120]}}
         ported = [{"area": "島語時間"}]
-        with self.assertRaises(PipelineError):
-            port.port_areas(mine, theirs, ported, [{"area": "島語時間"}])
-        got = port.port_areas(mine, theirs, ported, [{}])
+        notes = []
+        got = port.port_areas(mine, theirs, ported, [{"area": "島語時間"}],
+                              notes=notes, src_name=SRC)
+        name = "島語時間（%s）" % SRC[:12]
+        self.assertEqual(got["島語時間"], mine["島語時間"])
+        self.assertEqual(got[name], theirs["島語時間"])
+        self.assertEqual(ported[0]["area"], name)
+        self.assertTrue(mentions(notes, name), notes)
+        got = port.port_areas(mine, theirs, [{"area": "島語時間"}], [{}],
+                              src_name=SRC)
         self.assertEqual(got, theirs)
+
+
+class TestUnitOfItems(unittest.TestCase):
+    """工作檔 items（重播秒數）要對到首播段落表哪一段。"""
+
+    TABLE = [seg("0", "1163", "攝影棚", "722", "848", "布農"),
+             seg("1163", "1527.610", "外景新聞", "722", "848", "布農"),
+             seg("1527.610", "1553", "帶外專題", "690", "1040", "布農"),
+             seg("1553", "1564", "其他", language="布農"),
+             seg("1564", "1700", "攝影棚", "722", "848", "布農")]
+
+    def test_unit_chosen_by_each_item_range_not_first_number(self):
+        """187 晚←172 晚第二段歌詞：工作檔只有一項「2156.0-2181.8」，粗位移
+        量到 631.4（新聞字幕那邊漂到 631.4，歌詞實際是 628.695）。舊做法
+        拿第一個數字 2156.0 減粗位移＝1524.6，落在前一列外景新聞，是用包裝
+        指定那一列才過的。每一項自己的範圍換算成首播 1524.6–1550.4，大部分
+        在帶外專題那列，要選那列。"""
+        got = port.unit_of_items(self.TABLE, [(2156.0, 2181.8)], 631.4)
+        self.assertEqual(got["range"], (1527.61, 1553.0))
+        self.assertFalse(got["ambiguous"])
+        self.assertTrue(1527.61 <= got["second"] < 1553.0)
+        self.assertEqual(port.unit_range(self.TABLE, got["second"]),
+                         (1527.61, 1553.0))
+
+    def test_unit_items_across_two_programmes_ambiguous(self):
+        """items 換算後一半在外景新聞、一半在帶外專題（差不多長）：自動選哪
+        一列都可能錯，要標 ambiguous、列出兩段，讓人指定。"""
+        got = port.unit_of_items(self.TABLE, [(1660.0, 1675.0),
+                                              (1680.0, 1700.0)], 150.0)
+        self.assertTrue(got["ambiguous"])
+        ranges = [got["range"]]
+        for other in got["others"]:
+            ranges.append(other["range"])
+        self.assertIn((1527.61, 1553.0), ranges)
+        self.assertIn((1163.0, 1527.61), ranges)
+
+    def test_unit_opening_animation_is_minor_part(self):
+        """287 族 9 集：工作檔第一段從單元片頭（797–850）起、其餘 850–1135
+        是島語時間；片頭只佔一小段，選島語時間，不算跨兩段。"""
+        table = [seg("0", "797", "攝影棚", "722", "848", "布農"),
+                 seg("797", "850", "單元片頭", language="布農"),
+                 seg("850", "1135", "島語時間", "940", "1060", "布農"),
+                 seg("1135", "1300", "攝影棚", "722", "848", "布農")]
+        got = port.unit_of_items(table, [(997.0, 1050.0), (1050.0, 1335.0)],
+                                 200.0)
+        self.assertEqual(got["range"], (850.0, 1135.0))
+        self.assertFalse(got["ambiguous"])
+
+    def test_unit_without_table_or_overlap_gives_none(self):
+        self.assertIsNone(port.unit_of_items(None, [(1.0, 2.0)], 0.0))
+        self.assertIsNone(port.unit_of_items(self.TABLE, [(9000.0, 9001.0)],
+                                             0.0))
 
 
 # ------------------------------------------------------------ 入庫
@@ -2503,9 +2621,12 @@ class TestWholePortEdges(unittest.TestCase):
                            items=[(1126.0, 1172.0)])
         self.assertEqual(len(result["cues"]), 11)
 
-    def test_areas_conflict_message_uses_target_numbers(self):
-        """areas 衝突訊息寫的是新號（254 舊 cue 710 寫成 737），人對不上；
-        要寫重播現在的號。範圍外只剩空白 cue 用舊設定時不擋，記在 notes。"""
+    def test_areas_conflict_keeps_both_settings(self):
+        """358 晨、172 晚：同一集兩段島語時間（或帶外專題）用不同切法，
+        整段搬時舊做法擋下（訊息還曾寫成新號，254 舊 cue 710 寫成 737）。
+        現在兩格都記：重播範圍外有字的 cue 照舊用原名，搬進來的標首播設定
+        的新名字，說明寫重播現在的號。範圍外只剩空白 cue 用舊設定時照舊
+        換成首播的、記在 notes。"""
         src_book, src_texts, tgt_book, tgt_texts, lo, hi = pair()
         drop(tgt_book, tgt_texts, 20)
         tgt_book["areas"] = {"島語時間": {"preset": "titv-news-island-high",
@@ -2516,12 +2637,23 @@ class TestWholePortEdges(unittest.TestCase):
         result = port.port(src_book, src_texts, tgt_book, tgt_texts, lo, hi,
                            -234.0)
         self.assertNotEqual(result["moves"][last], last)
-        with self.assertRaises(PipelineError) as caught:
-            port.new_book(tgt_book, src_book, result, SRC, lo, hi, -234.0,
-                          tgt_texts)
-        self.assertIn("cue %d" % last, str(caught.exception))
-        self.assertNotIn("cue %d" % result["moves"][last],
-                         str(caught.exception))
+        book = port.new_book(tgt_book, src_book, result, SRC, lo, hi, -234.0,
+                             tgt_texts)
+        name = "島語時間（%s）" % SRC[:12]
+        self.assertEqual(book["areas"]["島語時間"]["preset"],
+                         "titv-news-island-high")
+        self.assertEqual(book["areas"][name]["preset"], "titv-news-island")
+        for item in book["cues"]:
+            if item["index"] in result["fresh"]:
+                self.assertEqual(item["area"], name)
+        self.assertEqual(book["cues"][result["moves"][last] - 1]["area"],
+                         "島語時間")
+        notes = book["ported"][-1]["notes"]
+        self.assertTrue(mentions(notes, "cue %d" % last), notes)
+        self.assertFalse(mentions(notes, "cue %d" % result["moves"][last]),
+                         notes)
+        result = port.port(src_book, src_texts, tgt_book, tgt_texts, lo, hi,
+                           -234.0)
         tgt_texts[last] = ""
         book = port.new_book(tgt_book, src_book, result, SRC, lo, hi, -234.0,
                              tgt_texts)
@@ -2604,7 +2736,7 @@ def scene(side, seconds, lo, hi, off_frames, shared_margin=2.0,
     return image
 
 
-def fake_ffmpeg(lo, hi, off_frames, overlay=False):
+def fake_ffmpeg(lo, hi, off_frames, overlay=False, shared_margin=2.0):
     """`grab` 的 runner：照 -ss 的秒數和 -i（source／target）畫一格。"""
     from PIL import Image
 
@@ -2612,6 +2744,7 @@ def fake_ffmpeg(lo, hi, off_frames, overlay=False):
         seconds = float(cmd[cmd.index("-ss") + 1])
         side = cmd[cmd.index("-i") + 1]
         Image.fromarray(scene(side, seconds, lo, hi, off_frames,
+                              shared_margin=shared_margin,
                               overlay=overlay)).save(cmd[-1])
         return mock.Mock(returncode=0, stderr="")
     return run
@@ -3214,6 +3347,64 @@ class TestZoneStore(unittest.TestCase):
         self.assertIn("首播有字、重播沒字", body)
         self.assertIn(say(20), body)
 
+    def reverted_setup(self, target_has_middle=True):
+        """首播第 20 句在中間某份快照加了阿美語、後來又拿掉（最早那份跟現在
+        一樣）；重播之前照中間版搬過，現在還掛著阿美語。"""
+        middle = port.load(SRC, self.box.store)
+        book, texts = middle["book"], dict(middle["texts"])
+        number = None
+        for key, text in texts.items():
+            if text == say(20):
+                number = key
+        texts[number] = say(20) + " Amis a tayal"
+        folder = self.box.snapshot(self.snaps, SRC, "cf1028", book, texts)
+        main = os.path.join(self.snaps, "%s--main" % SRC, "manifest.txt")
+        when = os.path.getmtime(main) + 60
+        os.utime(os.path.join(folder, "manifest.txt"), (when, when))
+        loaded = port.load(TGT, self.box.store)
+        book, texts = loaded["book"], dict(loaded["texts"])
+        target_cue = None
+        for key, text in texts.items():
+            if text == say(20):
+                target_cue = key
+        if target_has_middle:
+            texts[target_cue] = say(20) + " Amis a tayal"
+        self.box.put(TGT, book, texts,
+                     [seg("0", "1199", "攝影棚", "722", "848"),
+                      seg("1199", "1319", "島語時間", "940", "1060"),
+                      seg("1319", "1400", "攝影棚", "722", "848")])
+        return target_cue
+
+    def test_zone_reports_source_change_reverted_but_target_kept(self):
+        """086 午章節標題字卡：cf1028 那輪加了阿美語、後來裁定只寫華語又拿
+        掉，最早那份快照跟現在一樣，分區搬判成首播沒改；從 086 搬過阿美語的
+        050 晚、059 晚、081 午…都還掛著，工具一句都不報。中間某份快照有、
+        首播現在沒有、重播同一段正是中間版的字：要列出來（首播、重播秒數、
+        快照標籤、中間版和現在的字、重播 cue），不搬，summary 記幾句、
+        report.txt 也寫。"""
+        target_cue = self.reverted_setup()
+        plan = self.prepare()
+        self.assertEqual(plan["status"], "ready", plan["reasons"])
+        got = plan["reverted_in_target"]
+        self.assertEqual(len(got), 1, got)
+        self.assertEqual(got[0]["text"], say(20) + " Amis a tayal")
+        self.assertEqual(got[0]["now"], say(20))
+        self.assertEqual(got[0]["tag"], "cf1028")
+        self.assertEqual(got[0]["target_cues"], [target_cue])
+        self.assertEqual(plan["summary"]["reverted_in_target"], 1)
+        with open(os.path.join(self.out, "report.txt"),
+                  encoding="utf-8") as handle:
+            body = handle.read()
+        self.assertIn("首播改了又改回", body)
+        self.assertIn("Amis a tayal", body)
+
+    def test_zone_reverted_source_change_target_already_now_not_reported(self):
+        """同上，但重播從來沒搬過中間版（字跟首播現在一樣）：不報。"""
+        self.reverted_setup(target_has_middle=False)
+        plan = self.prepare()
+        self.assertEqual(plan["reverted_in_target"], [])
+        self.assertEqual(plan["summary"]["reverted_in_target"], 0)
+
     def test_zone_without_snapshot_refused(self):
         """重播那段有字、卻沒有首播快照：不知道首播改過哪裡，不可以退回整段
         搬，要擋並講原因。"""
@@ -3278,6 +3469,639 @@ class TestZoneStore(unittest.TestCase):
             self.assertIn("回滾", str(caught.exception))
             self.assertEqual(snapshot_tree(self.box.root, skip=("out",)),
                              before)
+
+
+# ------------------------------------------------------------ 第三批收尾的工具缺口
+
+
+class TestZoneAccept(unittest.TestCase):
+    """分區搬的要人判區用放行清單（--accept）放行。"""
+
+    prepare = TestZoneStore.prepare
+
+    def setUp(self):
+        TestZoneStore.setUp(self)
+        loaded = port.load(TGT, self.box.store)
+        texts = loaded["texts"]
+        texts[12] = "第010句萬用鐮⋯"
+        self.box.put(TGT, loaded["book"], texts,
+                     [seg("0", "1199", "攝影棚", "722", "848"),
+                      seg("1199", "1319", "島語時間", "940", "1060"),
+                      seg("1319", "1400", "攝影棚", "722", "848")])
+        self.accept = os.path.join(self.box.root, "accept.txt")
+
+    def apply_with(self, accept):
+        return port.apply(os.path.join(self.out, "plan.json"), self.lock,
+                          self.fixes, accept=accept,
+                          no_frames="合成測試沒有影片", store=self.box.store,
+                          entries=self.box.entries, snaps=self.snaps,
+                          hooks={"pairs": lambda name: None,
+                                 "fixlog": lambda path: None})
+
+    def test_zone_asked_zone_released_by_accept_list(self):
+        """028 午、146 午、050 晚、052 午：分區搬的要人判區（只差刪節號字元
+        「…」對「⋯」）以前 --accept 放不行——apply 只核對整段搬的 ask，
+        這一區在 unresolved，只能用 place_cue 逐條補。放行清單寫重播 cue
+        號，prepare 照清單套那一區；apply 沒給同一份清單就擋。"""
+        plan = self.prepare()
+        self.assertEqual(plan["summary"]["ask"], 1, plan["unresolved"])
+        asked = plan["unresolved"][0]
+        self.assertEqual(asked["ask_cues"], [12])
+        self.assertIn("--accept", asked["why"])
+        with open(self.accept, "w", encoding="utf-8") as handle:
+            handle.write("12 抽格確認畫面是萬用鏟\n")
+        plan = port.prepare(SRC, TGT, 1000.0, 1120.0, self.out,
+                            store=self.box.store, fixes=self.fixes,
+                            entries=self.box.entries, snaps=self.snaps,
+                            accept=self.accept)
+        self.assertEqual(plan["status"], "ready", plan["reasons"])
+        self.assertEqual(plan["summary"]["ask"], 0)
+        self.assertEqual(plan["summary"]["applied"], 2)
+        self.assertEqual(plan["accepted"], [12])
+        with open(os.path.join(self.out, "report.txt"),
+                  encoding="utf-8") as handle:
+            self.assertIn("放行", handle.read())
+        with self.assertRaises(PipelineError) as caught:
+            self.apply_with(None)
+        self.assertIn("--accept", str(caught.exception))
+        self.apply_with(self.accept)
+        texts = port.load(TGT, self.box.store)["texts"]
+        self.assertIn("第010句萬用鏟", texts.values())
+        self.assertNotIn("第010句萬用鐮⋯", texts.values())
+
+    def test_accept_list_must_cover_every_differing_cue(self):
+        """首播把兩句併成一句，重播那兩條各自的字都跟首播修改前、後不同：
+        清單只寫其中一條照舊要人判，訊息列出兩條都要寫；兩條都寫才套。"""
+        body = program(lo=1600.0, count=12)
+        before, before_texts = lines_book(body)
+        after_lines = list(body)
+        after_lines[4:6] = [(body[4][0], body[5][1], "第004句併成一句",
+                             body[4][3])]
+        after, after_texts = lines_book(after_lines)
+        target_lines = list(body)
+        target_lines[4] = body[4][:2] + ("第004句測試字幕⋯", {})
+        target_lines[5] = body[5][:2] + ("第005句測試字幕⋯", {})
+        off = 199.132
+        tgt_book, tgt_texts = lines_book(shifted(target_lines, off))
+        for accepted, outcome in (({5}, "ask"), ({5, 6}, "applied")):
+            result = port.zone_port(before, before_texts, after, after_texts,
+                                    tgt_book, tgt_texts, 1590.0, 1660.0, off,
+                                    accepted)
+            if outcome == "ask":
+                self.assertEqual(len(result["ask"]), 1, result["applied"])
+                self.assertEqual(result["ask"][0]["ask_cues"], [5, 6])
+                self.assertIn("5、6", result["ask"][0]["why"])
+            else:
+                self.assertEqual(result["ask"], [])
+                self.assertEqual(result["applied"][0]["accepted"], [5, 6])
+                self.assertIn("第004句併成一句", result["all_texts"].values())
+
+
+def loaded(lines):
+    """[(start, end, text, extra)] → load() 那種 dict（只有比對要用的欄）。"""
+    book, texts = lines_book(lines)
+    return {"book": book, "texts": texts, "whisper": None}
+
+
+def refine_starts(lines, numbers, shifts):
+    """首播精修：這幾條起點往前挪（溶接長句換句點移了 0.5–4 秒）。"""
+    out = list(lines)
+    for k, number in enumerate(numbers):
+        start, end, text, extra = out[number]
+        out[number] = (round(start - shifts[k % len(shifts)], 3), end, text,
+                       extra)
+    return out
+
+
+class TestRefinedAnchors(unittest.TestCase):
+    """剪法不同的誤判：首播精修過起點的錨點不拿來判剪接、剪法不同。"""
+
+    OFF = -1466.699
+    LO = 2447.0
+    HI = 2828.0
+
+    def setUp(self):
+        # 011 晚部落信箱：31 句、12 秒一句，前 13 句沒精修過、後 18 句裡
+        # 精修過起點的溶接長句移了 0.35–1.3 秒（實測 0.217–6.99 秒）。
+        self.first = program(lo=self.LO, count=31, step=12.0)
+        self.target = shifted(self.first, self.OFF)
+        refined = list(range(13, 31))
+        self.now = refine_starts(self.first, refined, [0.35, 0.65, 1.0, 1.3])
+
+    def measure(self, now, target, source_first=None, target_first=None):
+        return port.measure_pair(loaded(now), loaded(target), self.LO,
+                                 self.HI, source_first=source_first,
+                                 target_first=target_first)
+
+    def test_refined_source_anchors_excluded(self):
+        """011 晚→361 晚、018 午、144 晚、210 晨，287 午→012 晚、356 午、
+        089 晚：首播精修過起點的溶接長句被拿來當錨點，重播還是舊切點，
+        30 個錨點只有 14 個同群、窗中位數 −1466.67／−1465.65 散開，被判成
+        「剪法不同」擋下（其實兩集剪法一樣，沒精修過的錨點都對在同一格）。
+        給首播最早那份快照：精修過起點的錨點拿掉再判，ready、位移不變，
+        理由寫明拿掉幾個。沒給快照照舊擋。"""
+        old = self.measure(self.now, self.target)
+        self.assertEqual(old["status"], "rejected")
+        self.assertTrue(set(old["blockers"]) & {"cut", "edit"},
+                        old["reasons"])
+        got = self.measure(self.now, self.target,
+                           source_first=loaded(self.first))
+        self.assertEqual(got["status"], "ready", got["reasons"])
+        self.assertAlmostEqual(got["offset"], self.OFF, places=3)
+        self.assertEqual(got["steady"]["dropped"], 18)
+        self.assertEqual(got["steady"]["kept"], 13)
+        self.assertTrue(mentions(got["reasons"], "精修", "18"),
+                        got["reasons"])
+
+    def test_target_own_refined_starts_excluded(self):
+        """309 午→295 晚：295 自己 379/380 等幾條邊界晚了 0.1–0.2 秒，前 3
+        個錨點 +638.82、後面一律 +638.71，被判成剪接。重播自己改過起點的
+        錨點（跟它最早那份快照比）也拿掉。"""
+        target_now = list(self.target)
+        for number in range(4):
+            start, end, text, extra = target_now[number]
+            target_now[number] = (round(start + 0.11 + 0.02 * number, 3),
+                                  end, text, extra)
+        old = self.measure(self.first, target_now)
+        self.assertEqual(old["status"], "rejected")
+        self.assertIn("cut", old["blockers"])
+        got = self.measure(self.first, target_now,
+                           source_first=loaded(self.first),
+                           target_first=loaded(self.target))
+        self.assertEqual(got["status"], "ready", got["reasons"])
+        self.assertEqual(got["steady"]["dropped"], 4)
+        self.assertTrue(mentions(got["reasons"], "重播自己改過"),
+                        got["reasons"])
+
+    def test_real_cut_still_refused_after_excluding(self):
+        """真的剪接（重播剪掉 3 秒），剪接前後都還有沒精修過的錨點：它們
+        也前後兩群，拿掉精修過的照樣擋，理由寫「排除後仍然是剪接」，--offset
+        也蓋不掉。剪接整個落在精修過那段的見下一條。"""
+        target = list(self.target)
+        for number in range(16, 31):
+            start, end, text, extra = target[number]
+            target[number] = (round(start - 3.0, 3), round(end - 3.0, 3),
+                              text, extra)
+        now = refine_starts(self.first, [20, 22, 24], [0.8])
+        got = self.measure(now, target, source_first=loaded(self.first))
+        self.assertEqual(got["status"], "rejected")
+        self.assertIn("cut", got["blockers"])
+        self.assertTrue(mentions(got["reasons"], "排除", "仍然"),
+                        got["reasons"])
+        forced = port.with_offset(got, self.OFF)
+        self.assertEqual(forced["status"], "rejected")
+
+    def test_offset_message_says_snapshot_missing(self):
+        """with_offset 擋剪法不同時，沒給快照（量位移沒排除首播精修過的錨點）
+        要講出來：給 --snaps 重做 prepare 才知道是不是精修造成的誤判。"""
+        old = self.measure(self.now, self.target)
+        forced = port.with_offset(old, self.OFF)
+        self.assertEqual(forced["status"], "rejected")
+        self.assertTrue(mentions(forced["reasons"], "--snaps"),
+                        forced["reasons"])
+
+    def test_cut_inside_refined_part_still_refused(self):
+        """審查重現：第 13–30 句精修過，重播在第 20 句前剪掉 3 秒——剪接整個
+        落在精修過的那段裡。只拿掉精修過的錨點，留下的 13 個全在剪接之前，
+        判成 ready、blockers 空的，`--no-frames` 套用就完全沒有把關。精修過
+        的錨點改用首播精修前的起點核對：第 20 句以後差 3 秒，照樣擋，
+        `--offset` 也蓋不掉，訊息講是精修過的那段看不出有沒有剪接。"""
+        target = list(self.target)
+        for number in range(20, 31):
+            start, end, text, extra = target[number]
+            target[number] = (round(start - 3.0, 3), round(end - 3.0, 3),
+                              text, extra)
+        got = self.measure(self.now, target, source_first=loaded(self.first))
+        self.assertEqual(got["status"], "rejected", got["reasons"])
+        self.assertTrue(mentions(got["reasons"], "精修前"), got["reasons"])
+        forced = port.with_offset(got, self.OFF)
+        self.assertEqual(forced["status"], "rejected")
+        self.assertFalse(mentions(forced["reasons"], "沒有快照"),
+                         forced["reasons"])
+
+    def test_refined_tail_without_old_start_refused(self):
+        """精修過的錨點落在留下的錨點後面（第 20 句以後），首播最早那份快照
+        又找不到同字的句子（換句點時字也重切了），精修前的起點無從核對：
+        那段有沒有剪接看不出來，不放行。"""
+        first = list(self.first)
+        for number in range(20, 31):
+            start, end, _text, extra = first[number]
+            first[number] = (start, end, "舊的切法第%03d句" % number, extra)
+        got = self.measure(self.now, self.target, source_first=loaded(first))
+        self.assertEqual(got["status"], "rejected", got["reasons"])
+        self.assertTrue(mentions(got["reasons"], "看不出"), got["reasons"])
+
+    def test_refined_both_sides_with_old_start_ready(self):
+        """011 晚實測：部落信箱頭一句、最後兩句都精修過（留下的錨點夾不住
+        它們），用首播精修前的起點算位移跟留下的錨點差 0.03–0.25 秒，是精修
+        不是剪接，放行。"""
+        now = refine_starts(self.first, [0, 1, 2, 28, 29, 30] +
+                            list(range(13, 20)), [0.35, 1.0, 1.3])
+        first = list(self.first)
+        for number, slip in ((0, 0.067), (29, 0.033), (30, 0.25)):
+            start, end, text, extra = first[number]
+            first[number] = (round(start + slip, 3), end, text, extra)
+        got = self.measure(now, self.target, source_first=loaded(first))
+        self.assertEqual(got["status"], "ready", got["reasons"])
+        self.assertAlmostEqual(got["offset"], self.OFF, places=3)
+
+    def test_offset_message_with_snapshots_nothing_moved(self):
+        """審查重現：真的剪接、兩集都給了快照、都沒有起點動過的錨點——
+        `with_offset` 卻寫「量位移時沒有快照……給 --snaps 重做 prepare」，
+        叫人去做沒有用的重做。要講兩集跟快照比都沒有起點動過的錨點。"""
+        target = list(self.target)
+        for number in range(16, 31):
+            start, end, text, extra = target[number]
+            target[number] = (round(start - 3.0, 3), round(end - 3.0, 3),
+                              text, extra)
+        got = self.measure(self.first, target,
+                           source_first=loaded(self.first),
+                           target_first=loaded(target))
+        self.assertEqual(got["status"], "rejected")
+        forced = port.with_offset(got, self.OFF)
+        self.assertEqual(forced["status"], "rejected")
+        self.assertFalse(mentions(forced["reasons"], "--snaps"),
+                         forced["reasons"])
+        self.assertTrue(mentions(forced["reasons"], "沒有起點動過"),
+                        forced["reasons"])
+
+    def test_prepare_uses_snapshots_to_exclude_refined(self):
+        """prepare 有 --snaps：兩集最早那份快照拿來排除精修過起點的錨點，
+        011 族這種情形會走到分區搬，不再被擋。"""
+        box = Store()
+        self.addCleanup(box.tmp.cleanup)
+        table = [seg("0", "2447", "攝影棚", "722", "848"),
+                 seg("2447", "2828", "島語時間", "940", "1060"),
+                 seg("2828", "3000", "攝影棚", "722", "848")]
+        first, first_texts = lines_book(self.first, {"島語時間": ISLAND})
+        now, now_texts = lines_book(self.now, {"島語時間": ISLAND})
+        target, target_texts = lines_book(self.target, {"島語時間": ISLAND})
+        box.put(SRC, now, now_texts, table)
+        box.put(TGT, target, target_texts,
+                [seg("0", "980.301", "攝影棚", "722", "848"),
+                 seg("980.301", "1361.301", "島語時間", "940", "1060"),
+                 seg("1361.301", "1500", "攝影棚", "722", "848")])
+        snaps = os.path.join(box.root, "fix", "snap")
+        box.snapshot(snaps, SRC, "main", first, first_texts)
+        box.snapshot(snaps, TGT, "main")
+        plan = port.prepare(SRC, TGT, self.LO, self.HI,
+                            os.path.join(box.root, "out"), store=box.store,
+                            entries=box.entries, snaps=snaps)
+        self.assertEqual(plan["evidence"]["steady"]["dropped"], 18)
+        self.assertEqual(plan["mode"], "zone", plan["reasons"])
+        self.assertEqual(plan["status"], "ready", plan["reasons"])
+
+
+class TestWholeRangeEdges(unittest.TestCase):
+    """整段搬範圍兩端的缺口（第三批搬到重播時手動清掉的幾處）。"""
+
+    def test_range_start_skips_tail_of_sentence_from_before(self):
+        """006 晨 cue 231、232 都是「一起來看」（737.486–739.005、739.005–
+        739.422），段落邊界 739.0 剛好切在中間：232 中點在範圍內，被當成
+        節目的第一條搬進 164 午、328 晚、033 午（後來手動清掉）；034 晨自己
+        那條「一起來看」是一整條，跟搬進來的 232 重疊 0.367 秒，整件被擋。
+        跨過範圍起點那句的句尾不搬。"""
+        off = 103.153
+        lo = 739.0
+        body = program(lo=740.0, count=10)
+        src_lines = [(737.486, 739.005, "一起來看", {}),
+                     (739.005, 739.422, "一起來看", {})] + body
+        tgt_lines = [(737.486 + off, 739.372 + off, "一起來看", {})] + \
+            shifted(body, off)
+        src_cues, src_texts = build(src_lines)
+        tgt_cues, tgt_texts = build(tgt_lines)
+        result = port.port({"cues": src_cues}, src_texts,
+                           {"cues": tgt_cues}, tgt_texts, lo, 790.0, off)
+        self.assertNotIn(2, result["ported"])
+        together = 0
+        for item in result["cues"]:
+            if result["all_texts"][item["index"]] == "一起來看":
+                together += 1
+        self.assertEqual(together, 1)
+        self.assertEqual(result["moves"][1], 1)
+        self.assertTrue(mentions(result["notes"], "一起來看", "句尾"),
+                        result["notes"])
+        # 重播也切成兩條（164 午那種）：句尾那條是範圍前那句的，留著不換、
+        # 不列要人判。
+        tgt_lines = [(737.486 + off, 739.005 + off, "一起來看", {}),
+                     (739.005 + off, 739.422 + off, "一起來看", {})] + \
+            shifted(body, off)
+        tgt_cues, tgt_texts = build(tgt_lines)
+        result = port.port({"cues": src_cues}, src_texts,
+                           {"cues": tgt_cues}, tgt_texts, lo, 790.0, off)
+        self.assertEqual(result["ask"], [])
+        self.assertIn(2, result["moves"])
+        # 節目第一句只比範圍起點早一點點開始（大半在範圍內）：照搬，不當句尾。
+        src_lines = [(739.95, 743.0, "節目第一句字幕", {})] + body[1:]
+        src_cues, src_texts = build(src_lines)
+        tgt_cues, tgt_texts = build(shifted(src_lines, off))
+        result = port.port({"cues": src_cues}, src_texts,
+                           {"cues": tgt_cues}, tgt_texts, 740.0, 790.0, off)
+        self.assertIn(1, result["ported"])
+
+    def test_edge_end_keeps_refined_source_end(self):
+        """294 午：邊緣 cue「所以yungay真的」重播舊切法在 2850.214 被轉場色塊
+        干擾提早斷開，首播精修過的迄點 2851.499 才對；舊規則「邊緣同字較短
+        就用重播的」把錯的搬回來。首播最早那份快照的迄點跟重播一樣（同一種
+        舊切法）、首播後來精修過，就照首播，重播後面那條空白 cue 跟著修短。
+        沒有快照、或首播沒精修過（重播真的在那裡剪掉），照舊用重播的。"""
+        off = 552.0
+        body = program(lo=2290.0, count=10)            # 末條 2326.3–2329.5
+        old_end = 2328.214
+        src_now = list(body)
+        first_lines = list(body)
+        start, end, _text, extra = body[-1]
+        src_now[-1] = (start, end, "所以yungay真的", extra)
+        first_lines[-1] = (start, old_end, "所以yungay真的", extra)
+        tgt_lines = shifted(first_lines, off) + [
+            (old_end + off, 2332.0 + off, "", {})]
+        src_cues, src_texts = build(src_now)
+        tgt_cues, tgt_texts = build(tgt_lines)
+        first = loaded(first_lines)
+        result = port.port({"cues": src_cues}, src_texts,
+                           {"cues": tgt_cues}, tgt_texts, 2290.0, 2330.0, off,
+                           source_first=first)
+        final = None
+        blank = None
+        for item in result["cues"]:
+            if result["all_texts"][item["index"]] == "所以yungay真的":
+                final = item
+            elif item["index"] == result["moves"].get(11):
+                blank = item
+        self.assertAlmostEqual(final["end"], round(end + off, 3))
+        self.assertAlmostEqual(blank["start"], round(end + off, 3))
+        self.assertTrue(mentions(result["notes"], "精修", "照首播"),
+                        result["notes"])
+        old = port.port({"cues": src_cues}, src_texts, {"cues": tgt_cues},
+                        tgt_texts, 2290.0, 2330.0, off)
+        for item in old["cues"]:
+            if old["all_texts"][item["index"]] == "所以yungay真的":
+                self.assertAlmostEqual(item["end"], round(old_end + off, 3))
+
+    def test_range_end_stops_after_last_source_text(self):
+        """301 晚、350 晨、358 晨、020 晚：段落表那列延伸到首播最後一條有字
+        cue 之後 14–30 秒（首播是空白、片尾），整段搬的範圍包到重播自己的
+        節目收尾「這節族語新聞播到這裡」「再見」。範圍迄點收到首播最後一條
+        有字 cue 的迄點，重播自己的收尾留著，不列成要人判。"""
+        off = 541.0
+        body = program(lo=2300.0, count=10)            # 末條迄 2339.5
+        src_lines = body + [(2339.5, 2370.0, "", {})]
+        tgt_lines = shifted(body, off) + [
+            (2346.0 + off, 2349.0 + off, "這節族語新聞播到這裡", {}),
+            (2349.2 + off, 2351.0 + off, "祝一切平安 再會", {})]
+        src_cues, src_texts = build(src_lines)
+        tgt_cues, tgt_texts = build(tgt_lines)
+        result = port.port({"cues": src_cues}, src_texts,
+                           {"cues": tgt_cues}, tgt_texts, 2300.0, 2371.0, off)
+        self.assertAlmostEqual(result["range"][1], round(2339.5 + off, 3))
+        texts = []
+        for item in result["cues"]:
+            texts.append(result["all_texts"][item["index"]])
+        self.assertIn("這節族語新聞播到這裡", texts)
+        self.assertIn("祝一切平安 再會", texts)
+        self.assertEqual(result["ask"], [])
+        self.assertTrue(mentions(result["notes"], "最後一條有字"),
+                        result["notes"])
+
+    def test_head_replaced_cue_probed_when_edge_point_skipped(self):
+        """343 晚：範圍起點落在主播引言裡（首播邵族主播、重播排灣族主播，
+        引言長度不同），重播原本正確的 cue 被換成首播的短 cue；它前 1 秒的
+        邊界點在範圍頭 4 秒內不取，7 個內部點又沒落在那裡，check 抓不到。
+        邊界點不取的那一端，改在第一條（最後一條）被換的 cue 中間抽一點，
+        照邊界點判：兩集那裡畫面不同就擋。"""
+        off = TestProbeEdges.OFF_FRAMES * F
+        src_book, src_texts, tgt_book, tgt_texts, lo, hi = pair(off=off)
+        tgt_book["cues"][3]["end"] = round(tgt_book["cues"][3]["end"] - 0.3,
+                                           3)
+        result = port.port(src_book, src_texts, tgt_book, tgt_texts, lo, hi,
+                           off)
+        probes = port.probe_points(result, off)
+        heads = []
+        for probe in probes:
+            if probe["kind"] == "edge_cue":
+                heads.append(probe)
+        self.assertEqual(len(heads), 1, probes)
+        first = result["replaced_cues"][0]
+        self.assertGreaterEqual(heads[0]["tgt"], first[0])
+        self.assertLessEqual(heads[0]["tgt"], first[1])
+        case = TestProbeEdges("test_whole_edge_points_outside_first_and_last_"
+                              "replaced_cue")
+        _probes, verdict = case.check(result, off, case.OFF_FRAMES, lo, hi)
+        self.assertTrue(verdict["ok"], verdict["problems"])
+        with tempfile.TemporaryDirectory() as out:
+            plan = {"status": "ready", "offset": off, "probes": probes}
+            path = os.path.join(out, "plan.json")
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump(plan, handle, ensure_ascii=False, indent=2,
+                          sort_keys=True)
+            runner = fake_ffmpeg(lo, hi, case.OFF_FRAMES, shared_margin=6.5)
+            port.frames([path], "source", "source", runner)
+            port.frames([path], "target", "target", runner)
+            verdict = port.check(path)
+        self.assertFalse(verdict["ok"])
+        self.assertTrue(mentions(verdict["problems"], "邊界點"),
+                        verdict["problems"])
+
+
+class TestCompareGaps(unittest.TestCase):
+    """比對的缺口：撇號、重疊訊息的秒數、訂正紀錄找新號。"""
+
+    OFF = 199.132
+
+    def setUp(self):
+        self.body = program(lo=1600.0, count=12)
+        self.before, self.before_texts = lines_book(self.body)
+
+    def zone(self, after_lines, target_lines, before_lines=None):
+        if before_lines is not None:
+            self.before, self.before_texts = lines_book(before_lines)
+        after, after_texts = lines_book(after_lines)
+        tgt_book, tgt_texts = lines_book(shifted(target_lines, self.OFF))
+        return port.zone_port(self.before, self.before_texts, after,
+                              after_texts, tgt_book, tgt_texts, 1590.0,
+                              1660.0, self.OFF)
+
+    def test_straight_apostrophe_replaces_curly_in_zone(self):
+        """215 午：比對字時把彎撇 ’ 和直撇 ' 當成一樣，首播改成直撇的那條，
+        重播的彎撇被當成「字一樣、留重播的 byte」，沒有被首播蓋過去。錨點
+        照舊不分（找得到同一句），換字時要分。"""
+        before_lines = list(self.body)
+        before_lines[4] = before_lines[4][:2] + ("pana’ay 稻米", {})
+        after_lines = list(before_lines)
+        after_lines[4] = after_lines[4][:2] + ("pana'ay 稻米", {})
+        result = self.zone(after_lines, before_lines, before_lines)
+        self.assertEqual(len(result["applied"]), 1, result)
+        self.assertIn("pana'ay 稻米", result["all_texts"].values())
+        self.assertNotIn("pana’ay 稻米", result["all_texts"].values())
+        self.assertEqual(port.norm("pana’ay"), port.norm("pana'ay"))
+
+    def test_target_own_overlap_not_blamed_on_source(self):
+        """244 晚→309、094，286 晚→308、104：報「首播這一區自己的時間軸有
+        重疊（首播 2073.087–2073.471 跟 2073.255–2074.121）」，可是首播現在
+        那裡沒有重疊的 cue——那是重播自己原本就重疊的兩條，跨過區邊、修到
+        區外後仍然重疊，秒數是重播的舊切點減位移。訊息要講是重播哪兩條、
+        重播的秒數，不可以說成首播的。"""
+        after_lines = list(self.body)
+        after_lines[4] = after_lines[4][:2] + ("第004句改過的字", {})
+        target_lines = list(self.body)
+        target_lines += [(1614.0, 1616.8, "", {}), (1614.0, 1617.5, "", {})]
+        result = self.zone(after_lines, target_lines)
+        self.assertEqual(len(result["ask"]), 1, result["applied"])
+        why = result["ask"][0]["why"]
+        self.assertNotIn("首播這一區自己的時間軸有", why)
+        self.assertIn("重播 cue", why)
+        self.assertIn("原本就重疊", why)
+
+    def test_zone_fix_found_on_cue_that_kept_target_identity(self):
+        """146 午：重播自己那列訂正指的 cue 被併掉（首播同時段那條字跟重播
+        一樣，另一條保留了重播的身分，算 moves 不算 fresh）；zone_fixes 只在
+        fresh 找，找不到就擋「重播自己的訂正會被首播的修改蓋掉」，其實字
+        一樣、不會被蓋。保留身分的新 cue 也要找。"""
+        start, end, text, extra = self.body[4]
+        target_lines = list(self.body)
+        target_lines[4:5] = [(start, 1618.0, text, extra),
+                             (1618.0, end, text, extra)]
+        after_lines = list(self.body)
+        after_lines[4] = (start, round(end + 0.3, 3), text, extra)
+        result = self.zone(after_lines, target_lines)
+        self.assertEqual(len(result["applied"]), 1, result["ask"])
+        self.assertIn(6, result["removed"])
+        rows = [[TGT, "6", "第004句測試字目", text, "重播自己改的錯字"]]
+        got = port.zone_fixes(rows, SRC, TGT, result)
+        self.assertEqual(got[0][1], str(result["moves"][5]))
+        # 012 晚：同一句被切成兩條、各有一列一樣的訂正，併成一條後只留一列。
+        rows.insert(0, [TGT, "5", "第004句測試字目", text, "重播自己改的錯字"])
+        got = port.zone_fixes(rows, SRC, TGT, result)
+        self.assertEqual(got, [[TGT, str(result["moves"][5]), "第004句測試字目",
+                                text, "重播自己改的錯字"]])
+
+
+class TestBlankFixes(unittest.TestCase):
+    """訂正「改後」是空白（（留空）、空字串）時的比對。"""
+
+    def setUp(self):
+        (self.src_book, self.src_texts, self.tgt_book, self.tgt_texts,
+         self.lo, self.hi) = pair()
+        self.src_texts[10] = ""                 # 首播那條是空白
+        self.tgt_texts[10] = ""                 # 重播自己改成空白
+        self.result = port.port(self.src_book, self.src_texts,
+                                self.tgt_book, self.tgt_texts, self.lo,
+                                self.hi, -234.0)
+
+    def test_blank_fix_matches_blank_source_cue(self):
+        """020 晚：manual-fixes 有 cue 801「賀 額得減肥成功→（留空）」，首播同處
+        也是空白；`if row[3] and row[3] in text` 對空字串永遠不成立，整件
+        判成「會蓋掉」擋下（020 晚尾端同樣）。改後是（留空）或空字串、首播
+        同處也空白，就當成一致、改號。"""
+        new = None
+        for number in self.result["fresh"]:
+            if self.result["cues"][number - 1]["start"] == round(
+                    self.src_book["cues"][9]["start"] - 234.0, 3):
+                new = number
+        for after in ("（留空）", ""):
+            rows = [[TGT, "10", "賀 額得減肥成功", after, "照畫面"]]
+            got = port.port_fixes(rows, SRC, TGT, self.tgt_book["cues"],
+                                  self.result)
+            self.assertEqual(got, [[TGT, str(new), "賀 額得減肥成功", after,
+                                    "照畫面"]])
+        self.src_texts[10] = "第007句測試字幕"
+        result = port.port(self.src_book, self.src_texts, self.tgt_book,
+                           self.tgt_texts, self.lo, self.hi, -234.0)
+        rows = [[TGT, "10", "賀 額得減肥成功", "（留空）", "照畫面"]]
+        with self.assertRaises(PipelineError):
+            port.port_fixes(rows, SRC, TGT, self.tgt_book["cues"], result)
+
+    def test_pending_sed_inside_already_applied_renumbered(self):
+        """020 晚：重播範圍內有組裝前的 sed（pending-fixes），首播同處的字已經
+        是 sed 的結果，舊做法整件擋下，只能先拿掉那兩列、apply 之後照新號
+        補回去。sed 的「改後」在首播搬進來那條字裡已經成立就改號；不成立
+        照舊擋。"""
+        new = None
+        for number in self.result["fresh"]:
+            if self.result["cues"][number - 1]["start"] == round(
+                    self.src_book["cues"][10]["start"] - 234.0, 3):
+                new = number
+        line = "%s\ts/^11\\than\\t第008句測式字幕/11\\than\\t第008句測試字幕/\t錯字" \
+            % TGT_SLUG
+        got, _extra = port.port_pending([line], SRC_SLUG, TGT_SLUG, SRC, TGT,
+                                        self.result,
+                                        tgt_cues=self.tgt_book["cues"])
+        self.assertEqual(got, [line.replace("11", str(new))])
+        wrong = line.replace("第008句測試字幕/", "第008句別的字/")
+        with self.assertRaises(PipelineError):
+            port.port_pending([wrong], SRC_SLUG, TGT_SLUG, SRC, TGT,
+                              self.result, tgt_cues=self.tgt_book["cues"])
+
+
+def with_gap_blank(book, texts, k):
+    """在 cue k（list 位置）之後的空隙插一條空白 cue，重新編號。"""
+    lines = []
+    for item in book["cues"]:
+        lines.append((item["start"], item["end"], texts[item["index"]],
+                      {"area": item["area"]} if item.get("area") else {}))
+    lines.append((book["cues"][k]["end"], book["cues"][k + 1]["start"], "",
+                  {"area": "島語時間"}))
+    cues, new_texts = build(lines)
+    book["cues"] = cues
+    texts.clear()
+    texts.update(new_texts)
+
+
+class TestBlankFixOverlap(unittest.TestCase):
+    """（留空）訂正不可以被同時段首播有字的 cue 蓋掉、改號到空白的鄰居。"""
+
+    def setUp(self):
+        (self.src_book, self.src_texts, self.tgt_book, self.tgt_texts,
+         self.lo, self.hi) = pair()
+        with_gap_blank(self.src_book, self.src_texts, 9)
+        # 重播 cue 10 的迄點拉長 0.3 秒，伸進首播下一條空白 cue 那段空隙
+        self.tgt_book["cues"][9]["end"] = round(
+            self.tgt_book["cues"][9]["end"] + 0.3, 3)
+
+    def test_port_fixes_blank_not_rescued_by_neighbour(self):
+        """審查重現：重播自己把 cue 10 改成（留空），首播同處那條仍然有字
+        「第009句測試字幕」，首播下一條空白 cue 只跟重播舊 cue 10 的尾巴
+        重疊 0.3 秒。只看「重疊到的候選有沒有空白」會把這列改號到空白的
+        鄰居，重播的（留空）訂正被首播的字蓋掉，沒有人會看到。同時段首播
+        有字就擋。"""
+        old = self.tgt_texts[10]
+        self.tgt_texts[10] = ""
+        result = port.port(self.src_book, self.src_texts, self.tgt_book,
+                           self.tgt_texts, self.lo, self.hi, -234.0)
+        rows = [[TGT, "10", old, "（留空）", "照畫面"]]
+        with self.assertRaises(PipelineError):
+            port.port_fixes(rows, SRC, TGT, self.tgt_book["cues"], result)
+
+    def test_pending_blank_sed_not_rescued_by_neighbour(self):
+        """同一個情形，換成 pending-fixes 的 sed 把重播 cue 10 清成空白
+        （`_held_inside`）：首播同處有字，不可以改號到空白的鄰居。"""
+        old = self.tgt_texts[10]
+        result = port.port(self.src_book, self.src_texts, self.tgt_book,
+                           self.tgt_texts, self.lo, self.hi, -234.0)
+        line = "%s\ts/^10\\than\\t%s/10\\than\\t/\t照畫面" % (TGT_SLUG, old)
+        with self.assertRaises(PipelineError):
+            port.port_pending([line], SRC_SLUG, TGT_SLUG, SRC, TGT, result,
+                              tgt_cues=self.tgt_book["cues"])
+
+    def test_zone_fixes_blank_not_rescued_by_neighbour(self):
+        """分區搬（zone_fixes）也一樣：重播舊 cue 5（10.0–13.3）的（留空）
+        訂正，新時間軸同處 cue 1 有字、只有 cue 2 空白跟它尾巴重疊 0.3 秒，
+        要擋；同處全是空白才改號，而且改到重疊最多的那條。"""
+        removed = [{"index": 5, "start": 10.0, "end": 13.3}]
+        cues = [{"index": 1, "start": 10.0, "end": 13.0},
+                {"index": 2, "start": 13.0, "end": 13.8}]
+        result = {"cues": cues, "moves": {}, "fresh": [2, 1],
+                  "texts": {1: "第009句測試字幕", 2: ""},
+                  "all_texts": {1: "第009句測試字幕", 2: ""},
+                  "removed_cues": removed, "was": {1: "", 2: ""}}
+        rows = [[TGT, "5", "第009句測試字幕", "（留空）", "照畫面"]]
+        with self.assertRaises(PipelineError):
+            port.zone_fixes(rows, SRC, TGT, result)
+        result["texts"][1] = ""
+        result["all_texts"][1] = ""
+        got = port.zone_fixes(rows, SRC, TGT, result)
+        self.assertEqual(got, [[TGT, "1", "第009句測試字幕", "（留空）",
+                                "照畫面"]])
 
 
 if __name__ == "__main__":

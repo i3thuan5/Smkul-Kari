@@ -110,8 +110,8 @@ aiyalaeho，依賴ê方向就顛倒去（這馬是 aiyalaeho → news），所�
 
 | 檔 | 做什麼 |
 |---|---|
-| `paths.py` | 語料路徑的單一出處（`stage_path()` 是階段目錄唯一出口，逐集檔案囥佇月份一層；`video_path()` 算影片佇伺服器ê正規位置 `/home/news/mkv/<年-月>/<成果檔名>.mkv`；`--var` 供 shell 取值；版面與保護轉出自 `scripts/datadirs.py`） |
-| `audio.py` | 取這集辨識用ê音檔：本機封存 mkv → 伺服器ê正規位置（揣無才退回 `原始影片檔案位置`，位元組數比對），抽煞就刪抓來ê原檔——kaldi 佮 whisper 兩條線公家，暫存區既有ê原檔無算捷徑 |
+| `paths.py` | 語料路徑的單一出處（`stage_path()` 是階段目錄唯一出口，逐集檔案囥佇月份一層；兩个影片根是 `VIDEO_ROOT_DOCKER`（`/docker/news/mkv`，管理者管ê定稿區，唯讀）佮 `VIDEO_ROOT_HOME`（`/home/news/mkv`，暫放區，我們寫）兩个全域變數，`video_path()` 算**寫入**位置（`/home`），`video_read_paths()` 算**讀取**順序（`/docker` → `/home`）；`--var` 供 shell 取值；版面與保護轉出自 `scripts/datadirs.py`） |
+| `audio.py` | 取這集辨識用ê音檔：本機封存 mkv → 伺服器（`/docker` → `/home` → 揣無才退回 `原始影片檔案位置`，位元組數比對），抽煞就刪抓來ê原檔——kaldi 佮 whisper 兩條線公家，暫存區既有ê原檔無算捷徑 |
 | `asrmt_batch.py` | 語音側（kaldi）整批：逐集 抓音檔→解碼→投影＋render→刪音檔 |
 | `asrmt_run.py` | 語音側（kaldi）單集步驟（預設 words→raw；翻譯佮品質判斷 `--step` 指名） |
 | `whisper_run.py` | 語音側（whisper／sapolita）逐集佮整批：取音檔→查語別碼（`新聞語言別代號.csv`）→辨識→原樣存 SRT→寫辨識紀錄→刪暫存音檔；一次一集、可續跑（SRT 佮紀錄兩者都在才算做完） |
@@ -120,10 +120,10 @@ aiyalaeho，依賴ê方向就顛倒去（這馬是 aiyalaeho → news），所�
 | `pairs_tune.py` | 調合併門檻：`--sample` 對新聞抽樣寫裁判請求（一批四个 50 組ê檔）、`--ingest NN` 收回覆、`--report` 出各格比例表佮選值；攏囥 `kithann/out/mt/調參/`，毋入 Kari-SRT |
 | `paragraph_export.py` | 雙語字幕交件：`--export 年-月…` 對 Kari-SRT 原樣複製 `3-srt-paragraph` 佮 `2-csv-analysis`、出一集一逝ê清單（時長用 CSV ê時間，含留白）；`--spot-sample`／`--spot-report` 抽高信心組予 Opus 裁判（請求格式佮 `pairs_tune` 仝款；核對 CSV 用延伸後ê時間）。攏囥 `kithann/out/news/雙語字幕*/`，毋入 Kari-SRT |
 | `anchors_ami.json` | 阿美語錨點表（數詞＋借詞專名，拼法對照模型 lexicon） |
-| `plan_month.py` | 一批＝一个播出月份：列這个月ê集數佮影片ê正規位置（**唯讀、離線**，無寫任何檔、毋連伺服器；退路佇實際取檔ê時處理）|
+| `plan_month.py` | 一批＝一个播出月份：列這个月ê集數佮影片ê位置（讀取順序ê頭一个，`/docker`；**唯讀、離線**，無寫任何檔、毋連伺服器；退路佇實際取檔ê時處理）|
 | `sources.py` | 一集配一支檔的規則（母帶優先→時段相符→同名不同夾→一檔一集） |
-| `episodes.py`／`resolve_slug.py` | 節目目錄讀出來ê逐集條目（`slug`／`remote`／`pending` 攏是推導ê，`remote` 是影片ê正規位置，全流程取遠端路徑ê唯一出口）；目錄索引與命名 |
-| `fetch_sftp.sh`／`run_cues.sh`／`sftp.sh`／`sftp-askpass.sh` | 影像側抓檔與切 cue（吃播出月份，清單對節目目錄提；密碼只以檔案存在；`sftp.sh` 收動詞（get／put／mkdir／ls／rename／rmdir）＋獨立參數，路徑不進指令字串；`fetch_sftp.sh` 正規位置揣無時叫 `video_names locate` 取退路） |
+| `episodes.py`／`resolve_slug.py` | 節目目錄讀出來ê逐集條目（`slug`／`remote`／`pending` 攏是推導ê，`remote` 是影片讀取順序ê頭一个位置（`/docker`），全流程取遠端路徑ê唯一出口）；目錄索引與命名 |
+| `fetch_sftp.sh`／`run_cues.sh`／`sftp.sh`／`sftp-askpass.sh` | 影像側抓檔與切 cue（吃播出月份，清單對節目目錄提；密碼只以檔案存在；`sftp.sh` 收動詞（get／put／mkdir／ls／rename／rmdir）＋獨立參數，路徑不進指令字串；`fetch_sftp.sh` 大小表查無（`/docker` 揣無）時叫 `video_names locate` 照 `/docker` → `/home` → 原始位置揣） |
 | `cut_months.py` | 一個月接一個月跑 `fetch_sftp.sh`（預設 2021-11～2024-11）；每月開始前看磁碟，不夠就等；每月一列寫 `logs/cut-progress.tsv` |
 | `namebars.py` | 受訪者名條 → 段落表「受訪者語言別代號」：`grab` 照逐秒 `name` 特徵逐擺名條截一格、裁右爿、仝款ê歸組；`apply` 讀者答案（族名）換代號寫入 |
 | `refine_cues.py`／`verify_band.py` | cue 邊界精修（一集一支 ffmpeg、原生格率；**愛 `--preset`／`--presets`**，精修愛佮切 cue 用仝一款判準，無講就拒絕走）、字幕帶前驗（順紲驗欄方向：字幕ê右緣有無猶佇比對遮罩內底） |
@@ -131,23 +131,24 @@ aiyalaeho，依賴ê方向就顛倒去（這馬是 aiyalaeho → news），所�
 | `blank_runs.py` | 掠 vision TSV 內底ê長連紲空白：字幕印佇帶外ê段會規段變空白 |
 | `rescan_band.py` | 用改正ê帶重切一段，接轉原本ê cue 排、規集重新編號（讀字了後ê補救；重切接回ê算術佇 `splice.py`） |
 | `splice.py` | 重切一段、接轉時間軸ê純算術（照號碼、照秒數）佮重切本身；`rescan_band` 佮 `segment_recut` 公家 |
-| `opening.py` | 片頭辨識：切 cue 時截 20／30／40 秒三格（已入庫ê集數用 curl 抓頭尾兩段補截；先問影片ê正規位置，揣無才退回原始位置）、組合圖、讀者 TSV → `1-ocr/片頭辨識.csv`，語別佮目錄無仝就擋 |
+| `opening.py` | 片頭辨識：切 cue 時截 20／30／40 秒三格（已入庫ê集數用 curl 抓頭尾兩段補截；照 `/docker` → `/home` → 原始位置ê順序揣）、組合圖、讀者 TSV → `1-ocr/片頭辨識.csv`，語別佮目錄無仝就擋 |
 | `shots.py` | 影片 → 逐秒畫面特徵（160×90 縮圖：節目框在毋在、紅條、棚內參考格、語別牌、單元標誌），截判不準ê原圖；參考格佇 `shot_refs/<年>/` |
 | `segments.py` | 逐秒特徵 → 段落表（兩層判法）、讀者確認、段落表ê把關（`publish` 佮 `rebuild --verify` 攏用） |
-| `relabel.py` | 片頭辨識查出目錄語別標毋著：改目錄那一列（族語別、代號、成果檔名、備註），store 內佮語別無關ê檔改名、用毋著語言做ê（whisper、平行語料、kaldi）刪掉等重跑；**伺服器頂ê影片嘛先綴咧搬去新成果檔名ê位置**（失敗整个毋動本機，本機失敗會搬轉去） |
-| `redate.py` | 目錄查出某集播出日期、集數標毋著（例：檔名是 10-01，目錄寫 09-30）：改目錄那一列（年度、集數、播出日期、節目名稱〔跨 2024-08-01 時跟咧換〕、成果檔名、備註），store 內逐階段ê檔（含 whisper、平行語料、kaldi，因為內容猶是仝一集）攏改名、毋刪，跨月ê月份資料夾嘛換，三張紀錄表ê列跟咧改；**伺服器頂ê影片嘛先綴咧搬去新成果檔名ê位置** |
-| `video_names.py` | 伺服器上ê新聞影片搬去 `/home/news/mkv/<年-月>/<成果檔名>.mkv`（rename，毋是複製）：`plan` 規劃、`probe` 探針、`apply` 搬、`check` 核對、`undo` 還原、`prune`（最後一步：清掉搬空ê舊資料夾，只刪空ê）、`locate` 揣影片（新位置揣無才退回 `原始影片檔案位置`）、`rename_episode`（改成果檔名時影片綴咧改名） |
-| `offband_backfill.py` | 已經讀完字ê集數補切一段帶外字幕（2021 帶外專題）：`prepare` 重切、精修、照時間算新編號、干焦為新 cue 出組合圖；`apply` 照時間徙 store ê TSV 編號、收讀者 TSV、時間軸佮 SRT 入庫 |
+| `relabel.py` | 片頭辨識查出目錄語別標毋著：改目錄那一列（族語別、代號、成果檔名、備註），store 內佮語別無關ê檔改名、用毋著語言做ê（whisper、平行語料、kaldi）刪掉等重跑；**伺服器頂ê影片照佇佗處理**（`/home` 內先綴咧改名，失敗整个毋動本機，本機失敗會搬轉去；`/docker` 拒絕；猶佇原始位置伺服器毋動） |
+| `redate.py` | 目錄查出某集播出日期、集數標毋著（例：檔名是 10-01，目錄寫 09-30）：改目錄那一列（年度、集數、播出日期、節目名稱〔跨 2024-08-01 時跟咧換〕、成果檔名、備註），store 內逐階段ê檔（含 whisper、平行語料、kaldi，因為內容猶是仝一集）攏改名、毋刪，跨月ê月份資料夾嘛換，三張紀錄表ê列跟咧改；**伺服器頂ê影片照佇佗處理**（`/home` 內先綴咧改名；`/docker` 拒絕；猶佇原始位置伺服器毋動） |
+| `video_names.py` | 伺服器上ê新聞影片搬去 `/home/news/mkv/<年-月>/<成果檔名>.mkv`（rename，毋是複製；寫入只佇 `/home`，`/docker` 唯讀）：`plan` 規劃、`probe` 探針、`apply` 搬、`check` 核對（兩个根合起來算）、`undo` 還原（已佇 `/docker` ê拒絕）、`prune`（最後一步：清掉搬空ê舊資料夾，只刪空ê）、`locate` 揣影片（`/docker` → `/home` → `原始影片檔案位置`，來源標籤 docker／home／原始）、`rename_episode`（改成果檔名時看影片佇佗：`/home` 內改名、`/docker` 拒絕、原始位置伺服器毋動） |
+| `offband_backfill.py` | 已經讀完字ê集數補切一段帶外字幕（2021 帶外專題）：`prepare` 重切、精修、照時間算新編號、干焦為新 cue 出組合圖；`apply` 照時間徙 store ê TSV 編號、收讀者 TSV、時間軸佮 SRT 入庫；新 cue 裁在範圍內、和範圍外的 cue 重疊就擋；段落表從 Kari-SRT 現在的開始（補切目錄或上一次 plan 的表值不同就照 Kari-SRT 並警告），範圍裡本來就有同類型的列時語別、上下緣、受訪者照它的；`apply` 寫段落表前跟 prepare 當時比（plan 記 Kari-SRT 段落表 sha，舊格式 plan 比內容），不同就擋，`--keep-store-table` 只收時間軸、TSV、SRT |
 | `segment_recut.py` | 段落表上帶外ê段（島語時間、部落信箱…）用家己ê preset 重切、精修，讀字進前接轉時間軸，cue 記 `area` |
 | `split_cue.py` | 佇量出來ê時間點kā一條 cue 剖做兩條，後壁ê重新編號 |
-| `place_cue.py` | 切段器切袂開ê時，照量出來ê秒數插一條 cue（`insert`）抑是調一條 cue ê起迄（`bounds`），袂使佮隔壁疊做伙 |
+| `place_cue.py` | 切段器切袂開ê時，照量出來ê秒數插一條 cue（`insert`，跟著前後 cue 的 area）、調一條 cue ê起迄（`bounds`）、刪一條（`delete`）或和下一條併（`merge`，切法不同不併）、只改一條的 area（`area`），袂使佮隔壁疊做伙；做完印訂正紀錄改號的指令；work dir 已清掉的集用 `--store --lock` 直接改 Kari-SRT |
+| `fill_placed_area.py` | 補上既有 placed cue（和從 placed cue 移植過去的 cue）缺的 area（前後同一個 area，或一邊有 area 且段落表佐證才補，預設只列出；`--write` 要給 `--lock`） |
 | `rebroadcast_port.py` | 重播集照首播搬時間軸和字，不必重讀：以兩集都只出現一次的句子當錨點算位移（whisper 段落邊界當粗定位），剪接、剪法不同就拒絕；重播那段沒讀到、或切法設定不同而且是首播重切過就整段搬，重播自己重切過整件要人判，否則分區搬（首播修改前快照 → 現在有差的地方併成區、擴到安全邊整區換，區內重播的字跟首播不同、或首播這區自己重疊的那區列要人判）；只擋這次新造成的重疊；`prepare` 只讀 Kari-SRT、寫預覽，`frames`／`check` 抽格比灰階差逐格驗收（邊界點在套用區外緣，範圍頭尾不取），`apply` 先替重播拍快照、拿鎖、比對 sha、先在暫存做好才換進去、失敗整集回滾，訂正紀錄跟著改號；`family` 用強連通分量照依賴排序、只把真的互相依賴的列成循環，列出沒有工作檔的組合和不是移植的工作檔 |
 | `migrate_strips.py` | Strip ê檔名對 cue 序號換做起始時間（照磁碟頂ê檔案走，毋是照 cue）|
 | `redump_store.py` | 店面ê JSON 重排做人讀有ê形（縮排、鍵排序、漢字免跳脫）；JSONL 一逝一筆免縮排。干焦改排版，內容無動 |
 | `gap_sheets.py`／`batches.py`／`ingest.py` | 視覺辨識批次的出題與收卷 |
-| `make_srt.py`／`make_all.py`／`publish.py`／`rebuild.py` | 組裝、時間軸入庫、離線重建驗證 |
+| `make_srt.py`／`make_all.py`／`publish.py`／`rebuild.py` | 組裝、時間軸入庫、離線重建驗證（`rebuild` 開頭先跑目錄檢查 `row_problems`） |
 | `coaxial.py` | 比影像側佮語音側交付ê (index, 起, 迄)——兩爿攏有ê時愛逐條仝款；干焦影像側ê免比（語音側是家己ê一條線）|
-| `name_catalogue.py` | kā `srt_name` 寫入目錄ê**產生欄**（`--check` 重算逐格、對袂起來就 exit 1；CRLF＋BOM 原樣保留） |
+| `name_catalogue.py` | kā `srt_name` 寫入目錄ê**產生欄**（`--check` 重算逐格，閣跑整組 `catalogue_checks.row_problems`〔成果檔名重複、節目名稱佮日期、語言別代號、列序……〕，對袂起來就 exit 1；CRLF＋BOM 原樣保留） |
 | `blind_cues.py` | 揀出 contact sheet 無真正看著ê cue（`frames × 0.2` 對 `end - start` ê差額），補查ê出題單 |
 | `reread.py` | kā失敗ê cue 切做「一句一段」：時間中位數先洗掉會振動ê雜訊，才兩兩比。時間軸無振動，出來ê段是予視覺辨識重讀ê |
 | `reread_tools/allsheets.py` | 逐集切段出圖條，會跳過做過ê（可續跑） |
@@ -246,7 +247,7 @@ ffmpeg 共來源全部聲軌攏紮入去封存，順紲算出**逐條來源聲�
 `tools/mxf2mkv/` 是仝一套編碼佮聲軌邏輯ê另外一个呼叫端：**隨身硬碟**
 一个資料夾底ê mxf 逐支轉、轉一支傳一支，遠端結構照來源排，囥
 `/home/mkv-raw/`。伊無查節目目錄，所以
-猶未登記ê母帶嘛轉會動；佮 `/home/news/mkv/` 彼爿無相干，重複ê照轉。
+猶未登記ê母帶嘛轉會動；佮 `/home/news/mkv/`（暫放區）彼爿無相干，重複ê照轉。
 按怎走看 `tools/mxf2mkv/README.md`。
 
 ## `tools/`：無佇交付流程頂懸ê量測工具

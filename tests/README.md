@@ -95,7 +95,7 @@ tests-e2e/        fixture.py  test_roundtrip  test_mxf2mkv_roundtrip
 
 | spec | scenario | 測試檔 |
 |---|---|---|
-| cue-timing／srt-data-store | 重播集照首播移植：位移（p50 一格、八成兩格）、剪接拒絕、整段搬（只限首播重切過）或分區搬（安全邊、整句不切碎、區內字不同或首播自己重疊才那一區要人判、搬進來的 cue 標首播的切法設定）、重播自己重切過整件要人判、只擋新造成的重疊、範圍縮與重播自己的時間軸錯、改號照身分、TSV／訂正紀錄／段落表跟著改、像素驗收（邊界點在套用區外緣、範圍頭尾不取）、首播有字重播沒字只列不搬、拍快照與鏈式移植、入庫失敗或收到 SIGTERM 回滾（共用訂正檔讀改寫一氣呵成、回滾不蓋掉別人附加的列；換檔後的收尾出錯只警告）、家族用強連通分量排序（表在 `tests/news/README.md`〈重播移植〉） | `news/test_rebroadcast_port.py` |
+| cue-timing／srt-data-store | 重播集照首播移植：位移（p50 一格、八成兩格）、剪接拒絕、整段搬（只限首播重切過）或分區搬（安全邊、整句不切碎、區內字不同或首播自己重疊才那一區要人判、搬進來的 cue 標首播的切法設定）、重播自己重切過整件要人判、只擋新造成的重疊、範圍縮與重播自己的時間軸錯、改號照身分、TSV／訂正紀錄／段落表跟著改、像素驗收（邊界點在套用區外緣、範圍頭尾不取）、首播有字重播沒字只列不搬、首播改了又改回而重播還是中間版只列不搬、工作檔 items 各自換算選段落表那段（跨兩段要人指定）、重播自己新聞裡的帶外專題沿用重播的語別、拍快照與鏈式移植、入庫失敗或收到 SIGTERM 回滾（共用訂正檔讀改寫一氣呵成、回滾不蓋掉別人附加的列；換檔後的收尾出錯只警告）、家族用強連通分量排序（表在 `tests/news/README.md`〈重播移植〉） | `news/test_rebroadcast_port.py` |
 | srt-data-store | 交付物唯一正本／inventory 無第二份 | `news/test_paths.py`、`news/test_plan_month.py` |
 | srt-data-store | 命名鍵 srt_name；逐集資料在播出月份一層，跨集與總表不分層 | `news/test_resolve_slug.py`、`news/test_add_episodes.py`、`news/test_paths.py` |
 | srt-data-store | 進度表併記影片長度（由時間軸推導，尚無時間軸留白）| `news/test_tracker_row.py` |
@@ -123,6 +123,9 @@ tests-e2e/        fixture.py  test_roundtrip  test_mxf2mkv_roundtrip
 | cue-timing | 一條 cue 剖做兩條，兩半愛寫入本底有這條 cue ê TSV：讀者分批是交錯ê，逐个 TSV ê號碼範圍攏重疊（063 晨 b01 3–916、b03 12–917），照「範圍包有」揀會揀著 b01，743 本底佇 b03，剖了後兩个檔攏有 743，ingest 規集擋（2026-10-19 拆 063 晨、089 晚踏著） | `news/test_split_cue.py` |
 | cue-timing | 剖開了後兩半ê sample_ts（抽格時間）愛落佇家己ê範圍：舊做法兩半攏沿用原本ê，後半條（065 午新 813、816，2026-10-21 試做）ê sample_ts 落佇前半條，照伊抽格會抽著前一句；無 sample_ts ê cue 毋通加這欄 | `news/test_split_cue.py` |
 | cue-timing | 量好ê秒數插一條 cue（place_cue insert）、調一條 cue ê起迄（bounds）：20211203_337 晚 1178–1180「山」「海」單字字幕佇空拍浪花頂，浪花墨量 314–504 比一字（約 150）較大，切段器佮仝 preset 重切攏切袂開；插入／調界攏毋通佮隔壁疊做伙（愛先調隔壁）；新 cue 無 strip、sample_ts 佇家己範圍；後壁重新編號毋改 strip 檔名；TSV 新列寫入隔壁彼个檔、其他檔干焦位移；sheets.json 新 cue 綴前一條的彼張 | `news/test_place_cue.py` |
+| cue-timing | place_cue insert 不寫 area：286 晚 846、210 晨部落信箱 860／867／877 前後都有 area、只有自己沒有，全庫這種 placed cue 有 1168 條（93 集），靠 area 挑切法設定的程式會當成頂層字幕帶——插入時跟著前後 cue（越過同樣沒 area 的 placed cue），兩邊不同或在頭尾就不寫；`--area` 打錯（「島語」）要擋；只測 insert() 時 apply_insert 沒把 area 寫進時間軸、placed 紀錄也照樣全過，所以接線另外測。補既有的：placed 的照前後；291 晚 1036、301 晚 1399 這種移植工具照 286 晚 846 起迄搬過去、沒有 placed 的（全庫 47 條）照 `ported` 扣位移對回首播 placed cue 才補，範圍尾端重播自己切的（314 晚 872）不補；只有一邊有 area 的（305 晚 375–381 開場歌詞，全庫 76 條）段落表該秒是那個 area、另一邊鄰居在別段才補，判斷不出來的列出來；269 午 462 那種頂層切出來的不動；寫回去排版逐 byte 不變；`--write` 沒給 store.lock 要擋、寫的時候要拿著，並列出要重做 rebroadcast_port prepare 的集 | `news/test_place_cue.py`、`news/test_fill_placed_area.py` |
+| cue-timing | 刪 cue、併 cue：259 晚排灣 903 只有 0.017 秒、248 午噶瑪蘭 685／687／712 改空白沒刪、353 午噶瑪蘭 528／529 都是「好像不太夠」；有字的 cue 不可悄悄刪；兩條字不同要明講併成什麼；area 不同不併，一條有 area、一條是頂層字幕帶切的也不併（會被整條標成那個 area）；相鄰兩條在不同 TSV 時第二條那列要從它的檔拿掉，不然同一號出現在兩個檔，`ingest` 整集擋；訂正紀錄改號照「--shift K -1」做會把 K 的訂正落到前一條，刪 K 要 --shift K+1 -1、併 K 要 --shift K+2 -1；上面三集 2026-11-03 只剩 .work.stale-*，擋在「無時間軸」——錯誤訊息要指出 stale 目錄和 `--store`，`--store` 直接改 Kari-SRT 並重做 SRT，還有 work dir 時不准用 | `news/test_place_cue.py` |
+| cue-timing | 只改一條 cue 的 area（place_cue area）：060 午 cue 429「我們下次見」（1156.639–1159.274）起迄跟首播 093 晚 511–512 一樣、在部落信箱裡，area 卻寫島語時間（搬移時 426–428 換掉、429 沒換到）；fill_placed_area 判斷不出來的 358 晨 1291／1292、160 午 839、161 午 736 要看畫面補——原本沒有指令只能手改 JSON。只動 area，時間、TSV、sheets.json 不動；空字串是拿掉（頂層字幕帶切的就是沒有 area）；名字打錯（「部落」）要擋；已經是對的不寫檔、不多一筆紀錄；`--store --lock` 改 Kari-SRT 排版不變、不重做 SRT（rebuild 不讀 area） | `news/test_place_cue.py` |
 | cue-timing | 抓檔批次的並行集數與 ffmpeg 執行緒數預設 6／2（2 緒每核效率 0.98，預設 8–9 緒只有 0.67）；旗標勝過環境變數；0、負數、非數字要在開工前擋下（0 會讓等空位的迴圈永遠等不到）；同時跑的工作不超過上限、一集失敗不卡住整批 | `news/test_fetch_sftp_config.py` |
 
 **片頭辨識、段落表、帶外補切、字幕帶版型**（`news-segments` 與相關修改）：表放 `tests/news/README.md`，無囥佇遮。

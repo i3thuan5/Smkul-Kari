@@ -189,29 +189,34 @@ def plan(rows, excluded, to_path=resolve_slug.server_path):
 def locate(entry, sftp, say=print):
     """這集影片現此時佇伺服器佗位：`Located(路徑, 大小, 來源)`。
 
-    先問正規位置（由成果檔名推導）。**干焦伺服器講「揣無」才退回** `原始
-    影片檔案位置`（有幾若條候選就照匯入ê挑檔規則揀一支，毋提第一條）；
-    退ê時用 `say` 講「退回原始位置」，袂當恬恬仔讀。兩位攏無就報錯，兩个
-    路徑攏指名。連線逾時、權限錯誤這款毋是「揣無」ê失敗，`sftp.stat` 會
-    直接 raise，這爿袂去問原始位置。
+    讀ê順序：`/docker`（管理者搬過去ê定稿區）→ `/home`（我們ê暫放區）
+    → `原始影片檔案位置`，來源標籤 `docker`／`home`／`原始`。管理者是用
+    mv 一支一支搬，兩邊袂仝時有仝一支，所以佇 `/docker` 揣著就直接用、
+    袂閣問 `/home`。**干焦伺服器講「揣無」才換下一位**；連線逾時、權限
+    錯誤這款毋是「揣無」ê失敗，`sftp.stat` 會直接 raise，這爿袂換位。
+
+    退到原始位置（有幾若條候選就照匯入ê挑檔規則揀一支，毋提第一條）ê
+    時用 `say` 講「退回原始位置」，袂當恬恬仔讀。三位攏無就報錯，三个
+    路徑攏指名。
     """
     name = entry["srt_name"]
-    canonical = paths.video_path(name)
-    size = sftp.stat(canonical)
-    if size is not None:
-        return Located(canonical, size, "正規")
+    docker, home = paths.video_read_paths(name)
+    for place, label in ((docker, "docker"), (home, "home")):
+        size = sftp.stat(place)
+        if size is not None:
+            return Located(place, size, label)
     original, problem = sources.pick(entry)
     if not original:
         raise PipelineError(
-            "%s：正規位置 %s 揣無，原始影片檔案位置嘛無（%s）"
-            % (name, canonical, "空ê" if problem == sources.NO_SOURCE
+            "%s：%s 佮 %s 揣無，原始影片檔案位置嘛無（%s）"
+            % (name, docker, home, "空ê" if problem == sources.NO_SOURCE
                else problem))
     original = resolve_slug.server_path(original)
     size = sftp.stat(original)
     if size is None:
-        raise PipelineError("%s：正規位置 %s 佮原始位置 %s 攏揣無"
-                            % (name, canonical, original))
-    say("退回原始位置：%s（正規位置 %s 揣無）" % (original, canonical))
+        raise PipelineError("%s：%s、%s 佮原始位置 %s 攏揣無"
+                            % (name, docker, home, original))
+    say("退回原始位置：%s（%s、%s 攏揣無）" % (original, docker, home))
     return Located(original, size, "原始")
 
 
@@ -222,7 +227,13 @@ def _now():
 
 
 def _states(moves, sftp):
-    """逐組ê現況：`done`（新有舊無）、`todo`（舊有新無）、`both`、`neither`。
+    """逐組ê現況：`done`（新有舊無）、`todo`（舊有新無）、`both`、`neither`，
+    佮定稿區（`/docker`）有關ê兩種：
+
+    - `docker`：舊、新位置攏無，干焦 `/docker` 有——管理者用 mv 搬過去矣，
+      算已完成。
+    - `clash`：`/docker` 有同名檔，**舊位置抑是新位置嘛有**——兩个根各一
+      支，愛停落來。
 
     一个資料夾問一擺（舊位置 53 个、新位置 48 个），毋是逐支問。
     回 ([(Move, 狀態, 大小)])；大小取有ê彼邊。
@@ -241,7 +252,15 @@ def _states(moves, sftp):
             posixpath.basename(move.old))
         new_size = listed(posixpath.dirname(move.new)).get(
             posixpath.basename(move.new))
-        if old_size is not None and new_size is not None:
+        docker = paths.video_read_paths(move.name)[0]
+        docker_size = listed(posixpath.dirname(docker)).get(
+            posixpath.basename(docker))
+        if docker_size is not None:
+            if old_size is None and new_size is None:
+                state, size = "docker", docker_size
+            else:
+                state, size = "clash", docker_size
+        elif old_size is not None and new_size is not None:
             state, size = "both", old_size
         elif old_size is not None:
             state, size = "todo", old_size
@@ -257,7 +276,9 @@ def apply(moves, sftp, manifest_dir, now=None, say=print):
     """逐支搬（rename），先寫清單、後搬；可中斷續跑，絕毋覆寫。
 
     `Result(moved, skipped, problems, manifest)`。步驟：
-    1. 問各資料夾現況。**兩邊攏有**就規个停落來（毋覆寫，一个都毋搬）。
+    1. 問各資料夾現況。**兩邊攏有**、抑是同名檔已經佇 `/docker`（管理者
+       搬過去ê）閣有一支佇 `/home`／舊位置，就規个停落來（毋覆寫，一个都
+       毋搬）。管理者搬走ê（舊、新位置攏無，干焦 `/docker` 有）算已完成。
     2. 先寫完整ê清單（`manifest_dir/<時間>.csv`：成果檔名、舊位置、新位置、
        大小）才搬第一支——搬到一半斷掉，清單已經完整，會當還原抑是續跑。
     3. 月份資料夾一層一層建（sftp ê mkdir 毋是遞迴ê），逐个只建一擺。
@@ -265,16 +286,16 @@ def apply(moves, sftp, manifest_dir, now=None, say=print):
     搬失敗就直接 raise，已經搬ê留咧，重跑會接落去。
     """
     states = _states(moves, sftp)
-    both = []
+    clashes = []
     for move, state, _size in states:
         if state == "both":
-            both.append(move)
-    if both:
-        names = []
-        for move in both:
-            names.append("%s（%s ê新舊位置攏有）" % (move.name, move.new))
-        raise PipelineError("新舊位置攏有，毋覆寫、一支都毋搬：%s"
-                            % "；".join(names))
+            clashes.append("%s（%s ê新舊位置攏有）" % (move.name, move.new))
+        elif state == "clash":
+            clashes.append("%s（同名檔已經佇 /docker：%s）"
+                           % (move.name, paths.video_read_paths(move.name)[0]))
+    if clashes:
+        raise PipelineError("新舊位置攏有、抑是同名檔已經佇 /docker，毋覆寫、"
+                            "一支都毋搬：%s" % "；".join(clashes))
 
     os.makedirs(manifest_dir, exist_ok=True)
     manifest = os.path.join(manifest_dir, (now or _now()) + ".csv")
@@ -290,7 +311,7 @@ def apply(moves, sftp, manifest_dir, now=None, say=print):
     problems = []
     made = set()
     for move, state, _size in states:
-        if state == "done":
+        if state in ("done", "docker"):
             skipped.append(move.name)
             continue
         if state == "neither":
@@ -308,7 +329,6 @@ def apply(moves, sftp, manifest_dir, now=None, say=print):
     return Result(moved, skipped, problems, manifest)
 
 
-FALLBACK_ROOT = "/home/mkv-raw/news/mkv"
 MANIFEST_DIR = os.path.join(paths.NEWS_OUT, "video-rename")
 
 
@@ -318,8 +338,7 @@ def probe(move, sftp, say=print):
     驗證兩件代誌：rename 會使跨資料夾（`/home` 佮 `/home/mkv-raw` 若是
     無仝子卷，會失敗，從 sftp 看袂出來）；撇號佇真伺服器嘛會使（揀含
     撇號ê檔做探針）。
-    - 搬過去失敗：停落來、毋做別項，講可能是跨子卷，備案是新樹改囥
-      `/home/mkv-raw/news/mkv/`（改 `paths.VIDEO_ROOT`）。
+    - 搬過去失敗：停落來、毋做別項，講可能是跨子卷。
     - 搬過去成功、搬回失敗：明講檔案這馬佇佗位，毋準恬恬。
     """
     size = sftp.stat(move.old)
@@ -333,9 +352,8 @@ def probe(move, sftp, say=print):
         sftp.rename(move.old, move.new)
     except PipelineError as error:
         raise PipelineError(
-            "探針搬過去失敗：%s——可能是跨子卷（rename 袂使跨子卷）。備案："
-            "新樹改囥 %s（同一个子卷內），改 paths.VIDEO_ROOT 就好"
-            % (error, FALLBACK_ROOT))
+            "探針搬過去失敗：%s——可能是跨子卷（rename 袂使跨子卷）"
+            % error)
     if sftp.stat(move.new) != size:
         raise PipelineError("探針搬過去了，新位置ê大小對袂著：%s" % move.new)
     say("探針：已搬去 %s（%d bytes）" % (move.new, size))
@@ -353,8 +371,10 @@ def probe(move, sftp, say=print):
 def check(moves, excluded, sftp, sizes=None, to_path=resolve_slug.server_path):
     """對伺服器核對搬移ê結果，回問題清單（空ê就是全部到位）。
 
-    - 新位置恰好是目錄逐集各一支：缺ê逐一指名（成果檔名佮預期位置），
-      多出來ê嘛逐一指名；`sizes`（`{成果檔名: 大小}`，清單記ê）有傳就
+    - 兩个根（`/docker` 定稿區佮 `/home` 暫放區）合起來恰好是目錄逐集
+      各一支：管理者搬ê過程中，有ê佇 `/docker`、有ê猶佇 `/home`，攏算
+      到位；缺ê逐一指名（成果檔名佮兩个預期位置），仝一集佇兩个根攏有
+      、多出來ê嘛逐一指名；`sizes`（`{成果檔名: 大小}`，清單記ê）有傳就
       逐支比大小。
     - 舊位置（搬移清單內各檔所佇ê資料夾，加排除清單內底佇 `/home/mkv-raw`
       底下ê資料夾）賰ê，愛恰好是排除清單上ê檔：猶佇原位ê搬袂著ê、無佇
@@ -372,26 +392,41 @@ def check(moves, excluded, sftp, sizes=None, to_path=resolve_slug.server_path):
         if absolute.startswith(MKV_RAW):
             barred.add(absolute)
 
+    docker_of = {}
     expected = {}
     new_folders = []
     for move in moves:
+        docker = paths.video_read_paths(move.name)[0]
+        docker_of[move.name] = docker
         expected[move.new] = move
-        folder = posixpath.dirname(move.new)
-        if folder not in new_folders:
-            new_folders.append(folder)
+        expected[docker] = move
+        for place in (docker, move.new):
+            folder = posixpath.dirname(place)
+            if folder not in new_folders:
+                new_folders.append(folder)
     listings = {}
     for folder in new_folders:
         found = sftp.listdir(folder)
         listings[folder] = {} if found is None else found
     for move in moves:
-        folder = posixpath.dirname(move.new)
-        size = listings[folder].get(posixpath.basename(move.new))
+        docker = docker_of[move.name]
+        in_docker = listings[posixpath.dirname(docker)].get(
+            posixpath.basename(docker))
+        in_home = listings[posixpath.dirname(move.new)].get(
+            posixpath.basename(move.new))
+        if in_docker is not None and in_home is not None:
+            problems.append("兩个根攏有：%s（%s 佮 %s）"
+                            % (move.name, docker, move.new))
+            continue
+        size = in_docker if in_docker is not None else in_home
+        where = docker if in_docker is not None else move.new
         if size is None:
-            problems.append("缺：%s，預期佇 %s" % (move.name, move.new))
+            problems.append("缺：%s，預期佇 %s 抑是 %s"
+                            % (move.name, docker, move.new))
         elif sizes is not None and sizes.get(move.name) is not None \
                 and size != sizes[move.name]:
             problems.append("大小無仝：%s（%s）伺服器 %d、清單 %d"
-                            % (move.name, move.new, size, sizes[move.name]))
+                            % (move.name, where, size, sizes[move.name]))
     for folder in new_folders:
         for name in sorted(listings[folder]):
             path = folder + "/" + name
@@ -436,7 +471,8 @@ def undo(manifest, sftp, say=print):
     """依搬移清單反向搬（新位置 → 舊位置）；`Result(moved, skipped, problems, manifest)`。
 
     舊位置若已經被佔用（舊有新也有）：彼一組拒絕、指名、毋覆寫，其他
-    照搬。舊有新無＝已經還原，跳過；兩邊攏無＝指名。舊資料夾若已經清掉
+    照搬。舊有新無＝已經還原，跳過；兩邊攏無＝指名。已經佇 `/docker`ê
+    集數（管理者搬過去ê，唯讀）搬袂轉去，拒絕、指名，其他照搬。舊資料夾若已經清掉
     （`prune` 了後），會一層一層重建。
     """
     with open(manifest, encoding="utf-8", newline="") as handle:
@@ -449,6 +485,10 @@ def undo(manifest, sftp, say=print):
     problems = []
     made = set()
     for move, state, _size in _states(moves, sftp):
+        if state in ("docker", "clash"):
+            problems.append((move.name, "已經佇管理者管ê唯讀 /docker，搬袂轉去："
+                             "%s" % paths.video_read_paths(move.name)[0]))
+            continue
         if state == "both":
             problems.append((move.name, "舊位置已經有檔，毋覆寫：%s" % move.old))
             continue
@@ -468,38 +508,54 @@ def undo(manifest, sftp, say=print):
     return Result(moved, skipped, problems, manifest)
 
 
-Renamed = collections.namedtuple("Renamed", "old new source")
+Renamed = collections.namedtuple("Renamed", "old new source moved")
 
 
 def rename_episode(entry, new_name, sftp, say=print):
-    """改成果檔名ê時，伺服器頂ê影片綴咧搬去新名稱ê正規位置。
+    """改成果檔名ê時，看影片現此時佇佗（`locate`），四種做法：
 
-    現在佇佗位用 `locate` 揣：舊名稱ê正規位置有檔就對遐搬；無，原始位置
-    有，表示這集猶無搬進正式位置，就對原始位置直接搬去新名稱ê正規位置；
-    兩位攏無就拒絕（`locate` 報錯，兩个路徑攏指名），**袂只改本機**，
-    害目錄佮伺服器分家。新位置已經有檔也拒絕，毋覆寫。月份若無仝（改
-    日期跨月），月份資料夾會先建。
-    回 `Renamed(舊, 新, 來源)`；本機後壁ê步驟若失敗，`rename_back` 試著
-    搬轉去。
+    - `/home`：佇 `/home` 內 rename 去新名稱ê位置；月份若無仝（改日期跨月）
+      先建月份資料夾；新位置已經有檔就拒絕，毋覆寫。
+    - `/docker`：管理者管ê唯讀定稿區，我們寫袂入去——拒絕，提醒找管理者，
+      伺服器、目錄、本機攏無動。
+    - 原始位置：新批次（OCR／whisper 階段，語言別猶未確認），名猶會閣改，
+      **伺服器頂ê影片毋動**，干焦改目錄佮本機各階段檔案；等 `apply` 才
+      用上尾ê名字搬。
+    - 三位攏無：拒絕（`locate` 報錯，三个路徑攏指名），**袂只改本機**，
+      害目錄佮伺服器分家。
+
+    名無變就是無代誌愛做。回 `Renamed(舊, 新, 來源, 有無搬)`；本機後壁
+    ê步驟若失敗，`rename_back` 干焦共有搬ê搬轉去。
     """
     located = locate(entry, sftp, say=say)
+    if new_name == entry["srt_name"]:
+        return Renamed(located.path, located.path, located.source, False)
+    if located.source == "docker":
+        raise PipelineError(
+            "%s ê影片佇管理者管ê唯讀 %s，改名請找管理者（%s）"
+            % (entry["srt_name"], paths.VIDEO_ROOT_DOCKER, located.path))
+    if located.source == "原始":
+        say("影片猶佇原始位置，伺服器毋動：%s（apply ê時才搬入 %s）"
+            % (located.path, paths.VIDEO_ROOT_HOME))
+        return Renamed(located.path, located.path, located.source, False)
     target = paths.video_path(new_name)
-    if located.path == target:
-        return Renamed(located.path, target, located.source)
     if sftp.stat(target) is not None:
         raise PipelineError("新名稱ê位置已經有檔，毋搬：%s" % target)
     for level in paths.video_dirs_to_make(new_name):
         sftp.mkdir(level)
     sftp.rename(located.path, target)
     say("影片已搬：%s → %s" % (located.path, target))
-    return Renamed(located.path, target, located.source)
+    return Renamed(located.path, target, located.source, True)
 
 
 def rename_back(renamed, sftp, say=print):
     """`rename_episode` ê反向：搬轉去原本ê位置（舊資料夾若無，一層一層重建）。
 
-    搬袂轉去就 raise，訊息明講影片這馬佇佗——毋準恬恬。
+    本來就無搬ê（猶佇原始位置、名無變）免做。搬袂轉去就 raise，訊息明講
+    影片這馬佇佗——毋準恬恬。
     """
+    if not renamed.moved:
+        return
     try:
         for level in _levels(renamed.old):
             sftp.mkdir(level)

@@ -16,6 +16,8 @@
 `gate()` 佮 `months_of()` 留咧，做「這幾集是按怎猶未會使發」ê查詢
 介面，毋過無閣決定寫抑無寫。
 """
+import contextlib
+import io
 import json
 import os
 import tempfile
@@ -147,6 +149,200 @@ class TestPublishPerEpisode(unittest.TestCase):
         code, written, cleared = self.run_main(rows, argv=["--check"])
         self.assertEqual(code, 0)
         self.assertEqual(written, [])
+
+
+class TestWorkDirChangedAfterTheDecision(unittest.TestCase):
+    """main() 先逐集判斷、才逐集寫：這中間 work dir 被人改掉的情形。
+
+    發生過的事（2026-10-28，第三批搬到重播）：全庫 publish 在 store.lock
+    裡跑到一半當掉，traceback 停在 `refined_timeline`，看不出是哪一集；
+    排在後面的集數全部沒入庫。鎖外重跑 334 集都正常——是別的 agent
+    沒拿鎖就換名、或還在精修自己的 work dir，剛好落在判斷和寫入之間。
+
+    是不是「被人改了」要看證據（判斷那時記下的檔案大小、修改時間），
+    不是看例外的種類：段落表起秒手打錯成 x 的 ValueError、磁碟滿的
+    OSError 都不是別人改的，叫人「等對方做完再 publish」只會一直重複失敗。
+    """
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = tmp.name
+        self.store = os.path.join(tmp.name, "1-cues")
+        self.tables = os.path.join(tmp.name, "0-segments")
+
+    def work_of(self, name, body, table=None):
+        work = os.path.join(self.root, name + ".work")
+        path = paths.refined_cues(work)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(body)
+        if table is not None:
+            with open(paths.segments_file(work), "w", encoding="utf-8") \
+                    as handle:
+                handle.write(table)
+        return work
+
+    def run_main(self, rows, works, meddle=None):
+        """works：{集名: work dir}；publishable 一律放行（判斷那時還好好的）。
+        meddle：{集名: fn(work)}，寫這一集之前先做（別人沒拿鎖改 work dir）。"""
+        real = publish.publish_one
+        real_table = publish.publish_segments
+        meddle = meddle or {}
+
+        def fake_publishable(one):
+            return works[one["srt_name"]], ""
+
+        def into_tmp_store(one, work):
+            if one["srt_name"] in meddle:
+                meddle[one["srt_name"]](work)
+            return real(one, work, cues_dir=self.store)
+
+        def table_into_tmp(one, work):
+            return real_table(one, work, folder=self.tables,
+                              cues_dir=self.store)
+
+        out = io.StringIO()
+        with mock.patch.object(publish.episodes, "load", lambda: rows), \
+                mock.patch.object(publish, "publishable",
+                                  fake_publishable), \
+                mock.patch.object(publish, "publish_one", into_tmp_store), \
+                mock.patch.object(publish, "publish_segments",
+                                  table_into_tmp), \
+                contextlib.redirect_stdout(out):
+            code = publish.main([])
+        return code, out.getvalue()
+
+    def stored(self, name):
+        return os.path.exists(paths.stage_path(self.store, name, ".json"))
+
+    GOOD = json.dumps({"cues": [], "refined": True, "duration": 10.0})
+    TABLE = ("起秒,迄秒,類型,單元語別,字幕上緣y,字幕下緣y\n"
+             "0,10,攝影棚,阿美,722,844\n")
+
+    def test_work_dir_renamed_away_names_the_episode_and_goes_on(self):
+        # 判斷時有精修時間軸，寫之前 work dir 被改名成 .stale：要講是哪一
+        # 集、後面的集照樣入庫、最後回非零
+        works = {JAN: self.work_of(JAN, self.GOOD),
+                 JAN2: self.work_of(JAN2, self.GOOD)}
+
+        def rename(work):
+            os.rename(work, work + ".stale-1")
+
+        code, said = self.run_main([entry(JAN), entry(JAN2)], works,
+                                   {JAN: rename})
+        self.assertNotEqual(code, 0)
+        self.assertIn("fail  " + JAN, said)
+        self.assertIn("store.lock", said)
+        self.assertTrue(self.stored(JAN2))
+        self.assertFalse(self.stored(JAN))
+
+    def test_half_written_timeline_names_the_episode_and_goes_on(self):
+        # 沒拿鎖的人正在寫自己的時間軸：讀到一半的 JSON。以前是沒有
+        # 集名的 JSONDecodeError，整輪停掉
+        works = {JAN: self.work_of(JAN, self.GOOD),
+                 JAN2: self.work_of(JAN2, self.GOOD)}
+
+        def half(work):
+            with open(paths.refined_cues(work), "w",
+                      encoding="utf-8") as handle:
+                handle.write('{"cu')
+
+        code, said = self.run_main([entry(JAN), entry(JAN2)], works,
+                                   {JAN: half})
+        self.assertNotEqual(code, 0)
+        self.assertIn("fail  " + JAN, said)
+        self.assertIn("store.lock", said)
+        self.assertTrue(self.stored(JAN2))
+
+    def test_table_changed_after_the_timeline_was_written(self):
+        # 寫一半：時間軸已經寫進 1-cues，才在讀段落表時發現別人正在改。
+        # 不可以說「沒有入庫」——時間軸其實已經進去了
+        works = {JAN: self.work_of(JAN, self.GOOD, self.TABLE)}
+        real_table = publish.segments.read
+
+        def half_table(path):
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write("起秒,迄秒,類型\n0,")
+            return real_table(path)
+
+        with mock.patch.object(publish.segments, "read", half_table):
+            code, said = self.run_main([entry(JAN)], works)
+        self.assertNotEqual(code, 0)
+        self.assertTrue(self.stored(JAN))
+        self.assertIn("時間軸已經入庫、段落表沒有", said)
+        self.assertIn("store.lock", said)
+
+    def test_changed_without_an_error_is_still_reported(self):
+        # 別人沒拿鎖、正在一步一步改 work dir（split_cue 先改 TSV 號碼、
+        # 再寫時間軸）：publish 讀得進去、沒有出錯，可是抄進去的可能是改到
+        # 一半的版本。不能默默算成「入庫」
+        works = {JAN: self.work_of(JAN, self.GOOD)}
+
+        def rewrite(work):
+            with open(paths.refined_cues(work), "w",
+                      encoding="utf-8") as handle:
+                handle.write(json.dumps({"cues": [{"index": 1}],
+                                         "refined": True}))
+
+        code, said = self.run_main([entry(JAN)], works, {JAN: rewrite})
+        self.assertNotEqual(code, 0)
+        self.assertIn("fail  " + JAN, said)
+        self.assertIn("時間軸被改寫", said)
+
+    def test_typo_in_the_table_is_not_blamed_on_a_lock(self):
+        # 審查重現：0-segments.csv 起秒手打錯成 x。work dir 從判斷到現在
+        # 都沒變，不是別人改的；以前印「是不是有人沒拿 store.lock」、還說
+        # 「沒有入庫」，時間軸其實已經寫進 1-cues。照舊停下來，講是哪一
+        # 集、時間軸已經寫了、work dir 沒被改過
+        table = self.TABLE.replace("\n0,10,", "\nx,10,")
+        works = {JAN: self.work_of(JAN, self.GOOD, table)}
+        with self.assertRaises(ValueError) as caught:
+            self.run_main([entry(JAN)], works)
+        notes = "".join(getattr(caught.exception, "__notes__", []))
+        self.assertIn(JAN, notes)
+        self.assertIn("時間軸已經入庫、段落表沒有", notes)
+        self.assertIn("沒有變", notes)
+        self.assertNotIn("store.lock", notes)
+        self.assertTrue(self.stored(JAN))
+
+    def test_disk_full_is_not_blamed_on_a_lock(self):
+        # 磁碟滿（ENOSPC，stage-read 塞滿過兩次）：不是別人改的，照舊停
+        # 下來給人看，講是哪一集、還沒寫進去
+        works = {JAN: self.work_of(JAN, self.GOOD),
+                 JAN2: self.work_of(JAN2, self.GOOD)}
+
+        def full(manifest):
+            raise OSError(28, "No space left on device")
+
+        with mock.patch.object(publish.redump_store, "dump", full):
+            with self.assertRaises(OSError) as caught:
+                self.run_main([entry(JAN), entry(JAN2)], works)
+        notes = "".join(getattr(caught.exception, "__notes__", []))
+        self.assertIn(JAN, notes)
+        self.assertIn("沒有入庫", notes)
+        self.assertNotIn("store.lock", notes)
+        self.assertFalse(self.stored(JAN2))
+
+    def test_an_unforeseen_error_still_stops_but_says_which_episode(self):
+        # 程式本身的錯：照舊停下來給人看，但 traceback 要帶集名
+        works = {JAN: self.work_of(JAN, self.GOOD)}
+
+        def boom(manifest):
+            raise KeyError("index")
+
+        with mock.patch.object(publish.redump_store, "dump", boom):
+            with self.assertRaises(KeyError) as caught:
+                self.run_main([entry(JAN)], works)
+        notes = "".join(getattr(caught.exception, "__notes__", []))
+        self.assertIn(JAN, notes)
+
+    def test_all_written_is_still_zero(self):
+        works = {JAN: self.work_of(JAN, self.GOOD, self.TABLE)}
+        code, said = self.run_main([entry(JAN)], works)
+        self.assertEqual(code, 0, said)
+        self.assertTrue(self.stored(JAN))
+        self.assertIn("段落表 write", said)
 
 
 class TestMonthsOf(unittest.TestCase):

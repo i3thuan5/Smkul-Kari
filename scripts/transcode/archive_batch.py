@@ -75,7 +75,7 @@ def _expand(chosen):
 # month the same way the store is. The layout itself is `paths.video_*`
 # now -- the pipeline reads videos from there too, so it cannot live in this
 # side line -- and the names below are kept as aliases of it.
-REMOTE_ARCHIVE_ROOT = paths.VIDEO_ROOT
+REMOTE_ARCHIVE_ROOT = paths.VIDEO_ROOT_HOME
 
 MASTER_EXT = ".mxf"
 

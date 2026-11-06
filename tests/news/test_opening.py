@@ -145,7 +145,8 @@ class TestSparseFetch(unittest.TestCase):
 
 
 NAME = "20210103_003_晨間_Hla'alua_拉阿魯哇"
-CANON = "/home/news/mkv/2021-01/20210103_003_晨間_Hla'alua_拉阿魯哇.mkv"
+DOCKER = paths.VIDEO_ROOT_DOCKER + "/2021-01/20210103_003_晨間_Hla'alua_拉阿魯哇.mkv"
+HOME = paths.VIDEO_ROOT_HOME + "/2021-01/20210103_003_晨間_Hla'alua_拉阿魯哇.mkv"
 ORIG = "/home/mkv-raw/110.01-110.10/1月原始mxf檔/20210103s0800.mkv"
 
 
@@ -194,26 +195,37 @@ class TestGrabRemoteFindsTheVideo(unittest.TestCase):
                                    entry_for=lambda name: _entry(), **kw)
 
     def test_the_canonical_place_is_used_when_it_exists(self):
-        self.grab(CANON, _Sftp({CANON: 100}))
-        self.assertEqual(self.copied, [(CANON, 100, NAME + ".mkv")])
+        self.grab(DOCKER, _Sftp({DOCKER: 100}))
+        self.assertEqual(self.copied, [(DOCKER, 100, NAME + ".mkv")])
         self.assertEqual(self.said, [])
 
+    def test_a_file_the_admin_has_not_moved_is_found_in_home(self):
+        # entry["remote"] 是 /docker 路徑；判斷若寫死「等於 /home 路徑」，
+        # 這爿就悄悄失去退路，報「伺服器頂懸無」。
+        self.grab(DOCKER, _Sftp({HOME: 55}))
+        self.assertEqual(self.copied, [(HOME, 55, NAME + ".mkv")])
+        self.assertEqual(self.said, [])
+
+    def test_a_home_path_that_has_been_moved_is_found_in_docker(self):
+        self.grab(HOME, _Sftp({DOCKER: 66}))
+        self.assertEqual(self.copied, [(DOCKER, 66, NAME + ".mkv")])
+
     def test_a_missing_canonical_falls_back_to_the_original_and_says_so(self):
-        self.grab(CANON, _Sftp({ORIG: 77}))
+        self.grab(DOCKER, _Sftp({ORIG: 77}))
         self.assertEqual(self.copied,
                          [(ORIG, 77, "20210103s0800.mkv")])
         self.assertIn("退回原始位置", "\n".join(self.said))
 
     def test_neither_place_names_both(self):
         with self.assertRaises(PipelineError) as caught:
-            self.grab(CANON, _Sftp({}))
-        self.assertIn(CANON, str(caught.exception))
-        self.assertIn(ORIG, str(caught.exception))
+            self.grab(DOCKER, _Sftp({}))
+        for place in (DOCKER, HOME, ORIG):
+            self.assertIn(place, str(caught.exception))
         self.assertEqual(self.copied, [])
 
     def test_a_failure_that_is_not_not_found_does_not_fall_back(self):
         with self.assertRaises(PipelineError) as caught:
-            self.grab(CANON, _Sftp({ORIG: 77}, broken=[CANON]))
+            self.grab(DOCKER, _Sftp({ORIG: 77}, broken=[DOCKER]))
         self.assertIn("timed out", str(caught.exception))
         self.assertEqual(self.copied, [])
 
@@ -224,7 +236,7 @@ class TestGrabRemoteFindsTheVideo(unittest.TestCase):
         self.assertIn("不存在.mkv", str(caught.exception))
 
     def test_the_sparse_copy_is_removed_afterwards(self):
-        self.grab(CANON, _Sftp({CANON: 100}))
+        self.grab(DOCKER, _Sftp({DOCKER: 100}))
         self.assertEqual(os.listdir(self.stage), [])
 
 

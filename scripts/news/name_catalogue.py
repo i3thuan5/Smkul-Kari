@@ -15,6 +15,8 @@ second source of truth that can drift: correct a typo in `族語別(中)` and
 the two disagree with nothing to say which wins. `--check` is the answer to
 that -- it recomputes every cell and reports the ones that no longer match,
 so a hand edit is caught instead of quietly becoming the new name.
+It also runs the whole `catalogue_checks.row_problems` set (duplicate
+names, programme name against date, language codes, row order ...).
 
 Rows the catalogue cannot name get an empty cell rather than a guess. Today
 that is the 46 《開會了》 rows, which carry neither 年度 nor 播出日期.
@@ -141,6 +143,35 @@ def rewrite(path=None):
     return got
 
 
+def run_check(target, excluded_path=None, out=print):
+    """`--check` 本體：逐項印出問題，回 exit code（0 通過、1 有問題）。
+
+    三組檢查攏跑：（1）`成果檔名` 欄佮推導值對會著；（2）整組
+    `catalogue_checks.row_problems`——成果檔名不得重複、命名規格、節目名稱
+    佮播出日期對會著、語言別代號、素材位置非空、列序；（3）排除清單。
+    第（2）組本底新聞這爿無人跑過，重複ê成果檔名著等到 `apply` 規劃
+    才發現。
+    """
+    rows, head = read(target)
+    if COLUMN not in head:
+        out("%s 猶未有 %s 這欄" % (target, COLUMN))
+        return 1
+    bad = check(rows)
+    for line, stored, wanted in bad:
+        out("第%d逝 %r 應該是 %r" % (line, stored, wanted))
+    out("%s：%d 逝，無合 %d 逝" % (target, len(rows), len(bad)))
+    found = checks.row_problems(rows)
+    for line in found:
+        out(line)
+    out("目錄檢查：%d 項問題" % len(found))
+    dropped = excluded(rows, excluded_path)
+    for line in dropped:
+        out(line)
+    if dropped:
+        out("排除影片：%d 項" % len(dropped))
+    return 1 if bad or found or dropped else 0
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("catalogue", nargs="?", default=None,
@@ -151,20 +182,7 @@ def main():
     target = args.catalogue or paths.TRACKER_STORE
 
     if args.check:
-        rows, head = read(target)
-        if COLUMN not in head:
-            print("%s 猶未有 %s 這欄" % (target, COLUMN))
-            return 1
-        bad = check(rows)
-        for line, stored, wanted in bad:
-            print("第%d逝 %r 應該是 %r" % (line, stored, wanted))
-        print("%s：%d 逝，無合 %d 逝" % (target, len(rows), len(bad)))
-        dropped = excluded(rows)
-        for line in dropped:
-            print(line)
-        if dropped:
-            print("排除影片：%d 項" % len(dropped))
-        return 1 if bad or dropped else 0
+        return run_check(target)
 
     rows, _ = read(target)
     got = rewrite(target)

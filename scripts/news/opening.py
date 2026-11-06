@@ -126,16 +126,17 @@ def _decode(raw):
 def _located(remote, sftp, say, entry_for):
     """(實際路徑, 大小)：先問 `remote`，揣無才退回原始位置。
 
-    退路干焦 `remote` 是由成果檔名推導ê正規位置ê時才有（需要查目錄揣
-    原始欄）；人家己指定ê路徑揣無就直接報錯。連線逾時、權限錯誤這款
-    毋是「揣無」ê失敗，`stat` 會 raise，這爿袂退。
+    退路干焦 `remote` 是由成果檔名推導ê兩个位置（`/docker`、`/home`，
+    `paths.video_read_paths`）其中一个ê時才有（需要查目錄揣原始欄）；
+    人家己指定ê路徑揣無就直接報錯。連線逾時、權限錯誤這款毋是「揣無」
+    ê失敗，`stat` 會 raise，這爿袂退。
     """
     size = sftp.stat(remote)
     if size is not None:
         return remote, size
     name = os.path.basename(remote)[:-len(".mkv")]
     try:
-        canonical = paths.video_path(name) == remote
+        canonical = remote in paths.video_read_paths(name)
     except PipelineError:
         canonical = False
     if not canonical:
@@ -161,8 +162,9 @@ def grab_remote(remote, work, stage=None, sftp=None, say=print,
                 entry_for=None):
     """已入庫ê集數補做：頭尾兩段抓落來截三格，稀疏檔隨刪。
 
-    `remote` 是正規位置（由成果檔名推導）；伺服器頂揣無才退回 `原始影片
-    檔案位置`，退ê時會講。
+    `remote` 是由成果檔名推導ê位置（`/docker` 抑是 `/home`）；伺服器頂
+    揣無就照 `video_names.locate` ê順序（`/docker` → `/home` → `原始影片
+    檔案位置`）揣，退到原始位置ê時會講。
     """
     from scripts.news import video_names
     sftp = sftp or video_names.Sftp()

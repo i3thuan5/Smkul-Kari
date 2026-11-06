@@ -111,9 +111,11 @@ def redate(name, date, episode, reason, catalogue=None, store=None,
            sftp=None, say=print):
     """改目錄（照成果檔名重排）、搬 store；回 (新成果檔名, Report)。
 
-    成果檔名換了（可能跨月），伺服器頂ê影片嘛綴咧搬去新名稱ê位置，**伺服器
-    彼步先做**；現在位置佮 `relabel` 仝款照 `video_names.locate` 揣，兩位
-    攏無就拒絕。伺服器成功了本機若失敗，會試著共影片搬轉去才報錯。
+    成果檔名換了（可能跨月），照影片現此時佇佗（`video_names.locate`，
+    佮 `relabel` 仝款）：佇 `/home` 就綴咧搬去新名稱ê位置，**伺服器彼步
+    先做**；佇 `/docker`（管理者管ê唯讀區）就拒絕；猶佇原始位置（新批次）
+    伺服器毋動，干焦改目錄佮本機；三位攏無就拒絕。伺服器有動，成功了本機
+    若失敗，會試著共影片搬轉去才報錯。
     """
     from scripts.news import episodes
     from scripts.news import video_names

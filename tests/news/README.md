@@ -59,24 +59,31 @@
 
 | spec | scenario | 測試檔 |
 |---|---|---|
-| episode-video-location | 位置只由成果檔名決定：`20210101_001_午間_Rukai_魯凱` → `/home/news/mkv/2021-01/…mkv`；年-月取自成果檔名，不取自原資料夾（48 列原資料夾月份與播出月份不同，如 20241001_275 原放在 9 月資料夾） | `test_paths.py`、`test_video_names.py` |
+| episode-video-location | 位置只由成果檔名決定：`20210101_001_午間_Rukai_魯凱` → `/home/news/mkv/2021-01/…mkv`（寫入位置）與 `/docker/news/mkv/2021-01/…mkv`（讀取順序第一個）；年-月取自成果檔名，不取自原資料夾（48 列原資料夾月份與播出月份不同，如 20241001_275 原放在 9 月資料夾） | `test_paths.py`、`test_video_names.py` |
 | episode-video-location | 成果檔名不合規格（空字串、集數兩碼）時拒絕算位置，不可組出沒人找得到的路徑 | `test_paths.py` |
 | episode-video-location | 含撇號又含中文的名稱（195 個拉阿魯哇）：rename／mkdir／rmdir 的批次指令完整保留撇號；含雙引號、換行的路徑被擋 | `test_sftp_cli.py` |
 | episode-video-location | 規劃：每列恰好一組（舊→新）；排除清單上的路徑（含與目錄所用影片串流相同的 20241002S2000.mkv）不進規劃；兩列同舊位置或同新位置整份拒絕；不在 `/home/mkv-raw/` 的列（開會了）、分號候選清單、空白來源都拒絕 | `test_video_names.py` |
 | episode-video-location | 搬移：先寫清單再搬第一支（第三支失敗時清單已完整）；資料夾逐層建、每月只建一次、已存在不算錯（`/home/news` 伺服器上本來沒有）；一個資料夾問一次而不是逐支問（逐支問光問就要個把鐘頭） | `test_video_names.py` |
 | episode-video-location | 續跑：新有舊無跳過、舊有新無搬、兩邊都有停下不覆寫、都沒有指名該列；完成的組不再碰伺服器 | `test_video_names.py` |
-| episode-video-location | 探針：搬過去再搬回來、狀態與探針前相同；過去失敗就停止並提示跨子卷備案；搬回失敗要明講檔案現在在哪；目標已被佔用不動 | `test_video_names.py` |
-| episode-video-location | 核對：新位置恰為目錄每列各一支、大小同清單；缺、多、大小不同、沒搬、舊位置多出的檔，逐一指名；排除檔與搬走的檔在同一資料夾不算問題；排除清單記的檔本來就不在伺服器上（22 列有 4 列搬進前就沒了）、或路徑不在 `/home/mkv-raw` 底下（有一列在 `/docker/…`，那個資料夾有幾百個別的檔）都不算問題 | `test_video_names.py` |
-| episode-video-location | 還原：依清單反向搬、舊位置被佔用拒絕不覆寫、舊資料夾已被清掉要一層一層重建；再還原一次什麼都不做 | `test_video_names.py` |
+| episode-video-location | 探針：搬過去再搬回來、狀態與探針前相同；過去失敗就停止並提示可能是跨子卷（不再提備案路徑 `/home/mkv-raw/news/mkv`）；搬回失敗要明講檔案現在在哪；目標已被佔用不動 | `test_video_names.py` |
+| episode-video-location | 核對：兩個根（`/docker`、`/home`）合起來恰為目錄每列各一支、大小同清單；同一集兩個根都有、兩個根都缺都逐一指名；`/docker` 月份資料夾裡多出的檔也指名；缺、多、大小不同、沒搬、舊位置多出的檔，逐一指名；排除檔與搬走的檔在同一資料夾不算問題；排除清單記的檔本來就不在伺服器上（22 列有 4 列搬進前就沒了）、或路徑不在 `/home/mkv-raw` 底下（有一列在 `/docker/…`，那個資料夾有幾百個別的檔）都不算問題 | `test_video_names.py` |
+| episode-video-location | 還原：依清單反向搬、舊位置被佔用拒絕不覆寫、舊資料夾已被清掉要一層一層重建；再還原一次什麼都不做；已被管理者搬進 `/docker` 的集數（唯讀，搬不回去）拒絕並指名、其餘照搬 | `test_video_names.py` |
 | episode-video-location | 清空資料夾只刪空的：含排除檔的資料夾不刪、由深到淺、永遠不刪 `/home/mkv-raw`、預設只列出、`rmdir` 被拒絕時停下並指名（不吞）、已不存在的跳過 | `test_video_names.py`、`test_sftp_cli.py` |
 | episode-video-location | `rmdir` 子動作不加前導 `-`（mkdir 加是因為「已有」正常；rmdir 失敗＝資料夾其實不空，要顯出來） | `test_sftp_cli.py` |
-| episode-video-location | 正規位置在就用它（原始欄空白或亂寫不影響、只問一次）；伺服器回「找不到」才退回原始位置並說出來；兩處都沒有指名兩個路徑；原始欄有分號候選依挑檔規則選（母帶優先、不取第一條） | `test_video_names.py`、`test_audio.py`、`test_opening.py`、`test_vision_prompt.py` |
-| episode-video-location | 連線逾時、權限錯誤不是「找不到」：不退回，直接報錯（網路一抖就讀到過時位置是最糟的情形）；本來 `audio._remote_size` 把所有失敗都當沒有 | `test_video_names.py`、`test_audio.py`、`test_opening.py` |
-| episode-sourcing | 規劃（離線）列出的是正規位置：目錄列有分號候選或空白都照樣規劃、不再有「揀不出來被略過」；刪掉 2021-02 mxf 輕量副本的死程式 | `test_plan_month.py` |
+| episode-video-location | `/docker` 有就用、只問一次（原始欄空白或亂寫不影響）；`/docker` 回「找不到」才問 `/home`；兩個根都沒有才退回原始位置並說出來；三處都沒有指名三個路徑；原始欄有分號候選依挑檔規則選（母帶優先、不取第一條）；來源標籤分 docker／home／原始 | `test_video_names.py`、`test_audio.py`、`test_opening.py`、`test_vision_prompt.py` |
+| episode-video-location | 連線逾時、權限錯誤不是「找不到」：不退回，直接報錯（網路一抖就讀到過時位置是最糟的情形；查 `/docker` 逾時也不去問 `/home`）；本來 `audio._remote_size` 把所有失敗都當沒有 | `test_video_names.py`、`test_audio.py`、`test_opening.py` |
+| episode-sourcing | 規劃（離線）列出的是讀取順序第一個位置（`/docker`）：目錄列有分號候選或空白都照樣規劃、不再有「揀不出來被略過」；刪掉 2021-02 mxf 輕量副本的死程式 | `test_plan_month.py` |
 | episode-sourcing | 本機暫存檔名由來源原名（`20241202S2000.mkv`）變成 `<成果檔名>.mkv`，讀者的下載指令用實際找到的位置，不再說「先抓 mp4」 | `test_audio.py`、`test_vision_prompt.py` |
 | episode-sourcing | `fetch_sftp.sh` 大小表查不到某集時，先叫 `video_names locate` 取退路才 FAIL；語法要通過 | `test_fetch_sftp_config.py` |
-| episode-video-location | 改成果檔名（改語別、改日期、可能跨月）時伺服器上的影片一併 rename：伺服器那步先做、失敗整個不動本機；正規位置沒有但原始位置在，從原始位置搬到新名稱的正規位置；兩處都沒有拒絕；本機失敗時試著搬回；名稱沒變就什麼都不搬 | `test_relabel.py`、`test_redate.py`、`test_video_names.py` |
-| episode-video-location | 封存位置函式只有一份：`archive_batch.remote_archive_*` 與 `paths.video_*` 值逐字相同 | `test_archive_batch.py` |
+| episode-video-location | 改成果檔名（改語別、改日期、可能跨月）依影片現在在哪：在 `/home` 就在 `/home` 內 rename（伺服器那步先做、失敗整個不動本機、跨月建資料夾、本機失敗時試著搬回）；在 `/docker` 拒絕並提示找管理者（伺服器、目錄、本機各階段檔案都不動）；還在原始位置（新批次）伺服器不動、只改目錄與本機，`moved=False`，本機失敗時 `rename_back` 不去搬沒搬過的影片；三處都沒有拒絕並指名三個路徑；名稱沒變就什麼都不搬 | `test_relabel.py`、`test_redate.py`、`test_video_names.py` |
+| episode-video-location | 封存位置函式只有一份：`archive_batch.remote_archive_*` 與 `paths.video_*` 值逐字相同，根目錄引用 `paths.VIDEO_ROOT_HOME` | `test_archive_batch.py` |
+| episode-video-location | 兩個根是兩個全域變數：把 `VIDEO_ROOT_DOCKER`、`VIDEO_ROOT_HOME` 換成別的值，`video_path`、`video_read_paths`、每集的 `remote` 欄、`locate` 的詢問順序全部跟著變（防有人在別處又寫死 `/docker/news/mkv`）；舊的 `VIDEO_ROOT` 不存在 | `test_paths.py`、`test_episodes.py`、`test_video_names.py` |
+| episode-video-location | 管理者搬到一半：同一批集數有的在 `/docker`、有的在 `/home`，兩種都找得到、`check` 都算到位；`apply` 碰到管理者已搬走的（舊新位置都沒有、只有 `/docker` 有）算已完成，不是問題 | `test_video_names.py` |
+| episode-video-location | `apply`：某集同名檔已在 `/docker`（舊位置或 `/home` 新位置還有一支）整個停下並指名、一支都不搬、不寫清單、伺服器沒有任何變動 | `test_video_names.py` |
+| episode-video-location | 片頭補抓：傳進來的路徑是兩個根之一的推導位置就有退路（`/docker` 路徑揣無會退 `/home`，防 `remote` 改成 `/docker` 後悄悄失去退路），人家自己指定的路徑沒有 | `test_opening.py` |
+| episode-video-location | 對伺服器的寫入只發生在 `/home` 底下：還原、探針、搬移、清空資料夾、改成果檔名，送出的 mkdir／rename／rmdir 路徑都不在 `/docker` 底下；碰到 `/docker` 同名檔時一個寫入都沒有 | `test_video_names.py` |
+| episode-catalogue | `name_catalogue --check` 也跑整組 `row_problems`：兩列成果檔名重複（指名行號）、節目名稱與日期對不上（舊名稱用在 2024-08-02，成果檔名與推導值一致所以舊檢查看不出來）、語言別代號不在表內、列序亂掉、素材位置空白都要 exit 1 並逐行指名；乾淨目錄 exit 0 | `test_name_catalogue.py` |
+| episode-catalogue | 新聞的 `rebuild`（含 `--verify`）開頭先跑同一組檢查，有問題逐行印 `CATALOGUE:` 並中止，排在階段檢查之前（原本只有開會了在跑，新聞完全沒跑） | `test_rebuild_catalogue.py` |
 
 ## 已讀字集數的帶外補切（`scripts/news/offband_backfill.py`）
 
@@ -86,9 +93,19 @@
 | cue-timing | TSV 改寫時被換掉的幾條拿掉、文字原樣（空白、tab 不動）；TSV 有舊時間軸沒有的號碼要擋 | `test_offband_backfill.py` |
 | cue-timing | 讀者 TSV 要剛好是新 cue 那幾號，少一條、多一條都擋 | `test_offband_backfill.py` |
 | news-segments | 段落表那段人工覆寫成「帶外專題」，前後的段照切，待確認的段仍擋入庫 | `test_offband_backfill.py` |
-| news-segments | 已確認入庫的段落表（`20241209_344_晚間_Amis_阿美`）補切時被 2021 判準重算的表蓋掉，讀者確認過的列被換成一堆「他族插播／待確認」——起點要依序取：前一段補切的表 → Kari-SRT 已入庫的表 → 都沒有才重算 | `test_offband_backfill.py` |
+| news-segments | 已確認入庫的段落表（`20241209_344_晚間_Amis_阿美`）補切時被 2021 判準重算的表蓋掉，讀者確認過的列被換成一堆「他族插播／待確認」——Kari-SRT 有表就從它開始，都沒有才重算 | `test_offband_backfill.py` |
+| news-segments | 補切目錄留著的舊段落表比 Kari-SRT 舊：060 午 2474.5–2579 的三列被合成一列攝影棚蓋回去，沒有任何警告（2026-11-03 量到 138 個補切目錄有 122 份跟 Kari-SRT 不同）——兩份不同照 Kari-SRT 的並警告，相同才用補切目錄那份（留「依據」）；Kari-SRT 沒有表（2021、060 晚間分三段）才接補切目錄那份 | `test_offband_backfill.py` |
+| news-segments | 187 晚同一集換一個起秒重新 prepare，第一次蓋上去的列殘留在表裡——上一次還沒 apply（時間軸 sha 沒變）就從它記在 plan 的開始表重來；舊 plan 沒記的，Kari-SRT 有表就用 Kari-SRT 的，沒有才接補切目錄那份並警告 | `test_offband_backfill.py` |
+| cue-timing | 187 晚 prepare 精修出的末條迄點 1572.204 超過迄秒 1572.121，壓到範圍外下一條，apply 也沒擋——新 cue 裁在範圍內，裁完沒剩的拿掉；新 cue 和範圍外的 cue 重疊 prepare、apply 都擋；時間軸本來就有的重疊（323 午、361 晚）不在範圍內，不可因此擋住補切 | `test_offband_backfill.py` |
 | news-segments | work dir 清掉的集（2024 試做五集）島語時間、部落信箱要用這支補切，類型寫死「帶外專題」會把段落表和 areas 標錯；plan 記類型、舊 plan 沒記的當帶外專題、打錯的類型（「島語」）要擋 | `test_offband_backfill.py` |
 | news-segments | Kari-SRT 的段落表不存「依據」欄；2023-02 058 晚、059 午補切時從 store 讀進來的列依據全是空字串，apply 被 segments.check 擋下「依據 ''」，段落表沒入庫——從表讀進來時補「人工」 | `test_offband_backfill.py` |
+| news-segments | 比兩份段落表用原始字串，補切目錄寫 100.500、Kari-SRT 寫 100.5 就當成兩份表，印假警告、「依據」全變「人工」——比值不比字串，「依據」不比 | `test_offband_backfill.py` |
+| news-segments | 299 晚 1216–2567 帶外專題在 Kari-SRT 已確認成「鄒 890–970、受訪者無、無」，prepare 照第一列語別和重切區域寫成「布農 690–1040」、受訪者空白（303 晚、304 午、352 晚、057 晚同樣）——範圍裡本來就有同類型的列，語別、上下緣、受訪者照它的；別類型的列不借 | `test_offband_backfill.py` |
+| news-segments | 新格式 plan 沒 apply、重新 prepare 時直接用 plan 記的開始表：plan 記攝影棚、之後 Kari-SRT 訂正成外景新聞，重做拿到攝影棚、沒有警告——Kari-SRT 有表就照它現在的，plan 的表值相同才用（留「依據」），不同或上一次是重算的就照 Kari-SRT 並警告 | `test_offband_backfill.py` |
+| news-segments | apply 照樣把補切目錄的表寫進 Kari-SRT，不管 prepare 之後 Kari-SRT 有沒有訂正：128 晚 10-21 prepare、10-23 訂正成外景新聞，apply 會把 2421–2649 兩列蓋回帶外專題；6 份沒 apply 的 plan（128 晚、299 晚、303 晚、304 午、352 晚、057 晚）全是舊格式且表跟 Kari-SRT 不同——plan 記 Kari-SRT 段落表 sha，apply 不同就擋；舊格式表不同也擋；兩種都在寫任何檔之前；`--keep-store-table` 收時間軸、TSV、SRT，段落表不動 | `test_offband_backfill.py` |
+| cue-timing | 審查時把 prepare 的 clip、check_overlaps，apply 的 check_overlaps，plan 的 start_table 拿掉，純函式測試照樣全過——用合成的 Kari-SRT（重切、精修、組合圖換假的）跑整條 prepare／apply：末條迄點裁到範圍、重疊 prepare 擋且不寫 plan、apply 重疊擋且一個檔都沒動、plan 有開始表和段落表 sha | `test_offband_backfill.py` |
+| cue-timing | 034 晨 2-vision 只有 b01、b02、b04、b05（b03 早就併掉），apply 照「份數 + 1」把新 TSV 取名 b05.tsv，原本 523 列的 b05 整份被 14 列蓋掉，沒有任何訊息（2026-11-04）——新 TSV 號碼取現有最大號 + 1 | `test_offband_backfill.py` |
+| cue-timing | 2021 文化小辭典子母畫面的字幕高低逐集不同（2021-11 量到 770–838 到 815–870，2021-01～02 量到 779–829 到 829–879），照 `titv-news-dict-2021` 固定的比對列 810–880 切，20211124 晚一條 cue 長 31.2 秒、兩句整句不見；`segment_recut` 有量列那一步但拒絕已讀字的集——`prepare --probe` 先量列，recut、refine、組合圖遮罩都用補切目錄裡量過的 preset 檔（區域＝量到的列上下各加 10，比對列跟著移），plan 的 region 也是它；量不到穩定的字照原 preset 切並印警告；配非沉降 preset（`titv-news-offband`）擋；沒加 `--probe` 不傳 presets、plan 欄位照舊 | `test_offband_backfill.py` |
 
 ## 帶外補切（`scripts/news/segment_recut.py`、`splice.py`）
 
@@ -113,6 +130,8 @@
 | srt-data-store | 帶外補切直接改 Kari-SRT，work dir 還是補切前的；publish 不可拿 work dir 蓋回去（1209 晚間 729 條被 575 條蓋掉、「帶外專題」段落不見，publish 沒報錯，rebuild 才抓到）——Kari-SRT 時間軸有 work dir 沒有的區域就跳過並講原因；段落表也一樣（同一集第二次踩到：名條腳本直接呼叫 `publish_segments`，繞過 `publishable()` 的把關） | `test_publish_gate.py` |
 | srt-data-store | 平行語料兩層是仝一次配對產的：`2-csv-analysis` 改一格、`3-srt-paragraph` 改一字，`rebuild --verify` 都要指名集與層；CSV 在、SRT 無，是舊程式產的，要指名；SRT 在、CSV 無要指名；辭典取不到、辨識紀錄缺音長要指名，不可略過宣告通過；舊目錄 `2-平行語料/` 佮新目錄並存要失敗（改名時平行 session 可能用舊程式寫） | `test_rebuild_pairs.py` |
 | srt-data-store | `cut_months` 正在精修的集數只有粗切時間軸，`publishable()` 放行、`publish_one` 才 raise，整輪 publish 倒掉，排在後面的集數都入不了（20230703_184 晚間）——在 `publishable()` 就講「時間軸猶未精修」跳過 | `test_publish_gate.py` |
+| srt-data-store | publish 先逐集判斷、才逐集寫，中間別的 agent 沒拿 `store.lock` 就把自己的 work dir 換名或還在精修：以前在 store.lock 裡整輪停在 `refined_timeline`，traceback 看不出是哪一集，排在後面的集數全部沒入庫（第三批搬到重播，鎖外重跑 334 集都正常）——時間軸被換名拿走、讀到寫一半的 JSON、時間軸入庫後段落表才被改到一半（要說「時間軸已經入庫、段落表沒有」，不能說沒有入庫）、沒出錯但寫的時候時間軸被改寫，都只有這一集印 `fail <集名>` 並提醒拿鎖，其他集照寫，最後回非零 | `test_publish_gate.py` |
+| srt-data-store | 審查重現：「是不是被別人改了」以前看例外種類（PipelineError、OSError、ValueError 都算），0-segments.csv 起秒手打錯成 x 也印「是不是有人沒拿 store.lock」、還說沒有入庫（時間軸其實已經寫進 1-cues），照提示等對方做完會一直重複失敗；磁碟滿（ENOSPC，stage-read 塞滿過兩次）也一樣被誤判——改看判斷時記下的檔案大小和修改時間，沒變就照舊停下來，traceback 帶集名、寫到哪裡、「不是別人改的」，不提 store.lock | `test_publish_gate.py` |
 | news-segments | 新聞包裡還有節目框的電話訪問卡、公文、統計圖，讀者分成「外景新聞」「其他」兩派；另立「全螢幕圖卡」（有旁白字幕，不算無字幕的「其他」） | `test_segments.py` |
 | news-segments | 一集 work dir 約 345 MB、一個月約 24 GB，剩下的月份全切完放不下（2026-09-24 只剩 42 GB）；逐月切之前看磁碟，不夠就等；整月已切完的不下載；倒一個月不擋後面、記進 `cut-progress.tsv`；fetch 回 0 但還有集數沒切不可記成「切完」 | `test_cut_months.py` |
 | news-segments | 單元語別看語別牌，受訪者可能是別族（邵語那集名條標 Cou、排灣那集標 Atayal）；「受訪者語言別代號」空＝還沒查、「無」＝查過沒名條，舊表沒這欄照樣讀；不認得的代號要指名 | `test_segments.py` |
@@ -160,6 +179,7 @@
 | cue-timing | 216 移植前快照 cue 1074／1075 在範圍內本來就重疊，整段搬換掉更好，不該擋；範圍外原本的重疊（254 cue 709／710）不動、記說明 | `test_whole_replaces_original_overlap_and_notes_the_rest` |
 | cue-timing | 254 用 --range 1155 2075：251 魯凱主播的「我們先休息一下…馬上回來」重播那段沒有 cue，舊做法照搬進泰雅 254、只列成「補進的字」；首播有字、重播沒有 cue、又不在工作檔 items 裡的要擋 | `test_source_text_where_target_has_no_cue_refused` |
 | news-segments | 251 午泰雅島語時間在段落表是 1155–1266.6、1266.6–1276.9、1276.9–2060 三列（字幕帶不同），`--unit 1300` 只拿到最後一列、漏掉工作檔頭幾項；同類型、同單元語別、相接的列要併，外景新聞一則一列不併 | `test_unit_range_merges_rows_of_one_program` |
+| news-segments | 187 晚←172 晚第二段歌詞：工作檔只有一項「2156.0-2181.8」，粗位移漂到 631.4（歌詞實際 628.695）；舊做法拿第一個數字 2156.0 減粗位移＝1524.6，落在前一列外景新聞，是用包裝指定那一列才過的——每一項整段範圍各自換算、看大部分落在哪一段；換算後兩段差不多長（15 秒對 20 秒）不自己選、要人指定；287 族那種開頭 53 秒單元片頭、285 秒島語時間的照選島語時間 | `TestUnitOfItems` |
 | cue-timing | 範圍外改號要照身分不照 (start, end)：邊緣被修短的空白 cue 起迄變了，`offband_backfill.moves()` 的時間鍵對不到，TSV 列被當成「被換掉」刪掉，那條 cue 就沒有 TSV 列 | `test_moves_follow_identity_not_times` |
 | cue-timing | 搬進來的 cue `images` 要清空（首播的 `2-strips/t01571003_han.png` 在重播集不存在）；`sample_ts` 要加位移、落在自己的起迄內 | `test_ported_cue_fields` |
 | cue-timing | 首播頂層的 `split`／`placed` 記的是首播的號碼，抄過去會指到重播集別條 cue；只加一筆 `ported` | `test_history_not_copied` |
@@ -183,8 +203,9 @@
 | news-segments | 222 晚被 2542–2564 切成兩列的帶外專題要併回一列，上下緣 690–1040 換成首播的 940–1060 | `test_segments_replaced_by_source_rows` |
 | news-segments | 位移不是整數，新列邊會變成 1597.049 這種；跟重播原本列邊差 ≤ 3 秒就用重播的，避免 1–2 秒碎列 | `test_segments_snap_to_target_edges` |
 | news-segments | 寫進臨時 work dir 的表要有「依據」（Kari-SRT 的表沒有這欄），不然 `segments.check` 擋、publish 印「段落表 wait」 | `test_segments_basis_filled` |
-| srt-data-store | 一個類型只記一格：重播範圍外還有 cue 用同類型別的 preset（259、290 已有 island 的島語時間）→ 擋 | `test_areas_conflict_refused` |
-| srt-data-store | areas 衝突訊息舊做法寫新號（254 舊 cue 710 寫成 737），人對不上；要寫重播現在的號。範圍外只剩空白 cue 用舊設定的不擋、記說明 | `test_areas_conflict_message_uses_target_numbers` |
+| news-segments | 187 晚←172 晚歌詞帶外專題：172 晚那列單元語別「布農」原樣抄到 187 晚（賽夏），搬完兩列要手改——首播那列語別＝首播那集的族語、重播被換掉的列全是重播自己的新聞（外景新聞這類）而且＝重播那集的族語，才沿用重播的語別；216 晚（賽夏）帶外專題整段在 222 晚（布農）重播、島語時間這類單元照首播，不可以改成重播的族語 | `test_segments_own_news_out_of_band_takes_target_language`、`test_segments_rebroadcast_unit_keeps_source_language` |
+| srt-data-store | 一個類型只記一格：358 晨範圍外還有一段鄒語島語時間（cue 328，1081–2001）用 island、首播這段用 flower，舊做法整段搬直接擋下（port_areas raise），只能用 place_cue 逐條補、areas 也沒記首播的設定。像分區搬一樣，首播的設定另存「島語時間（<首播前 12 字>）」，搬進來的 cue 標那個名字，範圍外重播自己的照舊 | `test_areas_conflict_stored_under_new_name` |
+| srt-data-store | 172 晚兩段帶外專題用不同切法：兩格都要記（舊做法擋，訊息還曾寫新號，254 舊 cue 710 寫成 737）；說明寫重播現在的號。範圍外只剩空白 cue 用舊設定的照舊換成首播的、記說明 | `test_areas_conflict_keeps_both_settings` |
 | srt-data-store | 臨時 work dir 的時間軸要帶 Kari-SRT 全部 `areas`，否則 `areas_only_in_store` 判成過期、整集 skip | `test_temp_workdir_keeps_store_areas` |
 | srt-data-store | prepare 之後重播或首播被改過（sha 不同）→ apply 擋、Kari-SRT 不動，重做 prepare | `test_apply_refuses_changed_inputs` |
 | srt-data-store | 像素驗收沒判過就 apply → 擋，除非帶了使用者同意過的理由 | `test_apply_refuses_without_frames_check` |
@@ -253,6 +274,26 @@
 | srt-data-store | 重播已經有 `x20240315_075` 這份快照（上一輪拍的）：沿用就會把這次移植前的狀態當成上一輪的；加 `-r<MMDDHHMM>` 新標籤，那個也有就擋 | `test_snapshot_tag_never_reuses_old_one` |
 | srt-data-store | A→B→C：上一個做法 apply 不拍快照，B→C 看不到 A→B 搬進 B 的修改；apply 替 B 拍的快照就是 B 修改前的狀態，B→C 要把兩處都搬到 C | `test_chain_carries_ported_changes_downstream` |
 | srt-data-store | 分區搬入庫到一半失敗（pairs 失敗；或訂正紀錄已經重寫、fixlog 才失敗）：整集回滾，含剛拍的快照、manual-fixes；舊測試只測過整段搬的 pairs 失敗 | `test_zone_apply_failure_rolls_back_snapshot_and_fixes` |
+| srt-data-store | 028 午、146 午、050 晚、052 午：分區搬的要人判區（只差刪節號「…」對「⋯」）`--accept` 放不行——apply 只核對整段搬的 ask，這一區在 unresolved，plan 沒有套用區就先擋，只能用 place_cue 逐條補。放行清單寫重播 cue 號，prepare 照清單套那一區、plan 記 accepted，apply 沒給同一份清單就擋 | `test_zone_asked_zone_released_by_accept_list` |
+| srt-data-store | 一區有兩條字不同、清單只寫一條：照舊要人判，訊息列出兩條（`ask_cues`）都要寫，兩條都寫才套 | `test_accept_list_must_cover_every_differing_cue` |
+| cue-timing | 011 晚→361 晚、018 午、144 晚、210 晨，287 午→012 晚、356 午、089 晚：首播精修過起點的溶接長句（換句點移了 0.2–7 秒）被拿來當錨點，重播還是舊切點，30 個錨點只有 14 個同群、窗中位數 −1466.67／−1465.65 散開，判成「剪法不同」擋下。有首播最早那份快照時，精修過起點的錨點拿掉再判（Kari-SRT 複本乾跑：7 集全部不再判成剪法不同） | `test_refined_source_anchors_excluded`、`test_prepare_uses_snapshots_to_exclude_refined` |
+| cue-timing | 309 午→295 晚：295 自己 379/380 等幾條邊界晚了 0.1–0.2 秒，前 3 個錨點 +638.82、後面一律 +638.71，判成剪接；重播自己改過起點的錨點（跟它最早那份快照比）也拿掉 | `test_target_own_refined_starts_excluded` |
+| cue-timing | 真的剪接（重播剪掉 3 秒）、剪接前後都還有沒動過的錨點：它們一樣前後兩群，拿掉精修過的照樣擋，理由寫「排除後仍然是剪接」，`--offset` 蓋不掉；沒給快照時 `--offset` 的拒絕訊息要講給 `--snaps` 重做 | `test_real_cut_still_refused_after_excluding`、`test_offset_message_says_snapshot_missing` |
+| cue-timing | 審查合成重現：第 13–30 句精修過、重播在第 20 句前剪掉 3 秒——剪接整個落在精修過的那段。只拿掉精修過的錨點，留下的 13 個全在剪接之前，判 ready、blockers 空的，`--no-frames` 套用就沒有把關。拿掉的錨點改用首播精修前的起點核對，第 20 句以後差 3 秒照樣擋 | `test_cut_inside_refined_part_still_refused` |
+| cue-timing | 精修過的錨點落在留下的錨點後面，首播最早那份快照又找不到同字的句子（換句點時字也重切了），精修前的起點無從核對：那段有沒有剪接看不出來，不放行 | `test_refined_tail_without_old_start_refused` |
+| cue-timing | 011 晚實測：部落信箱頭一句、最後兩句都精修過，精修前的起點跟留下的錨點差 0.03–0.25 秒（溶接長句兩集本來就差幾格），是精修不是剪接，不可因為上面那條就擋 | `test_refined_both_sides_with_old_start_ready` |
+| cue-timing | 審查合成重現：真的剪接、兩集都給了快照、都沒有起點動過的錨點，`--offset` 的訊息卻寫「量位移時沒有快照……給 --snaps 重做 prepare」，叫人去做沒有用的重做 | `test_offset_message_with_snapshots_nothing_moved` |
+| cue-timing | 006 晨 cue 231、232 都是「一起來看」，段落邊界 739.0 切在中間：232 中點在範圍內，整段搬帶進 164 午、328 晚、033 午（手動清掉），034 晨自己那條整句的跟它重疊 0.367 秒、整件擋下。跨過範圍起點那句的句尾不搬 | `test_range_start_skips_tail_of_sentence_from_before` |
+| cue-timing | 294 午邊緣 cue「所以yungay真的」：重播舊切法在 2850.214 被轉場干擾提早斷開，首播精修過的 2851.499 才對，舊規則「邊緣同字較短就用重播的」把錯的搬回來。首播最早那份快照的迄點跟重播一樣、後來精修過，就照首播、重播後面的空白 cue 修短；沒快照或首播沒精修過照舊用重播的 | `test_edge_end_keeps_refined_source_end` |
+| cue-timing | 301 晚、350 晨、358 晨、020 晚：段落表那列延伸到首播最後一條有字 cue 之後十幾秒，整段搬包到重播自己的收尾「這節族語新聞播到這裡」；範圍迄點收到首播最後一條有字 cue，重播的收尾留著、不列要人判 | `test_range_end_stops_after_last_source_text` |
+| cue-timing | 086 午章節標題字卡 cf1028 那輪加了阿美語、後來裁定只寫華語又拿掉：最早那份快照跟現在一樣，分區搬判成首播沒改，從 086 搬過阿美語的重播（050 晚等）一句都不報——中間某份快照有、首播現在沒有、重播同一段正是中間版的字，列成「首播改了又改回、重播還是中間版」（快照標籤、中間版和現在的字、重播 cue），不搬；重播從沒搬過中間版的不報 | `test_zone_reports_source_change_reverted_but_target_kept`、`test_zone_reverted_source_change_target_already_now_not_reported` |
+| cue-timing | 343 晚：範圍起點落在主播引言（首播邵族、重播排灣族主播），重播正確的 cue 被換成首播的短 cue；它前 1 秒的邊界點落在範圍頭 4 秒內不取，check 抓不到。那一端改在被換的 cue 中間抽一點（edge_cue），照邊界點判，兩集畫面不同就擋 | `test_head_replaced_cue_probed_when_edge_point_skipped` |
+| srt-data-store | 215 午：比對字時把彎撇 ’ 和直撇 ' 當成一樣，首播改成直撇那條，重播的彎撇被當成「字一樣、留重播的 byte」沒被蓋過去。找錨點照舊不分，換字時要分 | `test_straight_apostrophe_replaces_curly_in_zone` |
+| cue-timing | 244 晚→309、094，286 晚→308、104：報「首播這一區自己的時間軸有重疊（首播 2073.087–2073.471…）」，首播現在那裡沒有重疊——是重播原本就重疊的兩條跨過區邊、修到區外仍然重疊，秒數是重播的舊切點減位移。訊息要寫重播哪兩條、重播的秒數 | `test_target_own_overlap_not_blamed_on_source` |
+| srt-data-store | 146 午：重播自己那列訂正指的 cue 被併掉，首播同時段那條字一樣、另一條留了重播的身分（算 moves 不算 fresh），zone_fixes 只在 fresh 找，擋「會被首播的修改蓋掉」，其實字一樣不會被蓋。保留身分的新 cue 也要找 | `test_zone_fix_found_on_cue_that_kept_target_identity` |
+| srt-data-store | 020 晚 manual-fixes「賀 額得減肥成功→（留空）」、首播同處也空白：`if row[3] and row[3] in text` 對空字串永遠不成立，整件判成「會蓋掉」擋下。改後是（留空）或空字串、首播同處也空白就當成一致、改號；首播那裡有字照舊擋 | `test_blank_fix_matches_blank_source_cue` |
+| srt-data-store | 審查合成重現：重播自己把 cue 10 改成（留空），首播同處那條仍然有字，首播下一條空白 cue 只跟重播舊 cue 10 的尾巴重疊 0.3 秒；只看「重疊到的候選有沒有空白」就改號到空白的鄰居，重播的（留空）被首播的字蓋掉、沒有人看到。同時段新時間軸有一條有字就擋；整段搬的 manual-fixes、pending sed、分區搬的 zone_fixes 都走同一個寫法 | `TestBlankFixOverlap` |
+| srt-data-store | 020 晚：重播範圍內有組裝前的 pending sed、首播同處的字已經是 sed 的結果，舊做法整件擋下，只能先拿掉兩列、apply 後照新號補回去。「改後」在首播搬進來那條已經成立就改號，不成立照舊擋 | `test_pending_sed_inside_already_applied_renumbered` |
 
 ## 影像側引擎（`tests/ocr/`）
 

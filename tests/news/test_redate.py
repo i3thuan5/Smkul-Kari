@@ -290,7 +290,7 @@ class TestTheVideoFollows(unittest.TestCase):
     def test_the_video_moves_across_the_month_with_the_rest(self):
         self.redate()
         self.assertEqual(self.fake.files, {self.NEW_VIDEO: 5})
-        self.assertIn("/home/news/mkv/2024-10", self.fake.dirs)
+        self.assertIn(paths.VIDEO_ROOT_HOME + "/2024-10", self.fake.dirs)
         self.assertTrue(self.store.exists("1-ocr/3-srt/2024-10/%s.srt" % NEW))
 
     def test_the_server_goes_first_and_a_refusal_changes_nothing_local(self):
@@ -322,12 +322,31 @@ class TestTheVideoFollows(unittest.TestCase):
             self.redate()
         self.assertEqual(self.fake.files, {self.OLD_VIDEO: 5})
 
-    def test_an_episode_never_moved_in_moves_in_from_its_original(self):
+    def test_an_episode_in_docker_is_refused_and_nothing_changes(self):
+        docker = paths.video_read_paths(OLD)[0]
+        self.fake.files = {docker: 5}
+        self.fake._add_parents(docker)
+        before = self.catalogue_bytes()
+        with self.assertRaises(PipelineError) as caught:
+            self.redate()
+        self.assertIn("管理者", str(caught.exception))
+        self.assertEqual(self.catalogue_bytes(), before)
+        self.assertEqual(self.fake.files, {docker: 5})
+        self.assertTrue(self.store.exists("1-ocr/3-srt/2024-09/%s.srt" % OLD))
+        self.assertFalse(self.store.exists("1-ocr/3-srt/2024-10/%s.srt" % NEW))
+
+    def test_an_episode_never_moved_in_leaves_the_server_alone(self):
+        # 新批次：影片猶佇原始位置，日期這馬才改（可能跨月）。目錄佮 store
+        # 照改，伺服器毋動，等 apply 才用最終名字搬。
         original = "/home/mkv-raw/113/10月/20241001S2000.mkv"
         self.fake.files = {original: 7}
         self.fake._add_parents(original)
+        before = list(self.fake.calls)
         self.redate()
-        self.assertEqual(self.fake.files, {self.NEW_VIDEO: 7})
+        self.assertEqual(self.fake.files, {original: 7})
+        for call in self.fake.calls[len(before):]:
+            self.assertNotIn(call[0], ("rename", "mkdir", "rmdir"))
+        self.assertTrue(self.store.exists("1-ocr/3-srt/2024-10/%s.srt" % NEW))
 
     def test_crossing_the_programme_rename_day_renames_the_programme_too(self):
         # 07-31 → 08-01：伺服器頂ê位置用新成果檔名算，節目名稱嘛換。

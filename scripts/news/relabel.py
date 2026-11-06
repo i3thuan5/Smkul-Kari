@@ -157,11 +157,13 @@ def relabel(name, chinese, reason, catalogue=None, store=None, sftp=None,
             say=print):
     """改目錄（照成果檔名重排）、搬 store；回 (新成果檔名, Report)。
 
-    成果檔名換了，伺服器頂ê影片嘛愛綴咧搬去新名稱ê位置（`paths.video_path`）。
-    **伺服器彼步先做**——伊上有可能失敗（網路、權限），失敗ê時本機猶無動；
-    現在位置照 `video_names.locate` 揣（正規位置，揣無才原始位置），兩位
-    攏無就拒絕，免得目錄佮伺服器悄悄分家。伺服器成功了本機彼幾步若失敗，
-    會試著共影片搬轉去舊位置才報錯。
+    成果檔名換了，照影片現此時佇佗（`video_names.locate`）：佇 `/home` 就
+    綴咧搬去新名稱ê位置（`paths.video_path`），**伺服器彼步先做**——伊上
+    有可能失敗（網路、權限），失敗ê時本機猶無動；佇 `/docker`（管理者管ê
+    唯讀區）就拒絕；猶佇原始位置（新批次，語言別猶未確認）伺服器毋動，
+    干焦改目錄佮本機，等 `apply` 才搬；三位攏無就拒絕，免得目錄佮伺服器
+    悄悄分家。伺服器有動，成功了本機彼幾步若失敗，會試著共影片搬轉去
+    舊位置才報錯。
     """
     from scripts.news import episodes
     from scripts.news import video_names

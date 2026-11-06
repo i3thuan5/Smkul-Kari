@@ -18,11 +18,12 @@ The entries are written `pending`, which is what lets the store name an
 episode it cannot yet rebuild; `publish` clears the flag when the batch is
 done.
 
-Each episode's video is the **canonical place** derived from its name
-(`paths.video_path`, `/home/news/mkv/<年-月>/<成果檔名>.mkv`), not a choice
-among the catalogue's candidates -- so planning never asks the server and
-nothing is skipped as undecidable. When that place turns out empty at fetch
-time, `video_names.locate` falls back to `原始影片檔案位置` there.
+Each episode's video is the **first place to look** derived from its name
+(`paths.video_read_paths(...)[0]`, `/docker/news/mkv/<年-月>/<成果檔名>.mkv`),
+not a choice among the catalogue's candidates -- so planning never asks the
+server and nothing is skipped as undecidable. When that place turns out empty
+at fetch time, `video_names.locate` tries `/home/news/mkv/...` and then
+`原始影片檔案位置`.
 """
 import argparse
 import collections

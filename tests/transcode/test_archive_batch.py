@@ -142,19 +142,20 @@ class TestRemoteArchivePath(unittest.TestCase):
     def test_path_is_root_month_name(self):
         self.assertEqual(
             archive_batch.remote_archive_path(self.NAME),
-            "/home/news/mkv/2021-02/20210201_032_晚間_Amis_阿美.mkv")
+            paths.VIDEO_ROOT_HOME
+            + "/2021-02/20210201_032_晚間_Amis_阿美.mkv")
 
     def test_the_folder_is_what_gets_made_first(self):
         self.assertEqual(
             archive_batch.remote_archive_dir(self.NAME),
-            "/home/news/mkv/2021-02")
+            paths.VIDEO_ROOT_HOME + "/2021-02")
 
     def test_every_level_is_made_because_sftp_mkdir_is_not_recursive(self):
         # sftp ê mkdir 一改干焦一層，中間彼層無ê時就規句失敗。
         self.assertEqual(
             archive_batch.remote_dirs_to_make(self.NAME),
-            ["/home", "/home/news", "/home/news/mkv",
-             "/home/news/mkv/2021-02"])
+            ["/home", "/home/news", paths.VIDEO_ROOT_HOME,
+             paths.VIDEO_ROOT_HOME + "/2021-02"])
 
     def test_the_archive_functions_are_the_shared_ones(self):
         # 位置ê算法搬去 paths 了，這爿干焦留名；值若無仝，兩份就漂開。

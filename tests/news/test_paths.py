@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 from scripts.news import paths
 from scripts.errors import PipelineError
@@ -129,50 +130,106 @@ class TestStagePath(unittest.TestCase):
                 paths.month_of(bad)
 
 
-class TestVideoPath(unittest.TestCase):
-    """影片在伺服器上ê正規位置：`/home/news/mkv/<年-月>/<成果檔名>.mkv`。"""
+class TestVideoRoots(unittest.TestCase):
+    """兩個根是 `paths.py` ê兩个全域變數：定稿區（管理者管、唯讀）佮暫放區。
 
-    def test_it_is_the_root_the_month_and_the_name(self):
-        # 使用者舉ê例：110.01-110.10/1月原始mxf檔/20210101S1100.mkv 搬去遮。
+    管理者正在共 `/home/news/mkv/<月>` ê影片一支一支搬去 `/docker/news/
+    mkv/<月>`。讀ê時先 `/docker`、後 `/home`；寫（搬入來、改名）干焦認
+    `/home`。兩个根各干焦佇一个所在定義，日後抽換改彼兩行就好。
+    """
+
+    NAME = "20210101_001_午間_Rukai_魯凱"
+
+    def test_the_two_roots_are_where_the_spec_says(self):
+        # 規格寫ê樣：這爿故意寫死，其他測試攏引用常數。
+        self.assertEqual(paths.VIDEO_ROOT_DOCKER, "/docker/news/mkv")
+        self.assertEqual(paths.VIDEO_ROOT_HOME, "/home/news/mkv")
+
+    def test_the_old_single_root_is_gone(self):
+        # 留咧ê話，有人會繼續當做唯一ê根用。
+        self.assertFalse(hasattr(paths, "VIDEO_ROOT"))
+
+    def test_the_write_place_is_the_home_root(self):
         self.assertEqual(
-            paths.video_path("20210101_001_午間_Rukai_魯凱"),
+            paths.video_path(self.NAME),
+            "%s/2021-01/%s.mkv" % (paths.VIDEO_ROOT_HOME, self.NAME))
+
+    def test_the_read_order_is_docker_then_home(self):
+        self.assertEqual(
+            paths.video_read_paths(self.NAME),
+            ["%s/2021-01/%s.mkv" % (paths.VIDEO_ROOT_DOCKER, self.NAME),
+             "%s/2021-01/%s.mkv" % (paths.VIDEO_ROOT_HOME, self.NAME)])
+
+    def test_the_example_the_user_gave_still_holds(self):
+        self.assertEqual(
+            paths.video_path(self.NAME),
             "/home/news/mkv/2021-01/20210101_001_午間_Rukai_魯凱.mkv")
+        self.assertEqual(
+            paths.video_read_paths(self.NAME)[0],
+            "/docker/news/mkv/2021-01/20210101_001_午間_Rukai_魯凱.mkv")
+
+    def test_swapping_the_roots_moves_every_path_with_them(self):
+        # 防有人佇別位閣寫死 `/docker/news/mkv`：換兩个根，逐个路徑攏愛綴咧變。
+        with mock.patch.object(paths, "VIDEO_ROOT_DOCKER", "/pub/mkv"), \
+                mock.patch.object(paths, "VIDEO_ROOT_HOME", "/stage/mkv"):
+            self.assertEqual(paths.video_path(self.NAME),
+                             "/stage/mkv/2021-01/%s.mkv" % self.NAME)
+            self.assertEqual(paths.video_dir(self.NAME),
+                             "/stage/mkv/2021-01")
+            self.assertEqual(paths.video_dirs_to_make(self.NAME),
+                             ["/stage", "/stage/mkv", "/stage/mkv/2021-01"])
+            self.assertEqual(
+                paths.video_read_paths(self.NAME),
+                ["/pub/mkv/2021-01/%s.mkv" % self.NAME,
+                 "/stage/mkv/2021-01/%s.mkv" % self.NAME])
+
+
+class TestVideoPath(unittest.TestCase):
+    """影片佇伺服器頂ê位置：`<根>/<年-月>/<成果檔名>.mkv`，月份對成果檔名來。"""
 
     def test_the_month_comes_from_the_name_not_the_old_folder(self):
         # 20241001_275 本底囥佇「9月」資料夾；48 逝ê資料夾月份佮播出月份無仝。
         self.assertEqual(
             paths.video_path("20241001_275_晚間_Amis_阿美"),
-            "/home/news/mkv/2024-10/20241001_275_晚間_Amis_阿美.mkv")
+            "%s/2024-10/20241001_275_晚間_Amis_阿美.mkv"
+            % paths.VIDEO_ROOT_HOME)
 
     def test_the_folder_is_what_gets_made_first(self):
         self.assertEqual(
             paths.video_dir("20210201_032_晚間_Amis_阿美"),
-            "/home/news/mkv/2021-02")
+            "%s/2021-02" % paths.VIDEO_ROOT_HOME)
 
     def test_every_level_is_made_because_sftp_mkdir_is_not_recursive(self):
-        # `/home/news` 伺服器頂猶無；sftp ê mkdir 一改干焦一層，中間彼層
+        # `/home/news` 伺服器頂本底無；sftp ê mkdir 一改干焦一層，中間彼層
         # 無ê時就規句失敗。
-        self.assertEqual(
-            paths.video_dirs_to_make("20210201_032_晚間_Amis_阿美"),
-            ["/home", "/home/news", "/home/news/mkv",
-             "/home/news/mkv/2021-02"])
+        levels = paths.video_dirs_to_make("20210201_032_晚間_Amis_阿美")
+        self.assertEqual(levels[-1], "%s/2021-02" % paths.VIDEO_ROOT_HOME)
+        self.assertEqual(levels[0], "/home")
+        for parent, child in zip(levels, levels[1:]):
+            self.assertTrue(child.startswith(parent + "/"))
 
     def test_an_apostrophe_and_chinese_are_kept_whole(self):
         # 195 个拉阿魯哇ê名內底有撇號。
-        got = paths.video_path("20210103_003_晨間_Hla'alua_拉阿魯哇")
+        name = "20210103_003_晨間_Hla'alua_拉阿魯哇"
         self.assertEqual(
-            got,
-            "/home/news/mkv/2021-01/20210103_003_晨間_Hla'alua_拉阿魯哇.mkv")
+            paths.video_path(name),
+            "%s/2021-01/%s.mkv" % (paths.VIDEO_ROOT_HOME, name))
+        for path in paths.video_read_paths(name):
+            self.assertTrue(path.endswith("Hla'alua_拉阿魯哇.mkv"))
 
     def test_a_name_that_is_not_a_name_makes_no_path(self):
         # 空字串、集數兩碼：莫組出一个無人揣會著ê路徑。
         for bad in ("", "20210201_32_午間_Atayal_泰雅", "../x", None):
             with self.assertRaises(PipelineError):
                 paths.video_path(bad)
+            with self.assertRaises(PipelineError):
+                paths.video_read_paths(bad)
 
     def test_an_impossible_month_stops(self):
         with self.assertRaises(PipelineError):
             paths.video_path("20219901_001_午間_Rukai_魯凱")
+        with self.assertRaises(PipelineError):
+            paths.video_read_paths("20219901_001_午間_Rukai_魯凱")
 
 
 class TestVarCli(unittest.TestCase):

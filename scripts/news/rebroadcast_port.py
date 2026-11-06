@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """重播集照首播搬時間軸和字：不必重讀，用位移移植。
 
-    python3 -m scripts.news.rebroadcast_port measure <首播> <重播> --range LO HI
+    python3 -m scripts.news.rebroadcast_port measure <首播> <重播> --range LO HI \\
+        [--snaps 快照目錄]
     python3 -m scripts.news.rebroadcast_port prepare <首播> <重播> \\
         (--range LO HI | --unit 秒數) [--work 工作檔] [--snaps 快照目錄] \\
-        [--out DIR] [--offset 秒]
+        [--out DIR] [--offset 秒] [--accept 清單]
     python3 -m scripts.news.rebroadcast_port frames  <plan.json>... \\
         --side source|target --video V
     python3 -m scripts.news.rebroadcast_port check   <plan.json>
@@ -19,7 +20,11 @@ cue 和字要搬到重播集。重播是同一段畫面，不必整段重新 OCR
 1. `measure`／`prepare` 用兩集都只出現一次、5 字以上的句子當錨點，用
    **起點**算位移（不取整數格）；whisper 段落邊界是第二種、較粗的證據。
    p50 在一格內、八成以上在兩格內才算逐格一致；剪接、剪法不同都拒絕，
-   `--offset` 只能補位移、蓋不掉這兩種拒絕。
+   `--offset` 只能補位移、蓋不掉這兩種拒絕。有快照時，判成剪接、剪法
+   不同、逐格不一致的，先拿掉首播精修過起點（重播自己改過起點）的錨點
+   再判一次——精修過的溶接長句換句點移了 0.2–7 秒，重播還是舊切點，
+   不是剪法不同。拿掉的錨點再改用精修前的起點跟留下的合起來找剪接，
+   剪接整個落在精修過的那段裡也擋得下來。
 2. `prepare` 只讀 Kari-SRT，寫輸出目錄，依重播那段的狀態自動選做法：
    - 整段搬（whole）：重播那段原本沒讀到（有字的 cue 不到首播的兩成五），
      或兩集切法設定（areas 的 preset／region）不同而且是**首播**重切過
@@ -33,7 +38,8 @@ cue 和字要搬到重播集。重播是同一段畫面，不必整段重新 OCR
      外擴到安全邊（兩集在那一點都沒有字跨過去）；區內整批換成首播現在的
      （起迄也用首播的，搬進來的 cue 標首播的切法設定），區外重播一律不
      動。區內重播原本的字跟首播修改前、修改後都不同的，或首播這區自己
-     就有重疊的，那一區列要人判、不套，其他區照套。
+     就有重疊的，那一區列要人判、不套，其他區照套；字不同的那幾條重播
+     cue 抽格確認後寫進放行清單（`--accept`），prepare 就照清單套。
    只擋這次新造成的重疊或倒置，重播原本就有的記說明。
 3. `frames`／`check` 抽兩集同一位置的格，遮掉台標、天氣框、人名字卡
    比灰階平均絕對差（MAD），逐格驗收，不花 model token。以「同位移是
@@ -140,8 +146,14 @@ CUE_FIELD = re.compile(r"^([0-9]+)(?:[–-]([0-9]+))?$")
 
 
 def norm(text):
-    """比對用的字：去空白、標點，彎撇直撇視為同一個。"""
+    """比對用的字：去空白、標點，彎撇直撇視為同一個（找錨點、判同一句用）。"""
     return PUNCT.sub("", APOSTROPHES.sub("'", text or ""))
+
+
+def exact(text):
+    """換字用的比對：去空白、標點，彎撇直撇**分開**。215 午首播改成直撇，
+    用 norm 比會當成「字一樣、留重播的 byte」，重播的彎撇就蓋不過去。"""
+    return PUNCT.sub("", text or "")
 
 
 def runs(cues, texts):
@@ -236,19 +248,21 @@ def _deltas(found):
     return out
 
 
-def find_cut(found):
+def find_cut(found, tol=CLUSTER_TOL):
     """照首播時間排，找「前面連續一段是一個位移、後面連續一段是另一個」。
 
     第二群不一定是剪接：182 晨部落信箱首播改過起迄的 6 條跟 41 條交錯，
     那是時間上交錯，不是前後兩段。所以前後各自要有八成落在自己的位移。
+    `tol` 是同一群的寬度，也是前後兩群至少要差多少（用精修前起點核對時
+    放寬到 REFINE_TOL）。
     """
     ordered = sorted(found, key=lambda item: item["src"])
     deltas = _deltas(ordered)
     best = None
     for k in range(CUT_RUN, len(ordered) - CUT_RUN + 1):
-        before, members_before = cluster(deltas[:k])
-        after, members_after = cluster(deltas[k:])
-        if abs(before - after) <= CLUSTER_TOL:
+        before, members_before = cluster(deltas[:k], tol)
+        after, members_after = cluster(deltas[k:], tol)
+        if abs(before - after) <= tol:
             continue
         if len(members_before) < CUT_SHARE * k:
             continue
@@ -494,7 +508,13 @@ BLOCKER_NAMES = {"cut": "剪接", "edit": "剪法不同"}
 
 def with_offset(evidence, offset):
     """`--offset`（像素定位得到的位移）只補位移：證據不足、逐格不一致可以
-    換成指定的位移；剪接、剪法不同的拒絕不能蓋掉。"""
+    換成指定的位移；剪接、剪法不同的拒絕不能蓋掉。
+
+    首播精修過起點的錨點造成的剪接、剪法不同誤判，在 measure_pair 就排除
+    了（要有快照）；排除後仍然是剪接、剪法不同，或精修過的那段看不出有沒
+    有剪接，--offset 照樣蓋不掉。訊息照 `steady` 的結論講：沒給快照的才叫
+    人給 --snaps 重做 prepare（給了快照、兩集都沒有起點動過的錨點，重做也
+    沒有用）。"""
     out = dict(evidence)
     out["reasons"] = list(evidence.get("reasons", []))
     hard = []
@@ -503,8 +523,20 @@ def with_offset(evidence, offset):
             hard.append(BLOCKER_NAMES[kind])
     if hard:
         out["status"] = "rejected"
-        out["reasons"].append("--offset 只補位移，不能蓋掉%s的拒絕"
-                              % "、".join(hard))
+        why = "--offset 只補位移，不能蓋掉%s的拒絕" % "、".join(hard)
+        verdict = (evidence.get("steady") or {}).get("verdict")
+        if verdict == "nothing_moved":
+            why += "（跟兩集最早那份快照比都沒有起點動過的錨點，不是精修造成的）"
+        elif verdict == "unverified":
+            why += ("（排除起點動過的錨點後沒有%s，可是精修過的那段用精修前的起點"
+                    "核對不了，看不出有沒有剪接）" % "、".join(hard))
+        elif evidence.get("steady"):
+            why += "（排除首播精修過、重播自己改過起點的錨點後仍然是%s）" \
+                % "、".join(hard)
+        else:
+            why += ("（量位移時沒有快照，沒排除首播精修過起點的錨點；給 --snaps "
+                    "重做 prepare，才分得出是不是精修造成的誤判）")
+        out["reasons"].append(why)
         return out
     out["reasons"].append("位移由像素定位指定 %.3f（量到 %s）"
                           % (offset, evidence.get("offset")))
@@ -789,11 +821,69 @@ def shrink_range(candidates, texts, tgt_cues, tgt_texts, start, end):
     return start, end, notes, versions
 
 
-def _fit_edges(ported, removed, texts, tgt_texts, notes):
+def _first_edge(source_first, text, fixed, value, loose, off):
+    """首播最早那份快照裡同字、`fixed` 那端相同（加位移後兩格內）的 cue，
+    `loose` 那端的值（加位移）；找不到給 None。"""
+    if source_first is None:
+        return None
+    for item in source_first["book"]["cues"]:
+        theirs = source_first["texts"].get(int(item["index"]), "")
+        if norm(theirs) != norm(text):
+            continue
+        if abs(float(item[fixed]) + off - value) <= EDGE_FRAMES:
+            return float(item[loose]) + off
+    return None
+
+
+def _refined_edge(mine, theirs, loose, kept, tgt_texts):
+    """首播精修過、重播還是舊值的邊緣那端，照首播之前先看重播在那段有沒有
+    自己的字：有字就不行（回傳 None）；只有空白 cue 就把它們修出那段，
+    回傳修短紀錄。修完沒有長度也不行。"""
+    if loose == "end":
+        span = {"start": float(theirs["end"]), "end": float(mine["end"])}
+    else:
+        span = {"start": float(mine["start"]), "end": float(theirs["start"])}
+    blanks = []
+    for item in kept:
+        if overlap(item, span) <= 0.001:
+            continue
+        if norm(tgt_texts.get(int(item["_old"]), "")):
+            return None
+        blanks.append(item)
+    trimmed = []
+    for item in blanks:
+        before = [float(item["start"]), float(item["end"])]
+        if loose == "end":
+            item["start"] = float(mine["end"])
+        else:
+            item["end"] = float(mine["start"])
+        if float(item["start"]) >= float(item["end"]) - 0.0005:
+            item["start"], item["end"] = before
+            for done in trimmed:
+                done["item"]["start"], done["item"]["end"] = done["from"]
+            return None
+        trimmed.append({"item": item, "from": before})
+    out = []
+    for done in trimmed:
+        _clamp_sample(done["item"])
+        out.append({"cue": done["item"]["_old"], "from": done["from"],
+                    "to": [float(done["item"]["start"]),
+                           float(done["item"]["end"])]})
+    return out
+
+
+def _fit_edges(ported, removed, texts, tgt_texts, notes, kept=(),
+               source_first=None, off=0.0):
     """邊緣那條同字、一端相同一端不同：重播在那裡剪掉（較短）時，不同那端
-    用重播的。只縮不伸——重播較長（216「我傻眼」舊切法拉長）時照首播。"""
+    用重播的。只縮不伸——重播較長（216「我傻眼」舊切法拉長）時照首播。
+
+    例外（294 午「所以yungay真的」）：首播最早那份快照（`source_first`）
+    那端跟重播一樣、首播後來精修過——重播是同一種舊切法提早斷開，不是
+    剪掉——就照首播，重播在那段只有空白 cue 的修短（回傳修短紀錄）；
+    重播那段有自己的字照舊用重播的。"""
+    trimmed = []
     if not ported or not removed:
-        return
+        return trimmed
     pairs = ((ported[-1], removed[-1], "end", "start"),
              (ported[0], removed[0], "start", "end"))
     for mine, theirs, loose, fixed in pairs:
@@ -810,11 +900,26 @@ def _fit_edges(ported, removed, texts, tgt_texts, notes):
             if loose == "end" else float(theirs[loose]) > float(mine[loose])
         if not shorter:
             continue
+        which = "迄點" if loose == "end" else "起點"
+        old = _first_edge(source_first, text, fixed, float(mine[fixed]),
+                          loose, off)
+        if old is not None and abs(old - float(theirs[loose])) \
+                <= EDGE_FRAMES:
+            done = _refined_edge(mine, theirs, loose, kept, tgt_texts)
+            if done is not None:
+                trimmed += done
+                values = (text[:10], which, float(mine[loose]), old,
+                          float(theirs[loose]))
+                notes.append("邊緣 cue「%s」%s照首播 %.3f：首播精修過（最早那份"
+                             "快照是 %.3f，跟重播的 %.3f 一樣，是舊切法提早斷"
+                             "開）" % values)
+                continue
         notes.append("邊緣 cue「%s」%s用重播的 %.3f（首播搬過來是 %.3f）"
-                     % (text[:10], "迄點" if loose == "end" else "起點",
-                        float(theirs[loose]), float(mine[loose])))
+                     % (text[:10], which, float(theirs[loose]),
+                        float(mine[loose])))
         mine[loose] = float(theirs[loose])
         _clamp_sample(mine)
+    return trimmed
 
 
 def _cut_away(item, other):
@@ -1000,8 +1105,36 @@ def _drifted(removed, ported, texts, tgt_texts):
     return out
 
 
+def _tail_from_before(src_book, src_texts, lo):
+    """跨過範圍起點那句的句尾：首播相連同字的一句大半在 lo 之前（那句的
+    中點在 lo 之前），範圍內那幾條（中點在 lo 之後）的號碼和那句起點。
+    006 晨 cue 232「一起來看」739.005–739.422 是 231（737.486 起）那句的
+    句尾。節目第一句只比 lo 早一點點開始的，照搬。"""
+    ordered = sorted(src_book["cues"], key=lambda item: float(item["start"]))
+    for run in runs(ordered, src_texts):
+        if not run["text"] or run["end"] <= lo \
+                or (run["start"] + run["end"]) / 2.0 >= lo:
+            continue
+        numbers = []
+        for item in ordered:
+            if int(item["index"]) in run["cues"] and _middle(item) >= lo:
+                numbers.append(int(item["index"]))
+        if numbers:
+            return numbers, run["start"]
+    return [], None
+
+
+def _last_text_end(candidates, texts):
+    last = None
+    for item in candidates:
+        if norm(texts.get(int(item["_src"]), "")):
+            if last is None or float(item["end"]) > last:
+                last = float(item["end"])
+    return last
+
+
 def port(src_book, src_texts, tgt_book, tgt_texts, lo, hi, off, items=None,
-         agree=None):
+         agree=None, source_first=None):
     """首播 `[lo, hi)` 整段搬去重播：範圍縮、邊緣、重疊、換、重編號。
 
     `items` 是工作檔 items 的秒數（重播時間）：首播有字、重播那段沒有 cue
@@ -1015,18 +1148,42 @@ def port(src_book, src_texts, tgt_book, tgt_texts, lo, hi, off, items=None,
     `agree` 是錨點在一格內的比例：超過一半時，範圍裡少數跟首播相似但時間
     錯開的句子算重播自己的時間軸錯（216 舊花字切法「這個是日本人造的橋」
     差 3.29 秒），不擋、記說明；None 或不到一半照樣擋（別的版本）。
+
+    範圍兩端：跨過範圍起點那句的句尾不搬（`_tail_from_before`）；首播最後
+    一條有字 cue 結束之後重播才開始的有字 cue（節目收尾），範圍迄點收到
+    那條首播 cue 的迄點。`source_first` 是首播最早那份快照（邊緣 cue 判斷首播有沒有
+    精修過，見 `_fit_edges`）。
     """
     candidates = []
+    tail, said = _tail_from_before(src_book, src_texts, lo)
+    notes = []
+    if tail:
+        values = (_numbers_text(tail), src_texts.get(tail[0], "")[:16], said)
+        notes.append("起點：首播 cue %s「%s」是範圍前那句（%.3f 起）的句尾，"
+                     "不搬" % values)
     for item in src_book["cues"]:
-        if lo <= _middle(item) < hi:
+        if lo <= _middle(item) < hi and int(item["index"]) not in tail:
             moved = _shift(item, off)
             moved["_src"] = int(item["index"])
             candidates.append(moved)
     if not candidates:
         raise PipelineError("首播 %.3f–%.3f 秒內沒有 cue" % (lo, hi))
-    start, end, notes, versions = shrink_range(
+    last_end = _last_text_end(candidates, src_texts)
+    limit = hi + off
+    if last_end is not None and last_end < limit:
+        for item in tgt_book["cues"]:
+            text = tgt_texts.get(int(item["index"]), "")
+            if norm(text) and float(item["start"]) >= last_end - TOL \
+                    and _middle(item) < limit:
+                notes.append("迄點 %.3f→%.3f：首播最後一條有字的 cue 到這裡為止，"
+                             "之後重播自己的 cue %d「%s」（節目收尾）留著"
+                             % (limit, last_end, item["index"], text[:16]))
+                limit = last_end
+                break
+    start, end, more, versions = shrink_range(
         candidates, src_texts, tgt_book["cues"], tgt_texts, lo + off,
-        hi + off)
+        limit)
+    notes += more
     ported = []
     for item in candidates:
         if start <= _middle(item) < end:
@@ -1061,8 +1218,9 @@ def port(src_book, src_texts, tgt_book, tgt_texts, lo, hi, off, items=None,
             raise PipelineError("首播有字、重播那段沒有 cue，又不在工作檔 items"
                                 " 範圍內（可能是首播自己的主播或別的節目）：%s"
                                 % "；".join(shown))
-    _fit_edges(ported, removed, src_texts, tgt_texts, notes)
-    trimmed = _resolve_overlaps(kept, ported, src_texts, tgt_texts)
+    trimmed = _fit_edges(ported, removed, src_texts, tgt_texts, notes, kept,
+                         source_first, off)
+    trimmed += _resolve_overlaps(kept, ported, src_texts, tgt_texts)
 
     merged = kept + ported
     merged.sort(key=lambda item: (float(item["start"]), float(item["end"])))
@@ -1096,13 +1254,36 @@ def port(src_book, src_texts, tgt_book, tgt_texts, lo, hi, off, items=None,
             "removed_cues": _strip(removed), "trimmed": trimmed,
             "notes": notes, "texts": texts, "all_texts": every,
             "added": added, "changed": changed, "ask": ask,
-            "replaced": replaced_span(ported, removed, src_texts, tgt_texts)}
+            "replaced": replaced_span(ported, removed, src_texts, tgt_texts),
+            "replaced_cues": replaced_cues(ported, removed, src_texts,
+                                           tgt_texts)}
 
 
 def replaced_span(ported, removed, src_texts, tgt_texts):
     """整段搬真的有換到的地方（重播時間）：搬進來的 cue 跟重播原本某條起迄
     一格內、字相同，就是沒換；其餘搬進來的和沒對上的原本 cue，最早的起點
     到最晚的迄點。全部相同給 None。像素驗收的邊界點放在它外側。"""
+    moments = _replaced_moments(ported, removed, src_texts, tgt_texts)
+    if not moments:
+        return None
+    first = min(moments)[0]
+    last = max(moments, key=lambda pair: pair[1])[1]
+    return [round(first, 3), round(last, 3)]
+
+
+def replaced_cues(ported, removed, src_texts, tgt_texts):
+    """最早、最晚被換的那一條（重播時間的起迄）：[[起, 迄], [起, 迄]]；
+    全部相同給 None。邊界點落在範圍頭尾 4 秒內不取時，改在這兩條中間抽。"""
+    moments = _replaced_moments(ported, removed, src_texts, tgt_texts)
+    if not moments:
+        return None
+    first = min(moments)
+    last = max(moments, key=lambda pair: (pair[1], pair[0]))
+    return [[round(first[0], 3), round(first[1], 3)],
+            [round(last[0], 3), round(last[1], 3)]]
+
+
+def _replaced_moments(ported, removed, src_texts, tgt_texts):
     matched = set()
     moments = []
     for item in ported:
@@ -1123,11 +1304,7 @@ def replaced_span(ported, removed, src_texts, tgt_texts):
     for k, old in enumerate(removed):
         if k not in matched:
             moments.append((float(old["start"]), float(old["end"])))
-    if not moments:
-        return None
-    first = min(moments)[0]
-    last = max(moments, key=lambda pair: pair[1])[1]
-    return [round(first, 3), round(last, 3)]
+    return moments
 
 
 def _strip(items):
@@ -1159,7 +1336,7 @@ def _audit(cues, mapped, texts, removed, tgt_texts):
             continue
         same = False
         for text in theirs:
-            if norm(text) == norm(mine):
+            if exact(text) == exact(mine):
                 same = True
         if not same:
             changed.append(number)
@@ -1472,15 +1649,20 @@ def _pair_cue(work, inside, used, new):
     old = work[best]
     close = abs(float(old["start"]) - float(new["start"])) <= TOL \
         and abs(float(old["end"]) - float(new["end"])) <= TOL
-    same = norm(old["_text"]) == norm(new["_text"])
+    same = exact(old["_text"]) == exact(new["_text"])
     if same and not close and size < 0.5 * min(_length(old), _length(new)):
         same = False
     return best, close, same
 
 
 def _zone_one(work, zone, before, before_texts, after, after_texts, lo, hi,
-              off):
-    """一區套到重播（work 會被改）：("applied"|"same"|"ask", 說明)。"""
+              off, accepted=frozenset()):
+    """一區套到重播（work 會被改）：("applied"|"same"|"ask", 說明)。
+
+    區內重播的字跟首播修改前、修改後都不同的那幾條（`ask_cues`，重播
+    原本的號）全部在放行清單 `accepted` 裡，就照首播現在的套（說明記
+    `accepted`）；其他要人判的原因（找不到安全邊、區邊切到有字的 cue、
+    首播範圍外的字、首播自己有重疊）放行清單放不了。"""
     first, last = zone["lo"], zone["hi"]
     start, end = first + off, last + off
     kinds = []
@@ -1529,18 +1711,36 @@ def _zone_one(work, zone, before, before_texts, after, after_texts, lo, hi,
                               work[k]["_text"][:16]))
             return "ask", info
     earlier = _version_cues(before, before_texts, first, last, off)
+    differ = []
+    shown_why = None
     for k in inside:
         text = work[k]["_text"]
         if not norm(text) or _agrees(work[k], text, earlier) \
                 or _agrees(work[k], text, fresh):
             continue
-        theirs = _overlapping_texts(work[k], earlier)
-        info["why"] = ("字不同：重播 cue %s「%s」，首播修改前是「%s」、現在是「%s」"
-                       % (work[k].get("_old") or "（新）", text[:20],
-                          "／".join(theirs)[:30] or "（沒有字）",
-                          "／".join(_overlapping_texts(work[k], fresh))[:30]
-                          or "（沒有字）"))
-        return "ask", info
+        differ.append(work[k].get("_old"))
+        if shown_why is None:
+            theirs = _overlapping_texts(work[k], earlier)
+            shown_why = ("字不同：重播 cue %s「%s」，首播修改前是「%s」、現在是"
+                         "「%s」"
+                         % (work[k].get("_old") or "（新）", text[:20],
+                            "／".join(theirs)[:30] or "（沒有字）",
+                            "／".join(_overlapping_texts(work[k], fresh))[:30]
+                            or "（沒有字）"))
+    if differ:
+        numbers = []
+        for number in differ:
+            if number:
+                numbers.append(number)
+        if len(numbers) < len(differ) or not set(numbers) <= set(accepted):
+            info["ask_cues"] = numbers
+            info["why"] = ("%s（共 %d 條字不同：重播 cue %s；抽格確認首播現在的字"
+                           "對，就把這幾條寫進放行清單，prepare 加 --accept 重做）"
+                           % (shown_why, len(differ),
+                              _numbers_text(numbers)))
+            return "ask", info
+        info["accepted"] = numbers
+        info["accepted_why"] = shown_why
     for item in fresh:
         if not norm(item["_text"]) or lo <= _middle(item) - off < hi:
             continue
@@ -1599,6 +1799,8 @@ def _zone_one(work, zone, before, before_texts, after, after_texts, lo, hi,
                 item["start"] = round(end, 3)
             _clamp_sample(item)
         others.append(item)
+    for item in built:
+        item["_built"] = True
     kept = []
     for item in built:
         for other in others:
@@ -1626,26 +1828,78 @@ def _zone_one(work, zone, before, before_texts, after, after_texts, lo, hi,
     for key in sorted(problems, key=str):
         if key in old:
             continue
-        shown = []
-        for k in range(1, len(key), 2):
-            shown.append("%.3f–%.3f" % (key[k] - off, key[k + 1] - off))
-        info["why"] = ("首播這一區自己的時間軸有%s（首播 %s），搬過來會在重播"
-                       "造成新的%s" % (key[0], " 跟 ".join(shown), key[0]))
+        info["why"] = _problem_why(key, candidate, work, off)
         return "ask", info
     work[:] = candidate
     info["new"] = len(kept)
     return "applied", info
 
 
+def _problem_why(key, candidate, work, off):
+    """區套上去之後新出現的重疊、倒置，講清楚是哪幾條：首播搬進來的（首播
+    秒數）還是重播自己留著的（重播秒數、重播原本的號）。244 晚→309、094
+    報「首播這一區自己的時間軸有重疊（首播 2112.811–2113.595…）」，首播
+    那裡其實沒有重疊——是重播原本就重疊的兩條跨過區邊、修到區外後仍然
+    重疊，秒數是重播的舊切點減位移。"""
+    involved = []
+    for k in range(1, len(key), 2):
+        found = None
+        for item in candidate:
+            if round(float(item["start"]), 3) != key[k] \
+                    or round(float(item["end"]), 3) != key[k + 1]:
+                continue
+            taken = False
+            for other in involved:
+                if other is item:
+                    taken = True
+            if not taken:
+                found = item
+                break
+        involved.append(found)
+    shown = []
+    built = 0
+    olds = []
+    for k, item in enumerate(involved):
+        start, end = key[1 + 2 * k], key[2 + 2 * k]
+        if item is not None and item.get("_built"):
+            built += 1
+            shown.append("首播 %.3f–%.3f" % (start - off, end - off))
+        else:
+            number = item.get("_old") if item is not None else None
+            if number:
+                olds.append(number)
+            shown.append("重播 cue %s（重播 %.3f–%.3f）"
+                         % (number or "（區邊切出來的一段）", start, end))
+    if built == len(involved):
+        return ("首播這一區自己的時間軸有%s（%s），搬過來會在重播造成新的%s"
+                % (key[0], " 跟 ".join(shown), key[0]))
+    before = timeline_problems(_cues_numbered(work, olds))
+    again = ""
+    if len(olds) >= 2 and before:
+        again = "；重播 cue %s 原本就重疊" % _numbers_text(olds)
+    values = (key[0], " 跟 ".join(shown), key[0], again)
+    return ("區套上去之後有%s：%s。首播自己在這裡沒有%s，是重播留在區外的 cue "
+            "修邊之後撞上%s，要人看" % values)
+
+
+def _cues_numbered(work, numbers):
+    out = []
+    for item in work:
+        if item.get("_old") in numbers:
+            out.append(item)
+    return out
+
+
 def zone_port(before, before_texts, after, after_texts, tgt_book, tgt_texts,
-              lo, hi, off):
+              lo, hi, off, accepted=frozenset()):
     """分區搬：首播修改前快照（before）→ 首播現在（after）在 `[lo, hi)`
     有差的地方併成區、擴到安全邊；區內重播的 cue 整批換成首播現在的（加
     位移），區外重播一律不動。
 
     - 區內重播有字、跟首播修改前和修改後都不同（重播讀到首播沒有的「但是
       遇到風雨」「部落信箱」，或字形不同「漁撈」對「魚撈」）：這一區列
-      `ask`、不套，其他區照套。跟首播現在一樣的算已經一樣。
+      `ask`、不套，其他區照套。跟首播現在一樣的算已經一樣。這幾條重播
+      cue 都在放行清單 `accepted`（人抽格確認過首播現在的字對）就照套。
     - 區內起迄一律用首播現在的（只留幾條重播起迄會跟隔壁首播的 cue 疊
       0.034 秒）；換進來的 cue 跟重播原本那條字一樣：留重播的身分、byte
       和圖條，TSV 列不動。
@@ -1662,7 +1916,7 @@ def zone_port(before, before_texts, after, after_texts, tgt_book, tgt_texts,
     same = []
     for zone in zones:
         outcome, info = _zone_one(work, zone, before, before_texts, after,
-                                  after_texts, lo, hi, off)
+                                  after_texts, lo, hi, off, accepted)
         {"applied": applied, "ask": ask, "same": same}[outcome].append(info)
     cues = []
     moves = {}
@@ -1754,6 +2008,68 @@ def blank_in_target(after, after_texts, tgt_book, tgt_texts, lo, hi, off,
     return out
 
 
+REVERTED_KIND = "首播改了又改回、重播還是中間版"
+
+
+def reverted_in_target(versions, after, after_texts, tgt_book, tgt_texts, lo,
+                       hi, off, zones):
+    """首播「改了又改回」：中間某份快照（`versions`：[(標籤, load 結果)]，
+    不含最早那份）在 `[lo, hi)` 有一句字，首播現在同一段沒有這句，那句
+    又不碰任何區（最早那份 → 現在沒差，分區搬看不到），重播同一段（加
+    位移）卻有 cue 正是那句。086 午章節標題字卡 cf1028 那輪加了阿美語、
+    後來又拿掉，從 086 搬過阿美語的重播留著，舊做法一句都不報。只列出
+    來，不搬。
+
+    [{src, tgt, tag, text（中間版的字）, now（首播現在那裡的字）,
+    target_cues}]，照時間排；同一條重播 cue 只報一次。"""
+    spans = []
+    for zone in zones:
+        spans.append(zone["src"])
+    now_runs = runs(after["cues"], after_texts)
+    seen = set()
+    out = []
+    for tag, loaded in versions:
+        texts = loaded["texts"]
+        for run in runs(loaded["book"]["cues"], texts):
+            if not run["text"] \
+                    or not lo <= (run["start"] + run["end"]) / 2 < hi:
+                continue
+            hit = False
+            for first, last in spans:
+                if run["start"] < last - 0.0005 \
+                        and run["end"] > first + 0.0005:
+                    hit = True
+            if hit:
+                continue
+            now = []
+            kept = False
+            for other in now_runs:
+                if overlap(other, run) <= 0.0005:
+                    continue
+                if other["text"] == run["text"]:
+                    kept = True
+                now.append(after_texts.get(other["cues"][0], ""))
+            if kept:
+                continue
+            shifted = {"start": run["start"] + off, "end": run["end"] + off}
+            found = []
+            for item in tgt_book["cues"]:
+                number = int(item["index"])
+                if overlap(item, shifted) > 0.0005 and number not in seen \
+                        and norm(tgt_texts.get(number, "")) == run["text"]:
+                    found.append(number)
+            if not found:
+                continue
+            seen.update(found)
+            out.append({"src": [round(run["start"], 3), round(run["end"], 3)],
+                        "tgt": [round(shifted["start"], 3),
+                                round(shifted["end"], 3)],
+                        "tag": tag, "text": texts.get(run["cues"][0], ""),
+                        "now": "／".join(now), "target_cues": found})
+    out.sort(key=lambda entry: entry["src"][0])
+    return out
+
+
 def items_status(items, applied, asked, blank=()):
     """工作檔 items（重播秒數）哪幾項沒做到：有對應的區但列要人判
     （status ask，附原因）、落在首播有字重播沒字那裡（status blank，附
@@ -1829,10 +2145,9 @@ def zone_fixes(rows, src_name, tgt_name, result):
       首播的修改蓋掉）。
     - 首播的列（manual-fixes 和 pending-fixes 轉來的）：照字對，不照號——
       「改後」在新字裡、「改前」在重播原本的字裡的，抄一份給重播。
+
+    改後是（留空）的，同時段新時間軸有一條有字就擋（`_fix_target`）。
     """
-    by_number = {}
-    for item in result["cues"]:
-        by_number[item["index"]] = item
     gone = {}
     for item in result["removed_cues"]:
         gone[item["index"]] = item
@@ -1846,6 +2161,7 @@ def zone_fixes(rows, src_name, tgt_name, result):
             raise PipelineError("manual-fixes 看不懂的 cue 欄：%s %r"
                                 % (tgt_name, row[1]))
         news = []
+        rescued = False
         for number in _cue_list(parsed):
             if number in result["moves"]:
                 news.append(result["moves"][number])
@@ -1853,19 +2169,20 @@ def zone_fixes(rows, src_name, tgt_name, result):
             if number not in gone:
                 raise PipelineError("manual-fixes %s cue %d 在新時間軸找不到"
                                     % (tgt_name, number))
-            found = None
-            for new in result["fresh"]:
-                if overlap(by_number[new], gone[number]) > 0 and row[3] \
-                        and row[3] in result["texts"].get(new, ""):
-                    found = new
-                    break
+            found = _fix_target(row[3], gone[number],
+                                _fix_candidates(result), result)
             if found is None:
                 raise PipelineError(
                     "重播 %s cue %d 自己的訂正「%s→%s」會被首播的修改蓋掉；要人看"
                     % (tgt_name, number, row[2], row[3]))
             news.append(found)
-        out.append([row[0], _format_cues(min(news), max(news))]
-                   + list(row[2:]))
+            rescued = True
+        moved = [row[0], _format_cues(min(news), max(news))] + list(row[2:])
+        if rescued and moved in out:
+            # 同一句被切成兩條、各有一列一樣的訂正（012 晚），併成一條後
+            # 只留一列。
+            continue
+        out.append(moved)
     for row in rows:
         if row[0] != src_name or len(row) < 4 or not row[3]:
             continue
@@ -1884,6 +2201,78 @@ def zone_fixes(rows, src_name, tgt_name, result):
     return out
 
 
+def _fix_candidates(result):
+    """訂正那條被換掉時，到哪些新 cue 找「改後」：搬進來的（fresh），和
+    保留重播身分的（moves；146 午首播同時段那條字跟重播一樣，另一條留了
+    重播的身分）。"""
+    out = list(result["fresh"])
+    for number in sorted(result["moves"].values()):
+        if number not in out:
+            out.append(number)
+    return out
+
+
+BLANK_MARKS = ("", "（留空）", "（空白）")
+
+
+def _blank(after):
+    return after.strip() in BLANK_MARKS
+
+
+def _fix_holds(after, text):
+    """訂正的「改後」在這條新字裡成立：改後是空白（空字串、（留空）、
+    （空白））就看新字是不是空白——020 晚「賀 額得減肥成功→（留空）」首播
+    同處也空白，舊寫法 `row[3] and row[3] in text` 對空字串永遠不成立。
+
+    空白的改後只看這一條不夠，要用 `_fix_target`：同時段還有首播有字的
+    cue 時，空白的鄰居不算數。"""
+    if _blank(after):
+        return not norm(text)
+    return after in text
+
+
+def _fix_target(after, old, numbers, result, last=False):
+    """重播舊 cue `old` 的訂正（改後 `after`）在新時間軸改號到哪一條：
+    `numbers` 是候選新號，跟 `old` 同時段（重疊 > 0）、`_fix_holds` 成立的
+    那條；`last` 是有好幾條成立時取最後一條（整段搬的舊寫法），否則取第
+    一條。找不到給 None。
+
+    改後是空白時，新時間軸跟 `old` 同時段（重疊超過一格）只要有一條有字
+    的 cue，就是首播同處有字、重播的（留空）會被蓋掉，給 None——不可以
+    改號到只跟舊 cue 尾巴重疊 0.3 秒的空白鄰居（審查合成重現）；全是空白
+    才改號，取重疊最多的那條。"""
+    by_number = {}
+    for item in result["cues"]:
+        by_number[item["index"]] = item
+    if _blank(after):
+        for item in result["cues"]:
+            if overlap(item, old) > TOL \
+                    and norm(_new_text(result, item["index"])):
+                return None
+        best = None
+        size = 0.0
+        for number in numbers:
+            got = overlap(by_number[number], old)
+            if got > size and not norm(_new_text(result, number)):
+                best = number
+                size = got
+        return best
+    found = None
+    for number in numbers:
+        if overlap(by_number[number], old) > 0 \
+                and _fix_holds(after, _new_text(result, number)):
+            found = number
+            if not last:
+                break
+    return found
+
+
+def _new_text(result, number):
+    if number in result.get("texts", {}):
+        return result["texts"][number]
+    return result.get("all_texts", {}).get(number, "")
+
+
 def source_pending_rows(lines, src_slug, src_name):
     """pending-fixes.txt 裡首播帶 cue 號的 sed → manual-fixes 五欄列（分區
     搬照字對，號碼只留著給人看）。"""
@@ -1897,10 +2286,27 @@ def source_pending_rows(lines, src_slug, src_name):
     return out
 
 
-def port_areas(tgt_areas, src_areas, ported, kept, texts=None, notes=None):
-    """整段搬：搬進來的 cue 用到的區域類型，抄首播那一格；重播範圍外還有
-    **有字的** cue 用同類型的別種設定 → 擋（一個類型只記一格）。範圍外只
-    剩空白 cue 用舊設定的（254 舊 cue 710 那種），換成首播的、記進 notes。
+def _free_name(areas, kind, want, src_name):
+    """首播設定在重播 areas 裡不衝突的名字：「島語時間（20240315_075）」，
+    再衝突就加 -2…。"""
+    base = "%s（%s）" % (kind, src_name[:12])
+    name = base
+    number = 1
+    while areas.get(name) is not None and areas[name] != want:
+        number += 1
+        name = "%s-%d" % (base, number)
+    return name
+
+
+def port_areas(tgt_areas, src_areas, ported, kept, texts=None, notes=None,
+               src_name=None):
+    """整段搬：搬進來的 cue 用到的區域類型，抄首播那一格。一個類型只記一
+    格，所以重播範圍外還有**有字的** cue 用同類型的別種設定時（358 晨範圍
+    外還有一段鄒語島語時間用 island，首播這段是 flower；172 晚兩段帶外
+    專題），首播的設定另存一個不衝突的名字（像分區搬的 zone_areas），
+    搬進來的 cue（`ported` 會被改）標那個名字；沒給 `src_name` 照舊擋。
+    範圍外只剩空白 cue 用舊設定的（254 舊 cue 710 那種），換成首播的、
+    記進 notes。
 
     `kept` 的 `index` 要是重播現在的號（訊息給人對照用）；`texts` 是重播
     現在的字（None 表示一律當有字）。
@@ -1918,6 +2324,7 @@ def port_areas(tgt_areas, src_areas, ported, kept, texts=None, notes=None):
         have = out.get(kind)
         if have is not None and have != want:
             blanks = []
+            texted = []
             for item in kept:
                 if item.get("area") != kind:
                     continue
@@ -1925,9 +2332,26 @@ def port_areas(tgt_areas, src_areas, ported, kept, texts=None, notes=None):
                 if texts is not None and not norm(texts.get(number, "")):
                     blanks.append(number)
                     continue
+                texted.append(number)
+            if texted and src_name is None:
                 raise PipelineError(
                     "areas 衝突：重播範圍外還有 cue %s 用「%s」%s，首播是 %s"
-                    % (number, kind, have.get("preset"), want.get("preset")))
+                    % (texted[0], kind, have.get("preset"),
+                       want.get("preset")))
+            if texted:
+                name = _free_name(out, kind, want, src_name)
+                out[name] = want
+                for item in ported:
+                    if item.get("area") == kind:
+                        item["area"] = name
+                if notes is not None:
+                    notes.append("重播範圍外 cue %s 用「%s」%s %s 切（照舊）；搬進"
+                                 "來的是首播用 %s %s 切的，首播的設定另存成「%s」"
+                                 % (_numbers_text(texted), kind,
+                                    have.get("preset"), have.get("region"),
+                                    want.get("preset"), want.get("region"),
+                                    name))
+                continue
             if blanks and notes is not None:
                 notes.append("範圍外空白 cue %s 原本用「%s」%s，areas 換成首播的 "
                              "%s" % (_numbers_text(blanks), kind,
@@ -2036,7 +2460,7 @@ def new_book(tgt_book, src_book, result, src_name, lo, hi, off,
                 if not item.get("area"):
                     item["area"] = top
         book["areas"] = port_areas(tgt_book.get("areas"), src_areas,
-                                   ported, kept, tgt_texts, notes)
+                                   ported, kept, tgt_texts, notes, src_name)
     if not book["areas"]:
         del book["areas"]
     book["cues"] = result["cues"]
@@ -2183,11 +2607,9 @@ def port_fixes(rows, src_name, tgt_name, tgt_cues, result):
                                 % (tgt_name, row[1]))
         hits = []
         for number in inside:
-            found = None
-            for new in _new_cue_overlapping(result, old_cues[number]):
-                text = result["texts"].get(new, "")
-                if row[3] and row[3] in text:
-                    found = new
+            found = _fix_target(row[3], old_cues[number],
+                                _new_cue_overlapping(result, old_cues[number]),
+                                result, last=True)
             if found is None:
                 covers = []
                 for new in _new_cue_overlapping(result, old_cues[number]):
@@ -2587,9 +3009,39 @@ def _sed_rows(expr):
     return out
 
 
-def port_pending(lines, src_slug, tgt_slug, src_name, tgt_name, result):
+def _held_inside(expr, inside, result, tgt_cues):
+    """重播範圍內那幾條的 sed，首播搬進來同時段那條字已經是 sed 的結果：
+    {重播舊號: 新號}；有一條不成立、或沒給 tgt_cues，給 None。"""
+    if not tgt_cues:
+        return None
+    old_cues = {}
+    for item in tgt_cues:
+        old_cues[int(item["index"])] = item
+    found = {}
+    for cue, _old, new in _sed_rows(expr):
+        if cue not in inside:
+            continue
+        if cue not in old_cues:
+            return None
+        hit = _fix_target(new, old_cues[cue],
+                          _new_cue_overlapping(result, old_cues[cue]), result)
+        if hit is None:
+            return None
+        found[cue] = hit
+    for cue in inside:
+        if cue not in found:
+            return None
+    return found
+
+
+def port_pending(lines, src_slug, tgt_slug, src_name, tgt_name, result,
+                 tgt_cues=None):
     """pending-fixes.txt（slug、sed、理由三欄）：重播帶 cue 號的，範圍外改號、
-    範圍內擋；首播範圍內帶 cue 號的，轉成重播的 manual-fixes 列。"""
+    範圍內擋；首播範圍內帶 cue 號的，轉成重播的 manual-fixes 列。
+
+    重播範圍內的 sed，首播搬進來同時段那條字已經是 sed 的「改後」（020 晚
+    的兩列）就改號到那條新 cue，不擋（要給 `tgt_cues`：重播原本的時間軸，
+    找同時段用）。"""
     out = []
     extra = []
     removed = set(result["removed"])
@@ -2602,16 +3054,21 @@ def port_pending(lines, src_slug, tgt_slug, src_name, tgt_name, result):
         numbers = _sed_cues(expr)
         if slug == tgt_slug and numbers:
             inside = sorted(numbers & removed)
+            moves = result["moves"]
             if inside:
-                raise PipelineError(
-                    "pending-fixes 重播 %s 範圍內的 cue %s 有組裝前的 sed，要人看："
-                    "%s" % (tgt_name, inside, expr))
+                held = _held_inside(expr, inside, result, tgt_cues)
+                if held is None:
+                    raise PipelineError(
+                        "pending-fixes 重播 %s 範圍內的 cue %s 有組裝前的 sed，"
+                        "首播搬進來的字不是 sed 的結果，要人看：%s"
+                        % (tgt_name, inside, expr))
+                moves = dict(moves)
+                moves.update(held)
             for number in numbers:
-                if number not in result["moves"]:
+                if number not in moves:
                     raise PipelineError("pending-fixes %s cue %d 在新時間軸找不到"
                                         % (tgt_name, number))
-            out.append("\t".join([slug, _renumber_sed(expr, result["moves"]),
-                                  why]))
+            out.append("\t".join([slug, _renumber_sed(expr, moves), why]))
             continue
         out.append(line)
         if slug == src_slug and numbers:
@@ -2637,9 +3094,42 @@ SAME_ROW = ("類型", "單元語別", "字幕上緣y", "字幕下緣y", segments
             segments.SPEECH)
 
 
-def port_segments(tgt_rows, src_rows, start, end, off, snap=SEG_SNAP):
+def episode_language(name):
+    """集名最後那段中文族名（`…_SaySiyat_賽夏` → 賽夏）：段落表的預設
+    單元語別，也就是這集自己的新聞那幾列的語別。"""
+    return str(name).rsplit("_", 1)[-1]
+
+
+def _own_news_language(row, lo, hi, tgt_rows, src_language, tgt_language):
+    """首播這一列搬到重播 `[lo, hi)` 該寫哪個單元語別。
+
+    首播這列的語別就是首播那集的族語、重播被換掉的列全是重播自己的新聞
+    （攝影棚、外景新聞這類 NOT_UNIT）而且是重播那集的族語：那是重播自己
+    新聞裡的段（187 晚←172 晚的歌詞帶外專題），寫重播的語別。其他（島語
+    時間、整段重播的帶外專題單元）照首播。"""
+    language = row.get("單元語別") or ""
+    if not src_language or not tgt_language or src_language == tgt_language:
+        return language
+    if language != src_language:
+        return language
+    covered = False
+    for old in tgt_rows:
+        if min(float(old["迄秒"]), hi) - max(float(old["起秒"]), lo) <= 0.0005:
+            continue
+        covered = True
+        if old["類型"] not in NOT_UNIT \
+                or (old.get("單元語別") or "") != tgt_language:
+            return language
+    return tgt_language if covered else language
+
+
+def port_segments(tgt_rows, src_rows, start, end, off, snap=SEG_SNAP,
+                  src_language=None, tgt_language=None):
     """重播 `[start, end)` 那幾列換成首播那幾列（加位移），新列邊跟重播
-    原本的列邊差 ≤ 3 秒就用重播的，相同的相鄰列併成一列。每列補「依據」。"""
+    原本的列邊差 ≤ 3 秒就用重播的，相同的相鄰列併成一列。每列補「依據」。
+
+    `src_language`、`tgt_language`（兩集的族語，`episode_language`）給了，
+    重播自己新聞裡的段沿用重播的語別（`_own_news_language`）。"""
     edges = []
     for row in tgt_rows:
         edges.append(float(row["起秒"]))
@@ -2655,6 +3145,10 @@ def port_segments(tgt_rows, src_rows, start, end, off, snap=SEG_SNAP):
         if hi > lo:
             fresh = dict(row)
             fresh["依據"] = "人工"
+            language = _own_news_language(row, lo, hi, tgt_rows,
+                                          src_language, tgt_language)
+            if language != (row.get("單元語別") or ""):
+                fresh["單元語別"] = language
             pieces.append([lo, hi, fresh, True])
     for row in tgt_rows:
         lo, hi = float(row["起秒"]), float(row["迄秒"])
@@ -2756,7 +3250,9 @@ def probe_points(result, off, holes=(), frame=FRAME):
     cue 就不取）。落在節目範圍外、或範圍頭尾 4 秒內的不取：範圍頭尾常是
     片頭動畫、片頭字卡、主播棚，兩集本來就不同（227→216 起點內側 MAD
     41.15、迄點內側 82.93；332→151 起點後 1.89 秒 19.19，332→089 到起點後
-    3.29 秒才對得上）。範圍內
+    3.29 秒才對得上）。整段搬那一端的邊界點因此不取時，改在第一條（最後
+    一條）被換的 cue 中間抽一點（kind edge_cue，照邊界點判）：範圍起點落在
+    主播引言、重播正確的 cue 被換掉（343 晚），那裡兩集畫面不同就擋。範圍內
     超過 60 秒沒有錨點的洞，洞中間一點。
     """
     by_number = {}
@@ -2782,6 +3278,7 @@ def probe_points(result, off, holes=(), frame=FRAME):
         if result.get("replaced"):
             first, last = result["replaced"]
             edges = [first - PROBE_EDGE, last + PROBE_EDGE]
+    ends = result.get("replaced_cues") or [None, None]
     if not spans:
         spans = [[start, end]]
     total = 0.0
@@ -2819,9 +3316,16 @@ def probe_points(result, off, holes=(), frame=FRAME):
             continue
         out.append(_zone_probe(first, last, focus + fresh, by_number, off,
                                frame))
-    for moment in edges:
+    for side, moment in enumerate(edges):
         if start + PROBE_END <= moment <= end - PROBE_END:
             out.append(_probe(moment, off, "edge", frame))
+        elif "applied" not in result and ends[side]:
+            # 邊界點落在範圍頭尾不取（片頭字卡、主播棚兩集本來就不同）；
+            # 被換的那一條本身也在那裡（343 晚：範圍起點落在主播引言，
+            # 重播正確的 cue 被換成首播的短 cue），就在它中間抽一點，照
+            # 邊界點判。
+            first, last = ends[side]
+            out.append(_probe((first + last) / 2.0, off, "edge_cue", frame))
     for lo, hi in holes:
         out.append(_probe((lo + hi) / 2.0 + off, off, "hole", frame))
     return out
@@ -2935,7 +3439,8 @@ def judge_frames(points):
     total = collections.Counter()
     shown = collections.defaultdict(list)
     for point in used:
-        group = "edge" if point["kind"] == "edge" else "inside"
+        group = "edge" if point["kind"] in ("edge", "edge_cue") \
+            else "inside"
         kind = _verdict_of(point, limit)
         total[group] += 1
         counts[(group, kind)] += 1
@@ -3257,8 +3762,196 @@ def unit_range(table, second):
     raise PipelineError("首播段落表沒有包含 %.3f 秒的列" % second)
 
 
-def measure_pair(source, target, lo, hi):
-    """兩集已經 load 好：算錨點、whisper，判斷位移。"""
+UNIT_SHARE = 1.0 / 3.0       # 第二段分到第一段幾成以上就算 items 跨兩段
+UNIT_POINT = 1.0             # 工作檔只寫一個秒數的項目算幾秒
+
+
+def unit_of_items(table, ranges, off):
+    """工作檔 items 的秒數（重播時間，`item_ranges`）各自減位移換成首播
+    時間，看落在首播段落表哪一段（`unit_range` 併過的）、各重疊幾秒：
+
+    {"range": (起, 迄), "second": 那段裡的一秒（給 prepare 的 unit）,
+     "score": 秒數, "others": [{"range", "score"}], "ambiguous": bool}
+
+    舊做法拿各項第一個數字的中位數減粗位移，187 晚←172 晚那項
+    「2156.0-2181.8」只看 2156.0，位移漂移（625.2 漂到 631.4）時落在
+    前一列外景新聞。第二多的那段分到第一段 UNIT_SHARE 以上算跨兩段
+    （ambiguous），要人指定。沒有段落表、或一秒都對不到給 None。"""
+    if not table:
+        return None
+    scores = collections.OrderedDict()
+    seconds = {}
+    rows = list(table)
+    for lo, hi in ranges:
+        first, last = lo - off, hi - off
+        for row in rows:
+            start, end = float(row["起秒"]), float(row["迄秒"])
+            if last > first:
+                shared = min(last, end) - max(first, start)
+                if shared <= 0.0005:
+                    continue
+                middle = (max(first, start) + min(last, end)) / 2.0
+            elif start <= first < end:
+                shared = UNIT_POINT
+                middle = first
+            else:
+                continue
+            span = unit_range(rows, middle)
+            scores[span] = scores.get(span, 0.0) + shared
+            seconds.setdefault(span, middle)
+    if not scores:
+        return None
+    ordered = sorted(scores.items(), key=lambda pair: -pair[1])
+    best, score = ordered[0]
+    others = []
+    for span, value in ordered[1:]:
+        others.append({"range": span, "score": round(value, 3)})
+    ambiguous = bool(others) and others[0]["score"] >= UNIT_SHARE * score
+    return {"range": best, "second": round(seconds[best], 3),
+            "score": round(score, 3), "others": others,
+            "ambiguous": ambiguous}
+
+
+def _run_starts(side):
+    """一集（load 那種 dict）每句字 → 起點集合（取到毫秒）；None 給 None。"""
+    if side is None:
+        return None
+    out = collections.defaultdict(set)
+    for run in runs(side["book"]["cues"], side["texts"]):
+        out[run["text"]].add(round(run["start"], 3))
+    return out
+
+
+def _moved(starts, text, moment):
+    """這句在最早那份快照裡沒有同字、同起點（差 1 毫秒內）的段。"""
+    if starts is None:
+        return False
+    for start in starts.get(text, ()):
+        if abs(start - moment) <= 0.0015:
+            return False
+    return True
+
+
+def steady_anchors(found, source_first=None, target_first=None):
+    """錨點分成兩集起點都沒動過的、和動過的：(留下的, 首播動過的, 重播動過
+    的)。
+
+    `source_first`、`target_first` 是兩集最早那份快照（load 那種 dict，
+    沒有給 None）。首播精修過起點的溶接長句（011 晚部落信箱換句點移了
+    0.2–7 秒），重播還是舊切點；重播自己改過起點的（295 晚 379/380 晚了
+    0.1–0.2 秒）也一樣——拿這些當錨點，位移就散開，被判成剪接、剪法不同。
+    """
+    src_starts = _run_starts(source_first)
+    tgt_starts = _run_starts(target_first)
+    kept = []
+    source_moved = []
+    target_moved = []
+    for item in found:
+        if _moved(src_starts, item["text"], item["src"]):
+            source_moved.append(item)
+        elif _moved(tgt_starts, item["text"], item["tgt"]):
+            target_moved.append(item)
+        else:
+            kept.append(item)
+    return kept, source_moved, target_moved
+
+
+HARD = ("cut", "edit")
+REFINE_SLIP = 10.0            # 精修前後同一句起點最多差幾秒（011 晚實測 0.217–6.99）
+REFINE_TOL = 0.5              # 精修過的錨點用精修前起點算的位移，跟留下的差幾秒內算精修
+
+
+def _first_start(starts, text, moment):
+    """最早那份快照裡同字、起點離 `moment` 最近（REFINE_SLIP 內）的那段起點；
+    沒給快照就是沒動過，給 `moment`；快照裡找不到給 None。"""
+    if starts is None:
+        return moment
+    best = None
+    for start in starts.get(text, ()):
+        if abs(start - moment) > REFINE_SLIP:
+            continue
+        if best is None or abs(start - moment) < abs(best - moment):
+            best = start
+    return best
+
+
+def _old_delta(item, src_starts, tgt_starts):
+    """錨點改用兩集精修前（最早那份快照）的起點算的位移；有一邊快照裡找不
+    到同字的句子給 None。"""
+    src = item["src"]
+    if _moved(src_starts, item["text"], src):
+        src = _first_start(src_starts, item["text"], src)
+    tgt = item["tgt"]
+    if _moved(tgt_starts, item["text"], tgt):
+        tgt = _first_start(tgt_starts, item["text"], tgt)
+    if src is None or tgt is None:
+        return None
+    return round(tgt - src, 6)
+
+
+def refine_check(kept, moved, source_first=None, target_first=None):
+    """拿掉的（起點動過的）錨點改用兩集精修前（最早那份快照）的起點算位移，
+    跟留下的錨點合起來找剪接：{"cut": find_cut 的結果或 None, "head": [...],
+    "tail": [...]}；head、tail 是排在最前面、最後面，快照裡找不到同字句子
+    （精修前起點無從核對）的連續幾個，CUT_RUN 個以上就是那段藏得住剪接。
+
+    只拿掉動過的錨點、用留下的判，剪接要前後都有留下的錨點才看得出來；
+    審查合成重現：第 13–30 句精修過、重播在第 20 句前剪掉 3 秒，留下的 13
+    個全在剪接之前，判成 ready。全部改用精修前的起點判也不行：首播最早那
+    份快照的溶接長句起點跟重播差 1–5 格（011 晚→361 晚一句差 1.85 秒、
+    287 午→012 晚一句差 3.12 秒），量位移會判成逐格不一致。所以位移照留下
+    的錨點量，精修前的起點只拿來找剪接，同一群放寬到 REFINE_TOL：287 午→
+    012 晚精修前的起點跟留下的錨點大多差 0.45 秒以內，前後兩群要差 0.5 秒
+    以上才算剪接。"""
+    src_starts = _run_starts(source_first)
+    tgt_starts = _run_starts(target_first)
+    combined = []
+    order = []
+    for item in kept:
+        combined.append(item)
+        order.append((item["src"], True, item))
+    for item in moved:
+        old = _old_delta(item, src_starts, tgt_starts)
+        known = old is not None
+        if known:
+            copy = dict(item)
+            copy["delta"] = old
+            combined.append(copy)
+        order.append((item["src"], known, item))
+    order.sort(key=lambda entry: entry[0])
+    head = []
+    for _src, known, item in order:
+        if known:
+            break
+        head.append(item)
+    tail = []
+    for _src, known, item in reversed(order):
+        if known:
+            break
+        tail.insert(0, item)
+    if len(head) < CUT_RUN:
+        head = []
+    if len(tail) < CUT_RUN:
+        tail = []
+    return {"cut": find_cut(combined, REFINE_TOL), "head": head,
+            "tail": tail}
+
+
+def measure_pair(source, target, lo, hi, source_first=None,
+                 target_first=None):
+    """兩集已經 load 好：算錨點、whisper，判斷位移。
+
+    全部錨點判成剪接、剪法不同或逐格不一致，又有兩集最早那份快照時，拿掉
+    起點動過的錨點（`steady_anchors`）再判一次，evidence 記 `steady`（拿掉、
+    留下幾個，`verdict` 是哪一種結論）：
+
+    - 兩集都沒有起點動過的錨點（`nothing_moved`）：照原本的擋，理由寫明。
+    - 仍然有剪接、剪法不同（`still`）：照原本的擋，理由加「排除後仍然是…」。
+    - 沒有了，可是拿掉的錨點改用精修前的起點算位移、跟留下的合起來是
+      剪接（`still`，見 `refine_check`）：照原本的擋。
+    - 沒有了，可是排在最前面或最後面、精修前起點無從核對的錨點連續
+      CUT_RUN 個以上（`unverified`）：那段有沒有剪接看不出來，照原本的擋。
+    - 都沒有（`released`）：用這次的結果。"""
     found = anchors(source["book"]["cues"], source["texts"],
                     target["book"]["cues"], target["texts"], lo, hi)
     whisper = None
@@ -3266,12 +3959,100 @@ def measure_pair(source, target, lo, hi):
         wlo, whi = whisper_window(lo, hi)
         whisper = whisper_offset(source["whisper"], target["whisper"], wlo,
                                  whi)
-    return judge_offset(found, whisper, lo, hi)
+    evidence = judge_offset(found, whisper, lo, hi)
+    blockers = set(evidence["blockers"])
+    if evidence["status"] != "rejected" or not blockers & {
+            "cut", "edit", "spread"}:
+        return evidence
+    if source_first is None and target_first is None:
+        return evidence
+    kept, source_moved, target_moved = steady_anchors(found, source_first,
+                                                      target_first)
+    if not source_moved and not target_moved:
+        out = dict(evidence)
+        out["steady"] = {"dropped": 0, "source_moved": 0, "target_moved": 0,
+                         "kept": len(kept), "status": evidence["status"],
+                         "blockers": evidence["blockers"],
+                         "verdict": "nothing_moved"}
+        out["reasons"] = list(evidence["reasons"]) + [
+            "跟兩集最早那份快照比，%d 個錨點都沒有起點動過，不是精修造成的"
+            % len(found)]
+        return out
+    steady = judge_offset(kept, whisper, lo, hi)
+    info = {"dropped": len(source_moved) + len(target_moved),
+            "source_moved": len(source_moved),
+            "target_moved": len(target_moved), "kept": len(kept),
+            "status": steady["status"], "blockers": steady["blockers"]}
+    dropped = []
+    if source_moved:
+        dropped.append("首播精修過起點的 %d 個" % len(source_moved))
+    if target_moved:
+        dropped.append("重播自己改過起點的 %d 個" % len(target_moved))
+    what = "、".join(dropped)
+    hard = []
+    for kind in steady["blockers"]:
+        if kind in HARD:
+            hard.append(BLOCKER_NAMES[kind])
+    if hard:
+        out = dict(evidence)
+        info["verdict"] = "still"
+        out["steady"] = info
+        out["reasons"] = list(evidence["reasons"]) + [
+            "排除%s錨點（跟最早那份快照比）後仍然是%s：%s"
+            % (what, "、".join(hard), "；".join(steady["reasons"]))]
+        return out
+    check = refine_check(kept, source_moved + target_moved, source_first,
+                         target_first)
+    if check["cut"]:
+        cut = check["cut"]
+        out = dict(evidence)
+        info["verdict"] = "still"
+        info["old_start_cut"] = cut
+        out["steady"] = info
+        out["reasons"] = list(evidence["reasons"]) + [
+            "排除%s錨點後沒動過的 %d 個沒有剪接，可是拿掉的改用精修前的起點算位移"
+            "，跟留下的合起來仍然是剪接：首播約 %.1f 秒（%.1f–%.1f 之間），前 %d "
+            "個 %+.2f、後 %d 個 %+.2f"
+            % (what, len(kept), cut["at"], cut["between"][0],
+               cut["between"][1], cut["n_before"], cut["before"],
+               cut["n_after"], cut["after"])]
+        return out
+    if check["head"] or check["tail"]:
+        out = dict(evidence)
+        info["verdict"] = "unverified"
+        shown = []
+        for name, group in (("最前面", check["head"]),
+                            ("最後面", check["tail"])):
+            if group:
+                shown.append("%s %d 個（首播 %.3f–%.3f，「%s」…）"
+                             % (name, len(group), group[0]["src"],
+                                group[-1]["src"], group[0]["text"][:12]))
+        info["unverified"] = check["head"] + check["tail"]
+        out["steady"] = info
+        out["reasons"] = list(evidence["reasons"]) + [
+            "排除%s錨點後沒動過的 %d 個沒有剪接，可是拿掉的%s在首播最早那份快照"
+            "裡找不到同字的句子，精修前的起點無從核對，那段有沒有剪接看不出來，"
+            "照原本的擋" % (what, len(kept), "、".join(shown))]
+        return out
+    info["verdict"] = "released"
+    out = dict(steady)
+    out["steady"] = info
+    out["all_anchors"] = {"anchors": evidence["anchors"],
+                          "inliers": evidence["inliers"],
+                          "blockers": evidence["blockers"],
+                          "reasons": evidence["reasons"]}
+    out["reasons"] = ["全部 %d 個錨點：%s；%s錨點（跟最早那份快照比起點動過）"
+                      "拿掉，用沒動過的 %d 個判"
+                      % (evidence["anchors"], "；".join(evidence["reasons"]),
+                         what, len(kept))] + list(steady["reasons"])
+    return out
 
 
-def measure(src, tgt, lo, hi, store=None):
+def measure(src, tgt, lo, hi, store=None, snaps=None):
     store = store or Store()
-    return measure_pair(load(src, store), load(tgt, store), lo, hi)
+    return measure_pair(load(src, store), load(tgt, store), lo, hi,
+                        source_first=first_loaded(snaps, src, store),
+                        target_first=first_loaded(snaps, tgt, store))
 
 
 def render_srt(book, texts, out):
@@ -3475,7 +4256,7 @@ def _items_of(path):
 
 def prepare(src, tgt, lo=None, hi=None, out=None, store=None, unit=None,
             offset=None, fixes=None, pending=None, entries=None, work=None,
-            snaps=None, units=None, target_from=None):
+            snaps=None, units=None, target_from=None, accept=None):
     """只讀 Kari-SRT，寫進 `out`：plan.json、report.txt、preview/。
 
     做法照 `choose_mode`：整段搬（mode whole）、分區搬（mode zone，要
@@ -3483,7 +4264,9 @@ def prepare(src, tgt, lo=None, hi=None, out=None, store=None, unit=None,
     status 都是 ask，切法設定不同而重播自己重切過）。判斷哪一集重切過也
     要 `snaps`。`work` 是這件的工作檔（items 的秒數是重播時間）。
     `target_from` 只給乾跑用：重播從快照目錄讀（`<快照>/files`），plan 的
-    sha 跟 Kari-SRT 對不上，apply 一定擋。
+    sha 跟 Kari-SRT 對不上，apply 一定擋。`accept` 是放行清單（一行「cue
+    號 理由」，重播現在的號）：分區搬字不同的區，那幾條都在清單裡就照套
+    （plan 記 `accepted`，apply 要給同一份清單）。
     """
     store = store or Store()
     out = out or out_dir(src, tgt)
@@ -3492,7 +4275,10 @@ def prepare(src, tgt, lo=None, hi=None, out=None, store=None, unit=None,
                   else store.under(target_from))
     if unit is not None:
         lo, hi = unit_range(source["table"], unit)
-    evidence = measure_pair(source, target, lo, hi)
+    source_first = first_loaded(snaps, src, store)
+    evidence = measure_pair(source, target, lo, hi,
+                            source_first=source_first,
+                            target_first=first_loaded(snaps, tgt, store))
     if offset is not None:
         evidence = with_offset(evidence, offset)
     items = None
@@ -3521,10 +4307,11 @@ def prepare(src, tgt, lo=None, hi=None, out=None, store=None, unit=None,
                 plan["reasons"].append(stats["why"])
             elif mode == "whole":
                 _prepare_port(plan, source, target, out, store, fixes,
-                              pending, entries)
+                              pending, entries, source_first)
             else:
                 _prepare_zone(plan, source, target, out, store, fixes,
-                              pending, entries, snaps, units)
+                              pending, entries, snaps, units,
+                              _accepted(accept))
         except PipelineError as error:
             plan["status"] = "rejected"
             plan["reasons"].append(str(error))
@@ -3593,14 +4380,16 @@ def _tsv_everything(target, result, book):
     return everything, new_name
 
 
-def _prepare_port(plan, source, target, out, store, fixes, pending, entries):
+def _prepare_port(plan, source, target, out, store, fixes, pending, entries,
+                  source_first=None):
     """整段搬：重播那段原本沒讀到，首播的整段切法和字換進去。"""
     lo, hi = plan["src_range"]
     off = plan["offset"]
     tgt = target["name"]
     result = port(source["book"], source["texts"], target["book"],
                   target["texts"], lo, hi, off, items=plan["items"] or [],
-                  agree=plan["evidence"].get("agree"))
+                  agree=plan["evidence"].get("agree"),
+                  source_first=source_first)
     book = new_book(target["book"], source["book"], result, source["name"],
                     lo, hi, off, target["texts"], mode="whole")
     total = len(target["book"]["cues"])
@@ -3611,7 +4400,10 @@ def _prepare_port(plan, source, target, out, store, fixes, pending, entries):
     if target["table"] is not None:
         if source["table"] is not None:
             table = port_segments(target["table"], source["table"], start,
-                                  end, off)
+                                  end, off,
+                                  src_language=episode_language(
+                                      source["name"]),
+                                  tgt_language=episode_language(tgt))
         else:
             table = port_segments(target["table"], [], start, start, 0.0)
         problems = segments.check(table, tgt, book["duration"])
@@ -3629,7 +4421,8 @@ def _prepare_port(plan, source, target, out, store, fixes, pending, entries):
     if pending:
         _lines, extra = port_pending(
             _read_lines(pending), _slug(source["name"], entries),
-            _slug(tgt, entries), source["name"], tgt, result)
+            _slug(tgt, entries), source["name"], tgt, result,
+            tgt_cues=target["book"]["cues"])
         fix_rows += extra
     plan["fixes"] = []
     for row in fix_rows:
@@ -3649,6 +4442,7 @@ def _prepare_port(plan, source, target, out, store, fixes, pending, entries):
     plan["changed"] = _changed_list(result)
     plan["ask"] = result["ask"]
     plan["replaced"] = result["replaced"]
+    plan["replaced_cues"] = result["replaced_cues"]
     plan["probes"] = probe_points(result, off, evidence_holes(plan))
     plan["summary"] = {"removed": len(result["removed"]),
                        "ported": len(result["ported"]),
@@ -3670,6 +4464,18 @@ def first_book(snaps, name, store):
         return {"cues": [], "missing": chain[0][1]}
     with open(path, encoding="utf-8") as handle:
         return json.load(handle)
+
+
+def first_loaded(snaps, name, store):
+    """這集最早那份快照整份 load（時間軸和字，量位移排除動過的錨點用）；
+    沒有快照、或快照讀不了給 None。"""
+    chain = snapshot_chain(snaps, name)
+    if not chain:
+        return None
+    try:
+        return _load_snapshot(name, chain[0][1], store)
+    except PipelineError:
+        return None
 
 
 def _load_snapshot(name, folder, store):
@@ -3699,7 +4505,7 @@ def zone_source(source, snaps, units, store):
 
 
 def _prepare_zone(plan, source, target, out, store, fixes, pending,
-                  entries, snaps, units):
+                  entries, snaps, units, accepted=frozenset()):
     """分區搬：首播修改前快照 → 現在有差的地方，一區一區換進重播。"""
     lo, hi = plan["src_range"]
     off = plan["offset"]
@@ -3716,7 +4522,19 @@ def _prepare_zone(plan, source, target, out, store, fixes, pending,
     plan["base"] = os.path.basename(notes[0]["snapshot"])
     result = zone_port(before["book"], before["texts"], source["book"],
                        source["texts"], target["book"], target["texts"], lo,
-                       hi, off)
+                       hi, off, accepted)
+    versions = []
+    for note in notes[1:]:
+        try:
+            versions.append((note["tag"], _load_snapshot(
+                src, note["snapshot"], store)))
+        except PipelineError as error:
+            plan["notes_reverted"] = plan.get("notes_reverted", []) + [
+                str(error)]
+    reverted = reverted_in_target(
+        versions, source["book"], source["texts"], target["book"],
+        target["texts"], lo, hi, off,
+        result["applied"] + result["ask"] + result["same"])
     result["range"] = [round(lo + off, 3), round(hi + off, 3)]
     result["base"] = plan["base"]
     book = new_book(target["book"], source["book"], result, src, lo, hi, off,
@@ -3740,7 +4558,8 @@ def _prepare_zone(plan, source, target, out, store, fixes, pending,
                 plan["fixes"].append(row)
     if pending:
         port_pending(_read_lines(pending), _slug(src, entries),
-                     _slug(tgt, entries), src, tgt, result)
+                     _slug(tgt, entries), src, tgt, result,
+                     tgt_cues=target["book"]["cues"])
     plan["range"] = result["range"]
     plan["notes"] = book["ported"][-1]["notes"]
     plan["trimmed"] = []
@@ -3757,7 +4576,12 @@ def _prepare_zone(plan, source, target, out, store, fixes, pending,
     plan["same"] = result["same"]
     plan["unresolved"] = result["ask"]
     plan["ask"] = []
+    plan["accepted"] = []
+    for info in result["applied"]:
+        plan["accepted"] += info.get("accepted", [])
+    plan["accepted"].sort()
     plan["blank_in_target"] = result["blank_in_target"]
+    plan["reverted_in_target"] = reverted
     plan["items_untouched"] = items_status(
         plan["items"] or [], result["applied"] + result["same"],
         result["ask"], result["blank_in_target"])
@@ -3766,6 +4590,7 @@ def _prepare_zone(plan, source, target, out, store, fixes, pending,
                        "same": len(result["same"]),
                        "ask": len(result["ask"]),
                        "blank_in_target": len(result["blank_in_target"]),
+                       "reverted_in_target": len(reverted),
                        "removed": len(result["removed"]),
                        "fresh": len(result["fresh"]),
                        "before": total, "after": len(book["cues"])}
@@ -3855,6 +4680,10 @@ def report(plan):
             lines.append("套用：首播 %s → 重播 %s（%s；重播原 cue %s）「%s」"
                          % (item["src"], item["tgt"], "、".join(item["kinds"]),
                             item["target_cues"], item["text"]))
+            if item.get("accepted"):
+                lines.append("  放行清單放行：重播 cue %s（%s）"
+                             % (_numbers_text(item["accepted"]),
+                                item.get("accepted_why")))
         for item in plan["unresolved"]:
             lines.append("要人判：首播 %s → 重播 %s（%s）：%s（重播 cue %s）"
                          % (item["src"], item["tgt"], "、".join(item["kinds"]),
@@ -3865,6 +4694,12 @@ def report(plan):
                          % (item["src"], item["cues"], item["text"],
                             item["tgt"], "空白 cue %s" % item["target_cues"]
                             if item["target_cues"] else "沒有 cue"))
+        for item in plan.get("reverted_in_target", []):
+            lines.append("%s（不在任何區，沒搬，要人看）：首播快照 %s 的「%s」"
+                         "現在是「%s」；首播 %s → 重播 %s cue %s 還是中間版"
+                         % (REVERTED_KIND, item["tag"], item["text"],
+                            item["now"], item["src"], item["tgt"],
+                            item["target_cues"]))
         lines += items_lines(plan.get("items_untouched", []))
         return "\n".join(lines) + "\n"
     lines.append("換掉 %d 條、搬進 %d 條，總數 %d → %d"
@@ -4269,7 +5104,7 @@ def _fix_lines(plan, target, result, fixes, pending, entries):
         if pending is not None:
             pending_lines, _extra = port_pending(
                 pending, _slug(src, entries), _slug(tgt, entries), src, tgt,
-                result)
+                result, tgt_cues=target["book"]["cues"])
     else:
         if fixes is not None:
             rows = port_fixes(_rows_of(fixes), src, tgt,
@@ -4277,7 +5112,7 @@ def _fix_lines(plan, target, result, fixes, pending, entries):
         if pending is not None:
             pending_lines, extra = port_pending(
                 pending, _slug(src, entries), _slug(tgt, entries), src, tgt,
-                result)
+                result, tgt_cues=target["book"]["cues"])
             if fixes is not None:
                 rows += extra
     lines = None
@@ -4356,6 +5191,15 @@ def apply(plan_path, lock, fixes, pending=None, accept=None, no_frames=None,
         if missing:
             raise PipelineError("要人判的字還沒放行（--accept）：重播 cue %s"
                                 % missing)
+    if plan.get("accepted"):
+        ok = _accepted(accept)
+        missing = []
+        for number in plan["accepted"]:
+            if number not in ok:
+                missing.append(number)
+        if missing:
+            raise PipelineError("prepare 照放行清單套了字不同的區，apply 要給同一份"
+                                "清單（--accept）：缺重播 cue %s" % missing)
     tgt = plan["target"]
     entry = None
     for item in entries:
@@ -4377,6 +5221,7 @@ def apply(plan_path, lock, fixes, pending=None, accept=None, no_frames=None,
             raise PipelineError("%s 在 prepare 之後被改過，重做 prepare" % changed)
         target = load(tgt, store)
         result = _result_from_plan(plan, preview)
+        result["all_texts"] = _final_texts(plan, target, preview)
         # 先算一次：重播自己的訂正跟首播衝突這類在這裡就擋，什麼都還沒動。
         # 真的寫進去的是換檔之後那一次（_rewrite_fixes）。
         _fix_lines(plan, target, result, _lines_or_none(fixes),
@@ -4639,6 +5484,7 @@ def main(argv=None):
     one.add_argument("source")
     one.add_argument("target")
     one.add_argument("--range", nargs=2, type=float, required=True)
+    one.add_argument("--snaps", help="快照目錄：排除起點動過的錨點再判")
     two = sub.add_parser("prepare")
     two.add_argument("source")
     two.add_argument("target")
@@ -4653,6 +5499,8 @@ def main(argv=None):
     two.add_argument("--snaps", help="快照目錄（<集>--<標籤>/files/），分區搬用")
     two.add_argument("--units", help="修正單元工作檔目錄（預設快照目錄旁的 units）")
     two.add_argument("--target-from", help="乾跑用：重播從這個快照的 files/ 讀")
+    two.add_argument("--accept", help="放行清單（一行「cue 號 理由」）：分區搬字"
+                     "不同的區照清單套；apply 要給同一份")
     three = sub.add_parser("frames")
     three.add_argument("plans", nargs="+")
     three.add_argument("--side", choices=("source", "target"), required=True)
@@ -4673,7 +5521,7 @@ def main(argv=None):
     args = ap.parse_args(argv)
     if args.command == "measure":
         evidence = measure(args.source, args.target, args.range[0],
-                           args.range[1])
+                           args.range[1], snaps=args.snaps)
         print(json.dumps(evidence, ensure_ascii=False, indent=2,
                          sort_keys=True))
     elif args.command == "prepare":
@@ -4683,7 +5531,8 @@ def main(argv=None):
         plan = prepare(args.source, args.target, lo, hi, args.out,
                        unit=args.unit, offset=args.offset, fixes=args.fixes,
                        pending=args.pending, work=args.work, snaps=args.snaps,
-                       units=args.units, target_from=args.target_from)
+                       units=args.units, target_from=args.target_from,
+                       accept=args.accept)
         print(report(plan), end="")
         return 0 if plan["status"] == "ready" else 1
     elif args.command == "frames":

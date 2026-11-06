@@ -28,6 +28,7 @@ import shutil
 import sys
 import tempfile
 
+from scripts import catalogue_checks
 from scripts import datadirs
 from scripts.mt import calibration
 from scripts.news import coaxial
@@ -307,6 +308,16 @@ def segment_problems(names, base=None, cues_base=None):
     return problems
 
 
+def catalogue_problems():
+    """節目目錄ê逐逝不變量（`catalogue_checks.row_problems` 整組）。
+
+    成果檔名不得重複、命名規格、佮識別欄互推、節目名稱佮播出日期對會著、
+    語言別代號、素材位置非空、列序。比照 `scripts/aiyalaeho/rebuild.py`；
+    新聞這爿本底無跑，重複ê成果檔名著等到搬移規劃才發現。
+    """
+    return catalogue_checks.row_problems(episodes.rows())
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--verify", action="store_true",
@@ -314,6 +325,13 @@ def main():
     args = ap.parse_args()
 
     entries = episodes.load()
+
+    # 目錄本身先驗：有問題就佇頭前停，免等重建了才發現。
+    catalogue = catalogue_problems()
+    if catalogue:
+        for line in catalogue:
+            print("CATALOGUE:", line)
+        raise PipelineError("%d 項目錄對袂起來" % len(catalogue))
 
     # 階段之間ê包含關係先驗：`3-srt` 有一份、`1-cues` 無彼集ê時間軸，
     # 彼份交付物重建袂出來。頂懸行頭前是正常ê（分階段入庫），下跤

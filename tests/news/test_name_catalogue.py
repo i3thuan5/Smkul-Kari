@@ -205,5 +205,86 @@ class TestExcludedFiles(unittest.TestCase):
         self.assertEqual(name_catalogue.excluded([row()], missing), [])
 
 
+class TestCheckRunsTheWholeCatalogueChecks(unittest.TestCase):
+    """`--check` 愛真正跑 `catalogue_checks.row_problems` 整組。
+
+    本底干焦比對成果檔名欄佮推導值，所以「兩列成果檔名重複」、「節目
+    名稱佮日期對袂著」這款，新聞這爿從來無人檢查過。
+    """
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.dir = tmp.name
+        self.path = os.path.join(tmp.name, "smkul.csv")
+        self.none = os.path.join(tmp.name, "無排除清單.csv")
+        self.lines = []
+
+    def write(self, rows):
+        out, head = name_catalogue.named(rows, HEAD)
+        name_catalogue.write(self.path, out, head)
+
+    def run_check(self):
+        code = name_catalogue.run_check(self.path, excluded_path=self.none,
+                                        out=self.lines.append)
+        return code, "\n".join(self.lines)
+
+    def two(self):
+        return [row(), row(集數="2", 播出日期="2021-01-02")]
+
+    def test_a_clean_catalogue_exits_zero(self):
+        self.write(self.two())
+        code, text = self.run_check()
+        self.assertEqual(code, 0)
+        self.assertIn("目錄檢查：0 項問題", text)
+
+    def test_two_rows_with_the_same_name_are_named_by_line_and_exit_one(self):
+        # 成果檔名是主鍵；重複就是兩集算做一集，apply 搬移時才會撞著。
+        self.write([row(), row()])
+        code, text = self.run_check()
+        self.assertEqual(code, 1)
+        self.assertIn("第 3 逝", text)
+        self.assertIn("第 2 逝重複", text)
+
+    def test_a_programme_name_that_disagrees_with_the_date_is_caught(self):
+        # 2024-08-01 起愛寫《看見族語（午間）》；舊名猶佇，成果檔名佮
+        # 推導值一致，--check 本底看袂出來。
+        self.write([row(節目名稱="午間族語新聞", 播出日期="2024-08-02",
+                        年度="2024", 集數="5")])
+        code, text = self.run_check()
+        self.assertEqual(code, 1)
+        self.assertIn("節目名稱", text)
+        self.assertIn("看見族語（午間）", text)
+
+    def test_a_language_code_outside_the_table_is_caught(self):
+        self.write([row(語言別代號="xx-not-a-code")])
+        code, text = self.run_check()
+        self.assertEqual(code, 1)
+        self.assertIn("xx-not-a-code", text)
+
+    def test_rows_out_of_order_are_caught(self):
+        rows = self.two()
+        rows.reverse()
+        self.write(rows)
+        code, text = self.run_check()
+        self.assertEqual(code, 1)
+        self.assertIn("列序", text)
+
+    def test_an_empty_source_location_is_caught(self):
+        self.write([row(原始影片檔案位置="")])
+        code, text = self.run_check()
+        self.assertEqual(code, 1)
+        self.assertIn("原始影片檔案位置", text)
+
+    def test_the_old_checks_still_run_next_to_it(self):
+        self.write(self.two())
+        rows, head = name_catalogue.read(self.path)
+        rows[0]["成果檔名"] = "20210101_001_午間_Rukai_魯凱X"
+        name_catalogue.write(self.path, rows, head)
+        code, text = self.run_check()
+        self.assertEqual(code, 1)
+        self.assertIn("第2逝", text)
+
+
 if __name__ == "__main__":
     unittest.main()

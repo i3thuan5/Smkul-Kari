@@ -7,8 +7,10 @@ import csv
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 from scripts.news import episodes
+from scripts.news import paths
 from scripts.errors import PipelineError
 
 HEAD = ["成果檔名", "節目名稱", "年度", "集數", "播出日期",
@@ -122,12 +124,20 @@ class TestEntryShape(Fixture):
                      "族語別(英)", "族語別(中)"):
             self.assertIn(name, got)
 
-    def test_remote_is_the_canonical_location_of_the_name(self):
-        # 全流程取遠端路徑ê唯一出口：由成果檔名推導，毋是讀原始欄。
+    def test_remote_is_the_first_place_to_look_for_the_name(self):
+        # 全流程取遠端路徑ê唯一出口：由成果檔名推導，毋是讀原始欄；讀ê順序
+        # 第一个是定稿區（/docker）——搬完了後絕大多數集數佇遐。
         got = episodes.load(self._table(row()), srt_dir=set())[0]
         self.assertEqual(
             got["remote"],
-            "/home/news/mkv/2021-02/20210201_032_午間_Atayal_泰雅.mkv")
+            "%s/2021-02/20210201_032_午間_Atayal_泰雅.mkv"
+            % paths.VIDEO_ROOT_DOCKER)
+
+    def test_remote_follows_the_roots_when_they_are_swapped(self):
+        with mock.patch.object(paths, "VIDEO_ROOT_DOCKER", "/pub/mkv"):
+            got = episodes.load(self._table(row()), srt_dir=set())[0]
+        self.assertEqual(
+            got["remote"], "/pub/mkv/2021-02/20210201_032_午間_Atayal_泰雅.mkv")
 
     def test_remote_does_not_depend_on_the_original_column(self):
         # 原始欄空白抑是有幾若條候選，正規位置攏仝；video／file 兩欄猶原

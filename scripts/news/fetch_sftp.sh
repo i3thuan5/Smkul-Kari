@@ -294,18 +294,24 @@ while IFS=$'\t' read -r slug remote <&3; do
     folder=$(dirname "$remote")
     size=$(awk -F'\t' -v p="$remote" '$1 == p {print $2}' "$sizes")
     if [[ -z "$size" ]]; then
-        # 正規位置（由成果檔名推導）揣無：退回 `原始影片檔案位置`。退不退、
-        # 退去佗是 `video_names locate` ê代誌——伊干焦伺服器明講 not found
-        # 才退，連線逾時、權限錯誤會報錯，這爿就 FAIL。
+        # 大小表查無（清單問ê是 /docker 月份資料夾）：照 `video_names
+        # locate` ê順序揣——/docker → /home（管理者猶未搬ê）→ `原始影片
+        # 檔案位置`。退不退、退去佗是 locate ê代誌，伊干焦伺服器明講 not
+        # found 才換位，連線逾時、權限錯誤會報錯，這爿就 FAIL。
         srt_name=$(basename "$remote" .mkv)
         found=$("$PY" -m scripts.news.video_names locate "$srt_name" \
                 2> "$LOG/$slug.locate.log")
         if [[ -n "$found" ]]; then
             remote=$(cut -f1 <<< "$found")
             size=$(cut -f2 <<< "$found")
+            label=$(cut -f3 <<< "$found")
             name=$(basename "$remote")
             folder=$(dirname "$remote")
-            echo "$(date +%H:%M:%S) 退回原始位置 $slug: $remote"
+            if [[ "$label" = "原始" ]]; then
+                echo "$(date +%H:%M:%S) 退回原始位置 $slug: $remote"
+            else
+                echo "$(date +%H:%M:%S) 佇 $label $slug: $remote"
+            fi
         else
             echo "$(date +%H:%M:%S) FAIL  $slug: 伺服器頂懸無 $remote（$LOG/$slug.locate.log）"
             continue
