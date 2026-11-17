@@ -560,7 +560,7 @@ class TestWiring(unittest.TestCase):
             mock.patch("scripts.news.segment_recut._recut", self.fake_recut),
             mock.patch("scripts.news.segment_recut._refine", self.fake_refine),
             mock.patch("scripts.ocr.sheets.build_sheets", self.fake_sheets),
-            mock.patch("scripts.news.pairs_run.in_scope", lambda name: False),
+            mock.patch("scripts.news.pairs_run.ready", lambda name: False),
             mock.patch("scripts.news.rebuild.rebuild_one", self.fake_rebuild),
         ]
         for patch in patches:

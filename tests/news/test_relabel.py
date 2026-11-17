@@ -289,5 +289,127 @@ class TestTheVideoFollows(unittest.TestCase):
             self.assertNotIn(call[0], ("rename", "mkdir", "rmdir"))
 
 
+RUKAI = "20210618_169_午間_Rukai_魯凱"
+
+
+def rukai_row(**over):
+    """ilrdf-corpus 舊批的列：語言別空白、代號只記到族語別 `dru`。"""
+    row = {"成果檔名": RUKAI, "節目名稱": "午間族語新聞", "年度": "2021",
+           "集數": "169", "播出日期": "2021-06-18", "族語別(英)": "Rukai",
+           "族語別(中)": "魯凱", "語言別": "", "語言別代號": "dru",
+           "原始影片檔案位置":
+               "home/mkv-raw/110.01-110.10/6月原始mxf檔/21NL003_169.mkv",
+           "備註": "原有備註"}
+    row.update(over)
+    return row
+
+
+class TestOnlyTheVariety(unittest.TestCase):
+    """主播 Lavoras Tavelengae 講萬山（本人 Medium 自介；E樂園 詞表比對開場
+    42/42 集最像萬山），目錄卻記霧台／`dru`。族語別沒變、成果檔名不變，
+    影像側不搬；用霧台辨識的 whisper 與平行語料要刪掉等重跑。"""
+
+    def test_the_row_takes_the_variety_and_keeps_its_name(self):
+        got = relabel.vary_row(rukai_row(), "萬山", "本人 Medium 自介")
+        self.assertEqual(got["成果檔名"], RUKAI)
+        self.assertEqual((got["族語別(中)"], got["語言別"], got["語言別代號"]),
+                         ("魯凱", "萬山", "dru-x-opnh"))
+        self.assertTrue(got["備註"].startswith("原有備註；"))
+        self.assertIn("本人 Medium 自介", got["備註"])
+
+    def test_a_variety_of_another_tribe_is_refused(self):
+        # languages.code_for('魯凱', '北排灣') 會悄悄退回 dru，不可以靠它
+        with self.assertRaises(PipelineError) as caught:
+            relabel.vary_row(rukai_row(), "北排灣", "x")
+        self.assertIn("北排灣", str(caught.exception))
+
+    def test_the_same_variety_is_refused(self):
+        row = rukai_row(語言別="萬山", 語言別代號="dru-x-opnh")
+        with self.assertRaises(PipelineError):
+            relabel.vary_row(row, "萬山", "x")
+
+    def make_store_and_catalogue(self):
+        store = tempfile.TemporaryDirectory()
+        self.addCleanup(store.cleanup)
+        self.root = store.name
+        self.files = {}
+        for label, rel in (("cues", "1-ocr/1-cues/2021-06/%s.json"),
+                           ("srt", "1-ocr/3-srt/2021-06/%s.srt"),
+                           ("whisper",
+                            "2-asr-whisper/1-srt-sapolita/2021-06/%s.srt"),
+                           ("pairs",
+                            "2-asr-whisper/2-csv-analysis/2021-06/%s.csv"),
+                           ("paragraph",
+                            "2-asr-whisper/3-srt-paragraph/2021-06/%s.srt"),
+                           ("words", "2-asr-kaldi/1-words/2021-06/%s.json")):
+            path = os.path.join(self.root, rel % RUKAI)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(label)
+            self.files[label] = path
+        self.log = os.path.join(self.root,
+                                "2-asr-whisper/1-srt-sapolita/辨識紀錄.csv")
+        with open(self.log, "w", encoding="utf-8", newline="") as handle:
+            handle.write("成果檔名,語言別代號,主播名,伺服器,辨識日期,音長秒,段數\n"
+                         "%s,dru-x-ngdr,Lavoras Tavelengae,x,2026-09-18,1,1\n"
+                         "20210101_001_午間_Rukai_魯凱,dru-x-ngdr,S,x,"
+                         "2026-09-18,1,1\n" % RUKAI)
+        self.catalogue = os.path.join(self.root, "smkul.csv")
+        other = rukai_row(成果檔名="20210101_001_午間_Rukai_魯凱", 集數="1",
+                          播出日期="2021-01-01", 備註="")
+        with open(self.catalogue, "w", encoding="utf-8-sig",
+                  newline="") as handle:
+            writer = csv.DictWriter(handle, HEAD, lineterminator="\r\n")
+            writer.writeheader()
+            writer.writerow(other)
+            writer.writerow(rukai_row())
+
+    def test_whisper_layers_go_and_the_picture_side_stays(self):
+        self.make_store_and_catalogue()
+        report = relabel.revary(RUKAI, "魯凱", "萬山", "Medium",
+                                catalogue=self.catalogue, store=self.root)
+        for label in ("whisper", "pairs", "paragraph"):
+            self.assertFalse(os.path.exists(self.files[label]), label)
+        # 影像側原地不動；kaldi 用的是族語別模型，不刪
+        for label in ("cues", "srt", "words"):
+            self.assertTrue(os.path.exists(self.files[label]), label)
+        with open(self.log, encoding="utf-8") as handle:
+            log = handle.read()
+        self.assertNotIn(RUKAI, log)
+        self.assertIn("20210101_001_午間_Rukai_魯凱", log)
+        self.assertEqual(report.renamed, [])
+        with open(self.catalogue, encoding="utf-8-sig") as handle:
+            rows = list(csv.DictReader(handle))
+        names = []
+        for r in rows:
+            names.append(r["成果檔名"])
+        self.assertEqual(names, ["20210101_001_午間_Rukai_魯凱", RUKAI])
+        self.assertEqual((rows[1]["語言別"], rows[1]["語言別代號"]),
+                         ("萬山", "dru-x-opnh"))
+        self.assertEqual(rows[0]["語言別代號"], "dru")
+
+    def test_a_tribe_that_does_not_match_the_row_is_refused(self):
+        self.make_store_and_catalogue()
+        with self.assertRaises(PipelineError):
+            relabel.revary(RUKAI, "排灣", "萬山", "x",
+                           catalogue=self.catalogue, store=self.root)
+        self.assertTrue(os.path.exists(self.files["whisper"]))
+
+    def test_a_refusal_deletes_nothing(self):
+        # 相同語言別：不可白刪 whisper
+        self.make_store_and_catalogue()
+        relabel.revary(RUKAI, "魯凱", "萬山", "Medium",
+                       catalogue=self.catalogue, store=self.root)
+        with open(self.files["cues"], "w") as handle:
+            handle.write("cues")
+        os.makedirs(os.path.dirname(self.files["whisper"]), exist_ok=True)
+        with open(self.files["whisper"], "w") as handle:
+            handle.write("redone")
+        with self.assertRaises(PipelineError):
+            relabel.revary(RUKAI, "魯凱", "萬山", "again",
+                           catalogue=self.catalogue, store=self.root)
+        self.assertTrue(os.path.exists(self.files["whisper"]))
+
+
 if __name__ == "__main__":
     unittest.main()

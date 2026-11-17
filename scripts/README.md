@@ -20,7 +20,9 @@
 `ROOT`／`kithann/`／`Kari-SRT/` 三個位置，加上 CLI 參數的保護：
 `check_name`（名字不得帶路徑成分）、`check_under`（路徑只准落在
 `kithann/`、`Kari-SRT/`、系統暫存目錄——**不是** repo 底下都可以，
-`scripts/` 與 `openspec/` 是程式碼與規格，不是資料）。
+`scripts/` 與 `openspec/` 是程式碼與規格，不是資料）。另有族語E樂園
+教材的兩個位置 `KLOKAH_SOURCE`、`KLOKAH_NAMES`（《開會了》清洗與新聞
+平行語料的萬山詞表都讀）。
 
 放頂層是因為 `ocr/` 刻意不依賴 `news/`：這裡放的是 repo 版面與參數
 驗證，兩邊都不擁有；語料專屬的路徑（stage、階段目錄）
@@ -115,10 +117,10 @@ aiyalaeho，依賴ê方向就顛倒去（這馬是 aiyalaeho → news），所�
 | `asrmt_batch.py` | 語音側（kaldi）整批：逐集 抓音檔→解碼→投影＋render→刪音檔 |
 | `asrmt_run.py` | 語音側（kaldi）單集步驟（預設 words→raw；翻譯佮品質判斷 `--step` 指名） |
 | `whisper_run.py` | 語音側（whisper／sapolita）逐集佮整批：取音檔→查語別碼（`新聞語言別代號.csv`）→辨識→原樣存 SRT→寫辨識紀錄→刪暫存音檔；一次一集、可續跑（SRT 佮紀錄兩者都在才算做完） |
-| `lexicon_fetch.py` | 官方族語辭典：`kithann/族語辭典/` 無就對 SFTP 抓（位元組數比對、族名對檔名讀、16 族欠一族指名停），蒸餾做詞庫快取 |
-| `pairs_run.py` | 族華平行語料整批：2021-01～10、兩爿攏有ê集數 → 仝一輪寫 `2-asr-whisper/2-csv-analysis/<年-月>/<成果檔名>.csv` 佮 `3-srt-paragraph/<年-月>/<成果檔名>.srt`；CSV ê時間是語音段延伸 0.5 秒（音長取 `辨識紀錄.csv`），配對、校正基準用真實時間；舊目錄 `2-平行語料/` 若猶佇就停；`--recalibrate` 才重算校正基準；無叫任何模型 |
+| `lexicon_fetch.py` | 官方族語辭典：`kithann/族語辭典/` 無就對 SFTP 抓（位元組數比對、族名對檔名讀、16 族欠一族指名停），蒸餾做詞庫快取；`supplements()` 對 `SUPPLEMENTS` 內底ê語言別（目前干焦萬山 `dru-x-opnh`）對族語E樂園現抽詞表，E樂園 無就指名停（無 SFTP 來源） |
+| `pairs_run.py` | 族華平行語料整批：兩爿攏有ê集數（`ready`，無限月份）→ 仝一輪寫 `2-asr-whisper/2-csv-analysis/<年-月>/<成果檔名>.csv` 佮 `3-srt-paragraph/<年-月>/<成果檔名>.srt`；CSV ê時間是語音段延伸 0.5 秒（音長取 `辨識紀錄.csv`），配對、校正基準用真實時間；舊目錄 `2-平行語料/` 若猶佇就停；萬山ê集本族辭典是官方辭典佮 E樂園 萬山詞表ê聯集、校正基準另外一列；`--recalibrate` 干焦補表內欠ê列（既有ê列毋動，欲重算先刪表）；無叫任何模型 |
 | `pairs_tune.py` | 調合併門檻：`--sample` 對新聞抽樣寫裁判請求（一批四个 50 組ê檔）、`--ingest NN` 收回覆、`--report` 出各格比例表佮選值；攏囥 `kithann/out/mt/調參/`，毋入 Kari-SRT |
-| `paragraph_export.py` | 雙語字幕交件：`--export 年-月…` 對 Kari-SRT 原樣複製 `3-srt-paragraph` 佮 `2-csv-analysis`、出一集一逝ê清單（時長用 CSV ê時間，含留白）；`--spot-sample`／`--spot-report` 抽高信心組予 Opus 裁判（請求格式佮 `pairs_tune` 仝款；核對 CSV 用延伸後ê時間）。攏囥 `kithann/out/news/雙語字幕*/`，毋入 Kari-SRT |
+| `paragraph_export.py` | 雙語字幕交件：`--export 年-月…` 對 Kari-SRT 原樣複製 `3-srt-paragraph` 佮 `2-csv-analysis`、出一集一逝ê清單（列交件資料夾內全部ê集；時長用 CSV ê時間，含留白）；`--spot-sample … --batch <名> [--per-tribe N]`／`--spot-report --batch <名>` 抽高信心組予 Opus 裁判，寫入 `雙語字幕-抽查/<名>/`，彼搭已經有請求就拒絕（請求格式佮 `pairs_tune` 仝款；核對 CSV 用延伸後ê時間）。攏囥 `kithann/out/news/雙語字幕*/`，毋入 Kari-SRT |
 | `anchors_ami.json` | 阿美語錨點表（數詞＋借詞專名，拼法對照模型 lexicon） |
 | `plan_month.py` | 一批＝一个播出月份：列這个月ê集數佮影片ê位置（讀取順序ê頭一个，`/docker`；**唯讀、離線**，無寫任何檔、毋連伺服器；退路佇實際取檔ê時處理）|
 | `sources.py` | 一集配一支檔的規則（母帶優先→時段相符→同名不同夾→一檔一集） |
@@ -134,8 +136,8 @@ aiyalaeho，依賴ê方向就顛倒去（這馬是 aiyalaeho → news），所�
 | `opening.py` | 片頭辨識：切 cue 時截 20／30／40 秒三格（已入庫ê集數用 curl 抓頭尾兩段補截；照 `/docker` → `/home` → 原始位置ê順序揣）、組合圖、讀者 TSV → `1-ocr/片頭辨識.csv`，語別佮目錄無仝就擋 |
 | `shots.py` | 影片 → 逐秒畫面特徵（160×90 縮圖：節目框在毋在、紅條、棚內參考格、語別牌、單元標誌），截判不準ê原圖；參考格佇 `shot_refs/<年>/` |
 | `segments.py` | 逐秒特徵 → 段落表（兩層判法）、讀者確認、段落表ê把關（`publish` 佮 `rebuild --verify` 攏用） |
-| `relabel.py` | 片頭辨識查出目錄語別標毋著：改目錄那一列（族語別、代號、成果檔名、備註），store 內佮語別無關ê檔改名、用毋著語言做ê（whisper、平行語料、kaldi）刪掉等重跑；**伺服器頂ê影片照佇佗處理**（`/home` 內先綴咧改名，失敗整个毋動本機，本機失敗會搬轉去；`/docker` 拒絕；猶佇原始位置伺服器毋動） |
-| `redate.py` | 目錄查出某集播出日期、集數標毋著（例：檔名是 10-01，目錄寫 09-30）：改目錄那一列（年度、集數、播出日期、節目名稱〔跨 2024-08-01 時跟咧換〕、成果檔名、備註），store 內逐階段ê檔（含 whisper、平行語料、kaldi，因為內容猶是仝一集）攏改名、毋刪，跨月ê月份資料夾嘛換，三張紀錄表ê列跟咧改；**伺服器頂ê影片照佇佗處理**（`/home` 內先綴咧改名；`/docker` 拒絕；猶佇原始位置伺服器毋動） |
+| `relabel.py` | 片頭辨識查出目錄語別標毋著：改目錄那一列（族語別、代號、成果檔名、備註），store 內佮語別無關ê檔改名、用毋著語言做ê（whisper、平行語料、kaldi）刪掉等重跑；**伺服器頂ê影片照佇佗處理**（`/home` 內先綴咧改名，失敗整个毋動本機，本機失敗會搬轉去；`/docker` 拒絕；猶佇原始位置伺服器毋動）；`--variety <語言別>` 干焦換仝族ê語言別：成果檔名無變、影像側無搬，刪 whisper 三層佮辨識紀錄那列等重跑，kaldi 無刪 |
+| `redate.py` | 目錄查出某集播出日期、集數標毋著（例：檔名是 10-01，目錄寫 09-30）：改目錄那一列（年度、集數、播出日期、節目名稱〔跨 2024-08-01 時跟咧換〕、成果檔名、備註），store 內逐階段ê檔（含 whisper、平行語料、kaldi，因為內容猶是仝一集）攏改名、毋刪，跨月ê月份資料夾嘛換，三張紀錄表ê列跟咧改；**伺服器頂ê影片照佇佗處理**（`/home` 內先綴咧改名；`/docker` 拒絕；猶佇原始位置伺服器毋動）；`--variety <語言別>` 干焦換仝族ê語言別：成果檔名無變、影像側無搬，刪 whisper 三層佮辨識紀錄那列等重跑，kaldi 無刪 |
 | `video_names.py` | 伺服器上ê新聞影片搬去 `/home/news/mkv/<年-月>/<成果檔名>.mkv`（rename，毋是複製；寫入只佇 `/home`，`/docker` 唯讀）：`plan` 規劃、`probe` 探針、`apply` 搬、`check` 核對（兩个根合起來算）、`undo` 還原（已佇 `/docker` ê拒絕）、`prune`（最後一步：清掉搬空ê舊資料夾，只刪空ê）、`locate` 揣影片（`/docker` → `/home` → `原始影片檔案位置`，來源標籤 docker／home／原始）、`rename_episode`（改成果檔名時看影片佇佗：`/home` 內改名、`/docker` 拒絕、原始位置伺服器毋動） |
 | `offband_backfill.py` | 已經讀完字ê集數補切一段帶外字幕（2021 帶外專題）：`prepare` 重切、精修、照時間算新編號、干焦為新 cue 出組合圖；`apply` 照時間徙 store ê TSV 編號、收讀者 TSV、時間軸佮 SRT 入庫；新 cue 裁在範圍內、和範圍外的 cue 重疊就擋；段落表從 Kari-SRT 現在的開始（補切目錄或上一次 plan 的表值不同就照 Kari-SRT 並警告），範圍裡本來就有同類型的列時語別、上下緣、受訪者照它的；`apply` 寫段落表前跟 prepare 當時比（plan 記 Kari-SRT 段落表 sha，舊格式 plan 比內容），不同就擋，`--keep-store-table` 只收時間軸、TSV、SRT |
 | `segment_recut.py` | 段落表上帶外ê段（島語時間、部落信箱…）用家己ê preset 重切、精修，讀字進前接轉時間軸，cue 記 `area` |

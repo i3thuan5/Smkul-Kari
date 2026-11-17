@@ -199,5 +199,64 @@ class TestLexicons(Base):
         self.assertIn("extra", found["邵"])
 
 
+# 真檔 E樂園方言編號.txt 的魯凱那幾行（BOM、tab 縮排照真檔）。
+RUKAI_NAMES = ("﻿方言編號：\n"
+               "\t28: 霧台魯凱語\n"
+               "\t32: 萬山魯凱語\n")
+
+
+class TestSupplements(unittest.TestCase):
+    """官方辭典魯凱只收霧台；萬山主播 Lavoras Tavelengae 開場命中率 0.048、
+    85% 被判不採用（2026-11-16 量）。萬山詞表從 E樂園 現抽來補。"""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="supplements-")
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.source = os.path.join(self.tmp, "E樂園-解壓")
+        self.names = os.path.join(self.tmp, "E樂園", "E樂園方言編號.txt")
+        fixtures.write_text(self.names, RUKAI_NAMES)
+        fixtures.write_csv(
+            os.path.join(self.source, "8.族語短文",
+                         "klokah_essay_sentence.csv"),
+            ["autoId", "textId", "dialectId", "sentenceAb", "sentenceCh",
+             "sentenceOrder"],
+            [["1", "1", "32", "ʼahaʼopo dhona", "萬山", "1"],
+             ["2", "1", "28", "kudra drekay", "霧台", "1"]])
+
+    def test_the_wanshan_words_come_out_under_its_code(self):
+        found = lexicon_fetch.supplements({"dru-x-opnh"}, self.source,
+                                          self.names)
+        self.assertEqual(set(found), {"dru-x-opnh"})
+        self.assertIn("dhona", found["dru-x-opnh"])
+        self.assertNotIn("kudra", found["dru-x-opnh"])
+
+    def test_wanshan_is_the_only_supplement_for_now(self):
+        # 使用者 2026-11-16 裁定只做萬山；別的語言別日後要加再加。
+        self.assertEqual(lexicon_fetch.SUPPLEMENTS, frozenset({"dru-x-opnh"}))
+
+    def test_nothing_asked_reads_nothing(self):
+        # 沒有萬山的集時連 E樂園 都不用在（換機器還沒搬 E樂園 也能做別族）。
+        missing = os.path.join(self.tmp, "沒有")
+        self.assertEqual(lexicon_fetch.supplements(set(), missing, missing),
+                         {})
+
+    def test_no_unpacked_folder_is_refused_by_name(self):
+        missing = os.path.join(self.tmp, "沒有這個資料夾")
+        with self.assertRaises(PipelineError) as caught:
+            lexicon_fetch.supplements({"dru-x-opnh"}, missing, self.names)
+        self.assertIn("沒有這個資料夾", str(caught.exception))
+
+    def test_no_dialect_table_is_refused_by_name(self):
+        missing = os.path.join(self.tmp, "E樂園", "沒有編號表.txt")
+        with self.assertRaises(PipelineError) as caught:
+            lexicon_fetch.supplements({"dru-x-opnh"}, self.source, missing)
+        self.assertIn("沒有編號表.txt", str(caught.exception))
+
+    def test_a_variety_e_paradise_lacks_is_refused_by_code(self):
+        with self.assertRaises(PipelineError) as caught:
+            lexicon_fetch.supplements({"dru-x-tldr"}, self.source, self.names)
+        self.assertIn("dru-x-tldr", str(caught.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

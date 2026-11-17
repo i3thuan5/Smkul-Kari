@@ -57,7 +57,7 @@ fill_placed_area 判斷不出來的 placed cue，看過畫面用它補，不要�
 
 work dir 已經清掉或改名 `.stale-*` 的集（259 晚排灣、248 午噶瑪蘭、353 午
 噶瑪蘭）沒有時間軸可改，加 `--store` 直接改 Kari-SRT 的時間軸和 TSV，
-重做交付 SRT（`pairs_run.in_scope` 範圍內的再重做平行語料）；這時候要給
+重做交付 SRT（兩側都有的集〔`pairs_run.ready`〕再重做平行語料）；這時候要給
 `--lock`（跟 publish 同一把 store.lock，外面不要再包一層 flock）。還有
 work dir 的集不准用 `--store`：之後 publish 會用 work dir 那份蓋回去。
 """
@@ -423,7 +423,7 @@ def _rebuild_srt(stem):
     finally:
         shutil.rmtree(tmp)
     # 平行語料是 whisper 段落配交付 SRT 做出來的，SRT 一改就要重做
-    if pairs_run.in_scope(name):
+    if pairs_run.ready(name):
         pairs_run.main([name])
 
 

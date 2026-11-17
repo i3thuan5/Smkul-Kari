@@ -40,6 +40,8 @@
 | episode-catalogue／srt-data-store | 用排灣語辨識卑南語的 whisper SRT、平行語料（`2-csv-analysis`）、雙語字幕（`3-srt-paragraph`）、kaldi 各階段不可以改名留著冒充正確的——刪掉、辨識紀錄那列也刪，等重跑 | `test_relabel.py` |
 | episode-catalogue | 改名目標已經存在時一個都不搬（不搬一半） | `test_relabel.py` |
 | episode-catalogue | 2024-08 撒奇萊雅 → 阿美、2024-10 太魯閣 → 泰雅改了，目錄寫 `ami`、`tay`，但 mkv-raw 其他 2494 列都照 `新聞語言別代號.csv`（`ami-x-pswl`／海岸），whisper 也用那張表選模型——mkv-raw 來源照表填語言別；2021-01～10 ilrdf-corpus 舊批（289 列只記族語別）照舊 | `test_relabel.py` |
+| srt-data-store | ★ 只換語言別（`--variety`）：魯凱主播 Lavoras Tavelengae 講萬山，目錄記霧台／`dru`——成果檔名不變、1-ocr 不搬、影片不動；用霧台辨識的 whisper SRT、辨識紀錄那列、`2-csv-analysis`、`3-srt-paragraph` 刪掉等重跑，kaldi（族語別模型）不刪；目錄兩欄改掉、備註接在原備註後 | `test_relabel.py` |
+| srt-data-store | ★ `languages.code_for('魯凱', '北排灣')` 會悄悄退回 `dru`：不屬該族的語言別要自己查表拒絕；跟現在相同的語言別要拒絕、不可白刪 whisper；族語別參數跟目錄不同要拒絕（換族語別走原本那條）；拒絕時什麼都不刪 | `test_relabel.py` |
 
 ## 播出日期改正（`scripts/news/redate.py`）
 
@@ -128,7 +130,7 @@
 | srt-data-store | 段落表確認完才跟時間軸入庫到 `0-segments/<年-月>/`；內容相同不重寫；還有待確認段落的不入庫、時間軸照入 | `test_publish_gate.py` |
 | srt-data-store | `0-segments/` 有目錄查不到的孤兒檔、或驗不過的段落表，`rebuild --verify` 要抓到；2021 年大部分集數沒有段落表不算缺件 | `test_publish_gate.py` |
 | srt-data-store | 帶外補切直接改 Kari-SRT，work dir 還是補切前的；publish 不可拿 work dir 蓋回去（1209 晚間 729 條被 575 條蓋掉、「帶外專題」段落不見，publish 沒報錯，rebuild 才抓到）——Kari-SRT 時間軸有 work dir 沒有的區域就跳過並講原因；段落表也一樣（同一集第二次踩到：名條腳本直接呼叫 `publish_segments`，繞過 `publishable()` 的把關） | `test_publish_gate.py` |
-| srt-data-store | 平行語料兩層是仝一次配對產的：`2-csv-analysis` 改一格、`3-srt-paragraph` 改一字，`rebuild --verify` 都要指名集與層；CSV 在、SRT 無，是舊程式產的，要指名；SRT 在、CSV 無要指名；辭典取不到、辨識紀錄缺音長要指名，不可略過宣告通過；舊目錄 `2-平行語料/` 佮新目錄並存要失敗（改名時平行 session 可能用舊程式寫） | `test_rebuild_pairs.py` |
+| srt-data-store | 平行語料兩層是仝一次配對產的：`2-csv-analysis` 改一格、`3-srt-paragraph` 改一字，`rebuild --verify` 都要指名集與層；CSV 在、SRT 無，是舊程式產的，要指名；SRT 在、CSV 無要指名；辭典取不到、辨識紀錄缺音長要指名，不可略過宣告通過；舊目錄 `2-平行語料/` 佮新目錄並存要失敗（改名時平行 session 可能用舊程式寫）；★ 萬山的集（`dru-x-opnh`）重建要用跟產出一樣的聯集辭典，只用官方辭典會整份對不上；有萬山的集而 E樂園 不在要中止、不可宣告通過；沒有萬山的集不讀 E樂園 | `test_rebuild_pairs.py` |
 | srt-data-store | `cut_months` 正在精修的集數只有粗切時間軸，`publishable()` 放行、`publish_one` 才 raise，整輪 publish 倒掉，排在後面的集數都入不了（20230703_184 晚間）——在 `publishable()` 就講「時間軸猶未精修」跳過 | `test_publish_gate.py` |
 | srt-data-store | publish 先逐集判斷、才逐集寫，中間別的 agent 沒拿 `store.lock` 就把自己的 work dir 換名或還在精修：以前在 store.lock 裡整輪停在 `refined_timeline`，traceback 看不出是哪一集，排在後面的集數全部沒入庫（第三批搬到重播，鎖外重跑 334 集都正常）——時間軸被換名拿走、讀到寫一半的 JSON、時間軸入庫後段落表才被改到一半（要說「時間軸已經入庫、段落表沒有」，不能說沒有入庫）、沒出錯但寫的時候時間軸被改寫，都只有這一集印 `fail <集名>` 並提醒拿鎖，其他集照寫，最後回非零 | `test_publish_gate.py` |
 | srt-data-store | 審查重現：「是不是被別人改了」以前看例外種類（PipelineError、OSError、ValueError 都算），0-segments.csv 起秒手打錯成 x 也印「是不是有人沒拿 store.lock」、還說沒有入庫（時間軸其實已經寫進 1-cues），照提示等對方做完會一直重複失敗；磁碟滿（ENOSPC，stage-read 塞滿過兩次）也一樣被誤判——改看判斷時記下的檔案大小和修改時間，沒變就照舊停下來，traceback 帶集名、寫到哪裡、「不是別人改的」，不提 store.lock | `test_publish_gate.py` |

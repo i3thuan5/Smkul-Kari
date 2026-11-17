@@ -48,6 +48,24 @@ class TestSpotPick(unittest.TestCase):
         self.assertEqual(paragraph_export.spot_pick(pool, 2, seed=7),
                          paragraph_export.spot_pick(pool, 2, seed=7))
 
+    def test_per_tribe_draws_n_of_each_and_reports_the_short_ones(self):
+        # 看見族語每族 3 組 × 16 族＝48；某族高信心不足就全收並回報
+        pool = {"a1": [row(0, 10), row(10, 20), row(20, 30), row(30, 40)],
+                "b1": [row(0, 10), row(10, 20, "中信心")]}
+        tribes = {"a1": "阿美", "b1": "邵"}
+        chosen, short = paragraph_export.spot_pick_per_tribe(
+            pool, tribes, 3, seed=1)
+        picked = {}
+        for name, _index in chosen:
+            picked[tribes[name]] = picked.get(tribes[name], 0) + 1
+        self.assertEqual(picked, {"阿美": 3, "邵": 1})
+        self.assertEqual(short, {"邵": 1})
+        again, _short = paragraph_export.spot_pick_per_tribe(
+            pool, tribes, 3, seed=1)
+        self.assertEqual(again, chosen)
+        for name, index in chosen:
+            self.assertEqual(pool[name][index]["信心層級"], "高信心")
+
 
 class TestWithStore(Store):
     def setUp(self):
@@ -76,6 +94,26 @@ class TestWithStore(Store):
             listed = list(csv.DictReader(handle))
         self.assertEqual(listed[0]["成果檔名"], AMIS_NAME)
 
+    def test_the_list_covers_everything_delivered_not_just_this_run(self):
+        # 清單每 export 一次被覆寫成只剩這次的月份——交件資料夾有 2021-01～02，
+        # 清單卻只剩 2021-02（2026-11-16 發現）
+        march = "20210301_060_晚間_Amis_阿美"
+        self.episode(march, "Amis", "阿美", "ami", "tada ko matini")
+        self.write_catalogue()
+        pairs_run.run(lexicons=LEXICONS)
+        out = os.path.join(self.work, "out")
+        paragraph_export.export(["2021-02"], out)
+        paragraph_export.export(["2021-03"], out)
+        paragraph_export.export(["2021-02"], out)
+        with open(os.path.join(out, "3-雙語字幕清單.csv"),
+                  encoding="utf-8") as handle:
+            names = []
+            for r in csv.DictReader(handle):
+                names.append(r["成果檔名"])
+        self.assertEqual(names, sorted(["20210201_032_晚間_Amis_阿美",
+                                        "20210202_033_晚間_Atayal_泰雅",
+                                        march]))
+
     def test_a_month_with_nothing_is_refused(self):
         with self.assertRaises(PipelineError):
             paragraph_export.export(["2021-05"],
@@ -97,6 +135,27 @@ class TestWithStore(Store):
             paragraph_export.write_spot(
                 ["2021-02"], folder=os.path.join(self.work, "spot"))
         self.assertIn(AMIS_NAME, str(caught.exception))
+
+    def test_a_batch_folder_with_a_request_already_is_refused(self):
+        # 第二批會蓋掉 2021-01～02 那批的 request-01／reply-01
+        folder = os.path.join(self.work, "spot", "2023")
+        paragraph_export.write_spot(["2021-02"], folder=folder)
+        request = os.path.join(folder, "request-01-a.tsv")
+        with open(request, "rb") as handle:
+            before = handle.read()
+        with self.assertRaises(PipelineError) as caught:
+            paragraph_export.write_spot(["2021-02"], folder=folder)
+        self.assertIn("2023", str(caught.exception))
+        with open(request, "rb") as handle:
+            self.assertEqual(handle.read(), before)
+
+    def test_per_tribe_spot_writes_a_sample(self):
+        lines = []
+        count = paragraph_export.write_spot(
+            ["2021-02"], folder=os.path.join(self.work, "spot", "每族"),
+            per_tribe=3, say=lines.append)
+        self.assertGreater(count, 0)
+        self.assertTrue(lines)   # 合成資料每族不到 3 組，要回報
 
 
 if __name__ == "__main__":

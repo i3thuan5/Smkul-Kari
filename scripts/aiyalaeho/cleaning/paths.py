@@ -6,6 +6,7 @@
 """
 import os
 
+from scripts import datadirs
 from scripts.datadirs import KARI
 from scripts.datadirs import KITHANN
 from scripts.errors import PipelineError
@@ -59,10 +60,9 @@ class Layout(object):
         self.deliver = os.path.join(root, "5-交付")
 
 
-# 族語E樂園 教材匯出：原檔在 kithann/E樂園/（含音檔），文字檔（csv、xml）
-# 另外解到 E樂園-解壓/ 給 lexicon/klokah.py 讀。語言別編號表跟著原檔放。
-KLOKAH_SOURCE = os.path.join(KITHANN, "E樂園-解壓")
-KLOKAH_NAMES = os.path.join(KITHANN, "E樂園", "E樂園方言編號.txt")
+# 族語E樂園 教材匯出的位置（新聞平行語料也讀，所以定義在 datadirs）。
+KLOKAH_SOURCE = datadirs.KLOKAH_SOURCE
+KLOKAH_NAMES = datadirs.KLOKAH_NAMES
 
 # 官方辭典各族只收一個語別（xlsx「語別」欄，2026-10-15 量）。賽夏不分
 # 語別，欄是空的。

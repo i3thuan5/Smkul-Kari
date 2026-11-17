@@ -2,16 +2,21 @@
 """族華平行語料：sapolita 段落配華語字幕 → 2-csv-analysis/<年-月>/<成果檔名>.csv，
 同一輪寫出 3-srt-paragraph/<年-月>/<成果檔名>.srt
 
-    python3 -m scripts.news.pairs_run                  # 範圍內整批
+    python3 -m scripts.news.pairs_run                  # 整批
     python3 -m scripts.news.pairs_run <成果檔名>...     # 只做這幾集
-    python3 -m scripts.news.pairs_run --recalibrate    # 先重算校正基準
+    python3 -m scripts.news.pairs_run --recalibrate    # 先補校正基準缺的列
 
-範圍是 2021-01～10、兩側（`1-ocr/3-srt/` 與 `2-asr-whisper/
-1-srt-sapolita/`）都有的集數；只有一側的列出來、不算錯。
+做兩側（`1-ocr/3-srt/` 與 `2-asr-whisper/1-srt-sapolita/`）都有的
+集數，不限月份；只有一側的列出來、不算錯。
 
 每一集是 store 輸入加辭典的純函式，所以重跑逐 byte 相同，`rebuild
---verify` 用同一個 `episode_csv` 重產比對。校正基準只在 `--recalibrate`
-時重算——平時重算的話，每加一批，舊集數的分層就跟著變。
+--verify` 用同一個 `episode_files` 重產比對。校正基準只在
+`--recalibrate` 時補缺的列，既有的列不動——平時重算的話，每加一批，
+舊集數的分層就跟著變。要重算既有的列，先刪表。
+
+辭典：官方 16 族辭典；語言別代號在 `lexicon_fetch.SUPPLEMENTS` 的集
+（萬山），本族辭典換成官方該族辭典與 E樂園 該語言別詞表的聯集，校正
+基準也另成一列。範圍內沒有這類集時不讀 E樂園。
 
 兩種時間：配對、補洞、校正基準的前 90 秒、特徵都用真實的語音邊界
 （`overlap.span`）；只有 CSV 的開始、結束時間是延伸 0.5 秒後的
@@ -25,6 +30,7 @@ import csv
 import os
 import sys
 
+from scripts import languages
 from scripts.lexicon import vocab
 from scripts.mt import calibration
 from scripts.mt import features
@@ -38,12 +44,18 @@ from scripts.errors import PipelineError
 from scripts.news import lexicon_fetch
 from scripts.news import paths
 
-FIRST_MONTH = "2021-01"
-LAST_MONTH = "2021-10"
+
+def _sides(srt_name):
+    ocr = os.path.exists(paths.stage_path(paths.SRT_DIR, srt_name, ".srt"))
+    asr = os.path.exists(paths.stage_path(paths.SAPOLITA_SRT, srt_name,
+                                          ".srt"))
+    return ocr, asr
 
 
-def in_scope(srt_name):
-    return FIRST_MONTH <= paths.month_of(srt_name) <= LAST_MONTH
+def ready(srt_name):
+    """Both sides are in: the episode's pairs can be (re)made."""
+    ocr, asr = _sides(srt_name)
+    return ocr and asr
 
 
 def plan(entries):
@@ -53,11 +65,7 @@ def plan(entries):
     skipped = []
     for entry in entries:
         name = entry["srt_name"]
-        if not in_scope(name):
-            continue
-        ocr = os.path.exists(paths.stage_path(paths.SRT_DIR, name, ".srt"))
-        asr = os.path.exists(paths.stage_path(paths.SAPOLITA_SRT, name,
-                                              ".srt"))
+        ocr, asr = _sides(name)
         if ocr and asr:
             todo.append(entry)
         elif ocr:
@@ -71,6 +79,49 @@ def _fold(code):
     def fold(word):
         return vocab.fold(word, code)
     return fold
+
+
+def supplement_codes(entries):
+    """The supplemented 語言別代號 these episodes use."""
+    found = set()
+    for entry in entries:
+        if entry["語言別代號"] in lexicon_fetch.SUPPLEMENTS:
+            found.add(entry["語言別代號"])
+    return found
+
+
+def dictionaries(entries, lexicons=None, supplements=None):
+    """(official lexicons, supplements) for these episodes; E樂園 is read
+    only when one of them uses a supplemented variety."""
+    if lexicons is None:
+        lexicons = lexicon_fetch.lexicons()
+    if supplements is None:
+        codes = supplement_codes(entries)
+        supplements = {}
+        if codes:
+            supplements = lexicon_fetch.supplements(codes)
+    return lexicons, supplements
+
+
+def episode_lexicons(entry, lexicons, supplements):
+    """The 16 tribes as this episode reads them: for a supplemented
+    variety, its tribe is the official dictionary plus the variety's
+    words -- a union, so the 霧台 speakers in a 萬山 bulletin still count."""
+    code = entry["語言別代號"]
+    if code not in lexicon_fetch.SUPPLEMENTS:
+        return lexicons
+    tribe = entry["族語別(中)"]
+    out = dict(lexicons)
+    out[tribe] = set(lexicons[tribe]) | set(supplements[code])
+    return out
+
+
+def calibration_code(entry):
+    """Which baseline row the episode counts towards and reads."""
+    code = entry["語言別代號"]
+    if code in lexicon_fetch.SUPPLEMENTS:
+        return code
+    return languages.code_for(entry["族語別(中)"], "")
 
 
 def measured(entry, lexicons, merge=None):
@@ -102,7 +153,8 @@ def opening_samples(entry, lexicons):
     for group, feat in zip(groups, feats):
         # the true start: padded, 90.0-90.5 s openings would creep in
         start, _end = overlap.span(group, segments)
-        out.append({"tribe": entry["族語別(中)"], "start": start,
+        out.append({"tribe": entry["族語別(中)"],
+                    "code": calibration_code(entry), "start": start,
                     "asr_words": feat["asr_words"],
                     "lexicon_rate": feat["lexicon_rate"]})
     return out
@@ -133,7 +185,7 @@ def episode_files(entry, lexicons, table, lengths):
     """(CSV text, SRT text) of one episode, from one pairing."""
     name = entry["srt_name"]
     tribe = entry["族語別(中)"]
-    baseline = calibration.rate_of(table, tribe, name)
+    baseline = calibration.rate_of(table, tribe, entry["語言別代號"], name)
     duration = audio_length(name, lengths)
     groups, segments, subtitles, feats = measured(entry, lexicons)
     try:
@@ -169,22 +221,27 @@ def refuse_legacy_dir():
             "刪掉（可能是平行 session 用舊程式寫的）" % paths.LEGACY_PAIRS_DIR)
 
 
-def write_calibration(todo, lexicons):
+def write_calibration(todo, lexicons, supplements):
+    """Fill the rows the table lacks; the rows it has stay as they are."""
     samples = []
     for entry in todo:
-        samples.extend(opening_samples(entry, lexicons))
-    calibration.write(calibration.baseline(samples),
-                      paths.PAIRS_CALIBRATION)
+        samples.extend(opening_samples(
+            entry, episode_lexicons(entry, lexicons, supplements)))
+    old = {}
+    if os.path.exists(paths.PAIRS_CALIBRATION):
+        old = calibration.read(paths.PAIRS_CALIBRATION)
+    calibration.write(
+        calibration.fill_missing(old, calibration.baseline(samples)),
+        paths.PAIRS_CALIBRATION)
 
 
-def run(names=None, recalibrate=False, lexicons=None):
+def run(names=None, recalibrate=False, lexicons=None, supplements=None):
     """([written CSV paths], [(name, why) skipped])."""
     refuse_legacy_dir()
     todo, skipped = plan(episodes.load())
-    if lexicons is None:
-        lexicons = lexicon_fetch.lexicons()
+    lexicons, supplements = dictionaries(todo, lexicons, supplements)
     if recalibrate:
-        write_calibration(todo, lexicons)
+        write_calibration(todo, lexicons, supplements)
     table = calibration.read(paths.PAIRS_CALIBRATION)
     lengths = audio_lengths()
     wanted = set(names or [])
@@ -193,7 +250,9 @@ def run(names=None, recalibrate=False, lexicons=None):
         name = entry["srt_name"]
         if wanted and name not in wanted:
             continue
-        csv_text, srt_text = episode_files(entry, lexicons, table, lengths)
+        csv_text, srt_text = episode_files(
+            entry, episode_lexicons(entry, lexicons, supplements), table,
+            lengths)
         for target, text in ((output_path(name), csv_text),
                              (srt_path(name), srt_text)):
             os.makedirs(os.path.dirname(target), exist_ok=True)
@@ -207,7 +266,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("names", nargs="*", help="干焦做這幾集")
     ap.add_argument("--recalibrate", action="store_true",
-                    help="先用範圍內全部集數重算校正基準")
+                    help="先補校正基準表缺的列（既有的列不動）")
     args = ap.parse_args(argv)
     written, skipped = run(args.names, recalibrate=args.recalibrate)
     print("寫了 %d 集" % len(written))

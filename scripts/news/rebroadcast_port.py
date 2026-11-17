@@ -5017,7 +5017,7 @@ def _with_newline(lines):
 
 def _default_pairs(name):
     from scripts.news import pairs_run
-    if pairs_run.in_scope(name):
+    if pairs_run.ready(name):
         pairs_run.main([name])
 
 

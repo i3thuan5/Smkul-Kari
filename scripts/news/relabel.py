@@ -14,6 +14,16 @@
   ê結果頂替正確ê。
 
 逐个目標攏先檢查無存在才開始搬，一个衝突就規个停，毋會搬一半。
+
+只換語言別（族語別無變，`--variety`）：
+
+    python3 -m scripts.news.relabel <成果檔名> <族語別(中)> \
+        --variety <語言別> --reason "…"
+
+成果檔名無變（名內底干焦族語別），影像側一个都無搬、影片無動；用毋著
+ê語言別辨識ê whisper SRT、辨識紀錄那列、平行語料、段落字幕刪掉等重跑；
+kaldi 用ê是族語別模型，無刪。例：魯凱主播 Lavoras Tavelengae 講萬山
+（2026-11-16 查證），目錄本底記霧台／`dru`。
 """
 import argparse
 import collections
@@ -72,6 +82,73 @@ def relabel_row(row, chinese, reason):
     out["備註"] = (row.get("備註") or "").strip()
     out["備註"] = (out["備註"] + "；" + note) if out["備註"] else note
     return out
+
+
+# 只換語言別時刪ê：用語言別揀模型ê whisper 彼三層。
+REVARY_REMOVE = (("2-asr-whisper/1-srt-sapolita", ".srt"),
+                 ("2-asr-whisper/2-csv-analysis", ".csv"),
+                 ("2-asr-whisper/3-srt-paragraph", ".srt"))
+
+
+def vary_row(row, variety, reason):
+    """目錄一列換做仝族ê另一个語言別：語言別、代號、備註；成果檔名無變。
+
+    `languages.code_for` 查無會恬恬退轉去族語別代號（魯凱＋北排灣 →
+    `dru`），所以先查這族ê語言別表，無就拒絕。
+    """
+    tribe = row["族語別(中)"]
+    table = languages.VARIETIES.get(tribe) or {}
+    if languages.key(variety) not in table:
+        raise PipelineError("%s：%s 無「%s」這个語言別" % (
+            row["成果檔名"], tribe, variety))
+    code = table[languages.key(variety)]
+    if code == row["語言別代號"]:
+        raise PipelineError("%s：語言別已經是 %s（%s），無改" % (
+            row["成果檔名"], variety, code))
+    out = dict(row)
+    old = row["語言別"] or row["語言別代號"]
+    out["語言別"] = variety
+    out["語言別代號"] = code
+    note = "語言別本底標 %s，改 %s：%s" % (old, variety, reason)
+    out["備註"] = (row.get("備註") or "").strip()
+    out["備註"] = (out["備註"] + "；" + note) if out["備註"] else note
+    return out
+
+
+def clear_whisper(name, store=None):
+    """刪這集用語言別辨識出來ê whisper 三層佮辨識紀錄那列。"""
+    store = store or paths.NEWS_STORE
+    removed = []
+    for rel, ext in REVARY_REMOVE:
+        path = _stage(store, rel, name, ext)
+        if os.path.exists(path):
+            os.remove(path)
+            removed.append(path)
+    log = os.path.join(store, "2-asr-whisper/1-srt-sapolita/辨識紀錄.csv")
+    if _drop_row(log, name):
+        removed.append(log + "（" + name + " 那列）")
+    return Report([], removed)
+
+
+def revary(name, chinese, variety, reason, catalogue=None, store=None):
+    """只換語言別：先驗（族語別愛對、語言別愛屬這族、毋是現此時這个），
+    驗過才刪 whisper 三層、改目錄。回 Report。"""
+    target = catalogue or paths.TRACKER_STORE
+    rows, head = name_catalogue.read(target)
+    found = None
+    for index, row in enumerate(rows):
+        if row["成果檔名"] == name:
+            found = index
+    if found is None:
+        raise PipelineError("目錄內底無 %s" % name)
+    if rows[found]["族語別(中)"] != chinese:
+        raise PipelineError("%s 目錄是 %s，毋是 %s；換族語別莫用 --variety" % (
+            name, rows[found]["族語別(中)"], chinese))
+    new_row = vary_row(rows[found], variety, reason)
+    report = clear_whisper(name, store=store)
+    rows[found] = new_row
+    name_catalogue.write(target, rows, head)
+    return report
 
 
 def _stage(store, rel, name, ext):
@@ -196,7 +273,16 @@ def main(argv=None):
     ap.add_argument("name", help="目前ê成果檔名")
     ap.add_argument("language", help="正確ê族語別（中文）")
     ap.add_argument("--reason", required=True, help="寫入備註ê依據")
+    ap.add_argument("--variety", help="干焦換語言別（族語別愛佮目錄仝款）")
     args = ap.parse_args(argv)
+    if args.variety:
+        report = revary(args.name, args.language, args.variety, args.reason)
+        for path in report.removed:
+            print("刪掉  %s" % path)
+        print("next: whisper 重跑 `python3 -m scripts.news.whisper_run %s`，"
+              "平行語料重做，然後 rebuild --verify、name_catalogue --check"
+              % args.name)
+        return 0
     new, report = relabel(args.name, args.language, args.reason)
     print("%s → %s" % (args.name, new))
     for path in report.renamed:

@@ -44,19 +44,19 @@ class FakeGradioClient(object):
 
 
 class TestGroupOf(unittest.TestCase):
-    def test_apostrophes_are_the_curly_kind_the_service_uses(self):
-        # U+2019, not the ASCII "'" -- the service rejects the ASCII one.
-        self.assertEqual(sapolita.GROUP_OF_CODE["ami-x-pswl"],
-                         "阿美語 (’Amis)")
-        self.assertEqual(sapolita.GROUP_OF_CODE["sxr"],
-                         "拉阿魯哇語 (Hla’alua)")
-        self.assertNotIn("阿美語 ('Amis)", sapolita.GROUP_OF_CODE.values())
+    def test_group_values_are_the_bare_chinese_names_the_server_lists(self):
+        # 伺服器 2026-09-24 之後的族別選單只剩中文名；送「魯凱語 (Rukai)」
+        # 會被回 "not in the list of choices"（2026-11-16 踩到）。
+        self.assertEqual(sapolita.GROUP_OF_CODE["dru-x-opnh"], "魯凱語")
+        self.assertEqual(sapolita.GROUP_OF_CODE["ami-x-pswl"], "阿美語")
+        self.assertEqual(sapolita.GROUP_OF_CODE["sxr"], "拉阿魯哇語")
+        for label in sapolita.GROUP_OF_CODE.values():
+            self.assertNotIn(" (", label)
+            self.assertNotIn("(", label)
 
     def test_seediq_and_truku_do_not_share_a_group_despite_the_prefix(self):
-        self.assertEqual(sapolita.group_of("trv-x-tgdy"),
-                         "賽德克語 (Seediq/Seejiq/Sediq)")
-        self.assertEqual(sapolita.group_of("trv-x-truku"),
-                         "太魯閣語 (Truku)")
+        self.assertEqual(sapolita.group_of("trv-x-tgdy"), "賽德克語")
+        self.assertEqual(sapolita.group_of("trv-x-truku"), "太魯閣語")
 
     def test_a_code_outside_the_table_is_refused_without_any_request(self):
         with self.assertRaises(PipelineError):
@@ -78,7 +78,7 @@ class TestRecognize(unittest.TestCase):
             kinds.append(call[0])
         self.assertEqual(kinds, [sapolita.FN["update_languages"],
                                  sapolita.FN["generate_srt"]])
-        self.assertEqual(client.calls[0][2], ["邵語 (Thau)"])
+        self.assertEqual(client.calls[0][2], ["邵語"])
 
     def test_generate_srt_without_priming_the_session_fails(self):
         client = FakeGradioClient()

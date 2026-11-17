@@ -21,15 +21,23 @@ What this refuses, by name:
 
 The tribe comes from the file name (「…_10邵語5230筆…」), never from the
 date prefix, which changes with every release.
+
+補充詞表（`supplements`）：官方辭典一族只收一個語言別，魯凱收霧台。
+萬山主播 Lavoras Tavelengae 的開場命中率只有 0.048、85% 的組被判
+不採用（2026-11-16 量）。`SUPPLEMENTS` 裡的語言別從族語E樂園 教材
+（`kithann/E樂園-解壓/`）現抽詞表，跟官方辭典取聯集用。E樂園 沒有
+SFTP 來源，不在就指名中止；沒有要補的語言別時不讀它。
 """
 import os
 import re
 import subprocess
 import sys
 
+from scripts import datadirs
 from scripts import languages
 from scripts.errors import PipelineError
 from scripts.lexicon import dictionary
+from scripts.lexicon import klokah
 from scripts.news import paths
 
 SFTP_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -37,6 +45,10 @@ SFTP_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)),
 NAME = re.compile(r"_[0-9]{2}([^_0-9]+?)語[0-9]")
 OCTAL = re.compile(r"\\([0-7]{3})")
 CACHE = "詞庫"
+
+# 官方辭典沒收、要用 E樂園 詞表補的語言別代號（使用者 2026-11-16 裁定
+# 只做萬山）。
+SUPPLEMENTS = frozenset({"dru-x-opnh"})
 
 
 def tribes():
@@ -161,6 +173,33 @@ def lexicons(folder=None, runner=None):
         if stale:
             dictionary.distil(books[tribe], target)
         out[tribe] = dictionary.load(target)
+    return out
+
+
+def supplements(codes, source=None, names=None):
+    """{語言別代號: set of words} from E樂園, for the codes asked.
+
+    No codes, no reading: a machine that has not moved E樂園 over yet can
+    still do every other tribe.
+    """
+    if not codes:
+        return {}
+    source = source or datadirs.KLOKAH_SOURCE
+    names = names or datadirs.KLOKAH_NAMES
+    for path in (source, names):
+        if not os.path.exists(path):
+            raise PipelineError(
+                "%s 不在：補充詞表（%s）要讀族語E樂園；E樂園 沒有 SFTP 來源，"
+                "換機器要把 kithann/E樂園/ 搬過來再解壓"
+                % (path, "、".join(sorted(codes))))
+    out = {}
+    for full_name, words in klokah.vocabularies(source, names).items():
+        _language, _variety, code = klokah.variety_of(full_name)
+        if code in codes:
+            out[code] = words
+    for code in sorted(codes):
+        if code not in out:
+            raise PipelineError("族語E樂園（%s）沒有 %s 的文本" % (source, code))
     return out
 
 

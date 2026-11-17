@@ -2,14 +2,16 @@
 """族語新聞雙語字幕交件：Kari-SRT 的 2-csv-analysis、3-srt-paragraph → 交件資料夾、清單、抽查請求.
 
     python3 -m scripts.news.paragraph_export --export 2021-01 2021-02
-    python3 -m scripts.news.paragraph_export --spot-sample 2021-01 2021-02
-    python3 -m scripts.news.paragraph_export --spot-report
+    python3 -m scripts.news.paragraph_export --spot-sample 2023-01 … \
+        --batch 2023 [--per-tribe 3]
+    python3 -m scripts.news.paragraph_export --spot-report --batch 2023
 
 `--export` copies, under `--out` (default kithann/out/news/雙語字幕/):
 
     1-雙語字幕/<年-月>/<成果檔名>.srt   3-srt-paragraph 那份原樣
     2-平行語料/<年-月>/<成果檔名>.csv   2-csv-analysis 那份原樣
-    3-雙語字幕清單.csv                  一集一列（不入 Kari-SRT）
+    3-雙語字幕清單.csv                  一集一列（不入 Kari-SRT），列出
+                                       交件資料夾裡全部的集，不只這次的月份
 
 The folder names are the ones the reviewers already have from the
 第二期第一批 delivery. Nothing is made here: the SRT and the CSV come
@@ -17,7 +19,10 @@ from one `pairs_run` pass, and `rebuild --verify` holds both.
 
 `--spot-sample` draws high-confidence groups for an Opus judge
 (`scripts/mt/judge_prompt_paragraph.md`, the same request rows as
-`pairs_tune`); the judge writes `reply-01.tsv` and `--spot-report`
+`pairs_tune`) into `雙語字幕-抽查/<batch>/`, refusing a folder that
+already holds a request (the first batch, 2021-01～02, sits at the top
+level and must not be overwritten); `--per-tribe N` draws N per tribe
+instead. The judge writes `reply-01.tsv` and `--spot-report --batch`
 checks its ids and counts the labels.
 """
 import argparse
@@ -29,6 +34,7 @@ import random
 import shutil
 import sys
 
+from scripts import datadirs
 from scripts.errors import PipelineError
 from scripts.mt import load
 from scripts.mt import overlap
@@ -117,13 +123,33 @@ def export(months, out=OUT):
             os.makedirs(os.path.dirname(target), exist_ok=True)
             shutil.copyfile(source, target)
         rows_out.append(summary(catalogue[name], _read(path)))
+    write_list(out, catalogue)
+    return rows_out
+
+
+def write_list(out, catalogue=None):
+    """The list of every episode in the delivery folder, by 成果檔名."""
+    catalogue = catalogue or _catalogue()
+    delivered = sorted(glob.glob(os.path.join(out, "2-平行語料", "*",
+                                              "*.csv")))
+    rows = []
+    for path in delivered:
+        name, _month = _name_month(path)
+        if name not in catalogue:
+            raise PipelineError("交件資料夾的 %s 不在節目目錄 smkul.csv" % name)
+        rows.append(summary(catalogue[name], _read(path)))
+    rows.sort(key=_by_name)
     with open(os.path.join(out, "3-雙語字幕清單.csv"), "w", encoding="utf-8",
               newline="") as handle:
         writer = csv.DictWriter(handle, SUMMARY_FIELDS, lineterminator="\n")
         writer.writeheader()
-        for r in rows_out:
+        for r in rows:
             writer.writerow(r)
-    return rows_out
+    return rows
+
+
+def _by_name(r):
+    return r["成果檔名"]
 
 
 def spot_pick(pool, n, seed=SPOT_SEED, skip=()):
@@ -134,6 +160,25 @@ def spot_pick(pool, n, seed=SPOT_SEED, skip=()):
             if r["信心層級"] == "高信心" and (name, index) not in skip:
                 candidates.append((name, index))
     return random.Random(seed).sample(candidates, min(n, len(candidates)))
+
+
+def spot_pick_per_tribe(pool, tribes, n, seed=SPOT_SEED, skip=()):
+    """([(成果檔名, 組序)], {族: 抽到幾組}) -- n high-confidence groups of
+    each tribe; a tribe with fewer gives all it has and is reported."""
+    by_tribe = {}
+    for name in sorted(pool):
+        for index, r in enumerate(pool[name]):
+            if r["信心層級"] == "高信心" and (name, index) not in skip:
+                by_tribe.setdefault(tribes[name], []).append((name, index))
+    chosen = []
+    short = {}
+    for tribe in sorted(by_tribe):
+        candidates = by_tribe[tribe]
+        if len(candidates) < n:
+            short[tribe] = len(candidates)
+        chosen.extend(random.Random(seed).sample(
+            candidates, min(n, len(candidates))))
+    return chosen, short
 
 
 def check_span(row, span, name, index, tolerance=0.001):
@@ -167,8 +212,15 @@ def _material(entry, lengths):
     return groups, spans, segments, subtitles
 
 
-def write_spot(months, folder=SPOT, n=SPOT_SIZE, seed=SPOT_SEED):
-    """sample.csv plus request-01-{a..d}.tsv; returns how many drawn."""
+def write_spot(months, folder=SPOT, n=SPOT_SIZE, seed=SPOT_SEED,
+               per_tribe=None, say=print):
+    """sample.csv plus request-01-{a..d}.tsv; returns how many drawn.
+
+    A folder that already holds a request is refused: a second batch
+    written there would overwrite the first one's requests (and orphan
+    its reply)."""
+    if glob.glob(os.path.join(folder, "request-01-*.tsv")):
+        raise PipelineError("%s 已經有抽查請求，換一個 --batch" % folder)
     catalogue = _catalogue()
     lengths = pairs_run.audio_lengths()
     pool = {}
@@ -193,7 +245,17 @@ def write_spot(months, folder=SPOT, n=SPOT_SIZE, seed=SPOT_SEED):
             if tuning.too_long(line):
                 skip.add((name, index))
             lines[(name, index)] = (group, segments, subtitles)
-    chosen = spot_pick(pool, n, seed, skip)
+    if per_tribe:
+        tribes = {}
+        for name in pool:
+            tribes[name] = catalogue[name]["族語別(中)"]
+        chosen, short = spot_pick_per_tribe(pool, tribes, per_tribe, seed,
+                                            skip)
+        for tribe in sorted(short):
+            say("%s 高信心只有 %d 組，不到 %d 組，全收" % (
+                tribe, short[tribe], per_tribe))
+    else:
+        chosen = spot_pick(pool, n, seed, skip)
     os.makedirs(folder, exist_ok=True)
     with open(os.path.join(folder, "sample.csv"), "w", encoding="utf-8",
               newline="") as handle:
@@ -233,8 +295,16 @@ def main(argv=None):
     ap.add_argument("--export", nargs="+", metavar="年-月")
     ap.add_argument("--spot-sample", nargs="+", metavar="年-月")
     ap.add_argument("--spot-report", action="store_true")
+    ap.add_argument("--batch", help="抽查批次資料夾名（雙語字幕-抽查/<名>/）")
+    ap.add_argument("--per-tribe", type=int, help="每族抽幾組（不給就隨機抽 48）")
     ap.add_argument("--out", default=OUT)
     args = ap.parse_args(argv)
+    folder = SPOT
+    if args.spot_sample or args.spot_report:
+        if not args.batch:
+            raise PipelineError("--spot-sample／--spot-report 要給 --batch")
+        datadirs.check_name(args.batch, "--batch")
+        folder = os.path.join(SPOT, args.batch)
     if args.export:
         rows = export(args.export, args.out)
         total = collections.Counter()
@@ -244,9 +314,11 @@ def main(argv=None):
         facts = (total["集"], total["條"], args.out)
         print("寫了 %d 集、%d 條雙語字幕 → %s" % facts)
     if args.spot_sample:
-        print("抽了 %d 組 → %s" % (write_spot(args.spot_sample), SPOT))
+        count = write_spot(args.spot_sample, folder=folder,
+                           per_tribe=args.per_tribe)
+        print("抽了 %d 組 → %s" % (count, folder))
     if args.spot_report:
-        for label, count in sorted(spot_report().items()):
+        for label, count in sorted(spot_report(folder).items()):
             print("%s\t%d" % (label, count))
     return 0
 

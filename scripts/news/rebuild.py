@@ -240,18 +240,21 @@ def _stored(path):
         return handle.read()
 
 
-def pairs_problems(load_lexicons=None):
+def pairs_problems(load_lexicons=None, load_supplements=None):
     """2-csv-analysis and 3-srt-paragraph files the store cannot rebuild
     byte for byte -- one pairing makes both, so both are compared.
 
     The dictionaries are loaded only when the layer has a file at all,
-    and a failure to get them stops the check: passing by skipping the
-    layer would say "rebuilt" about files nobody rebuilt.
+    E樂園 only when a supplemented (萬山) episode is in it; a failure to
+    get either stops the check: passing by skipping the layer would say
+    "rebuilt" about files nobody rebuilt. The episodes read the same
+    dictionaries `pairs_run` gave them (`pairs_run.episode_lexicons`).
     """
     names = sorted(_stage_files(paths.PAIRS_DIR, ".csv"))
     if not names:
         return []
     load_lexicons = load_lexicons or lexicon_fetch.lexicons
+    load_supplements = load_supplements or lexicon_fetch.supplements
     try:
         lexicons = load_lexicons()
     except PipelineError as error:
@@ -262,11 +265,26 @@ def pairs_problems(load_lexicons=None):
     by_name = {}
     for entry in episodes.load():
         by_name[entry["srt_name"]] = entry
+    present = []
+    for name in names:
+        if name in by_name:
+            present.append(by_name[name])
+    supplements = {}
+    codes = pairs_run.supplement_codes(present)
+    if codes:
+        try:
+            supplements = load_supplements(codes)
+        except PipelineError as error:
+            raise PipelineError("2-csv-analysis 重建要用 E樂園 補充詞表，"
+                                "取不到：%s" % error)
     problems = []
     for name in names:
         try:
-            rebuilt = pairs_run.episode_files(by_name[name], lexicons, table,
-                                              lengths)
+            entry = by_name[name]
+            rebuilt = pairs_run.episode_files(
+                entry, pairs_run.episode_lexicons(entry, lexicons,
+                                                  supplements),
+                table, lengths)
         except (PipelineError, KeyError, OSError) as error:
             problems.append("%s 2-csv-analysis：重建袂出來——%s"
                             % (name, error))

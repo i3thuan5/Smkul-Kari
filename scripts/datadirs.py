@@ -23,6 +23,13 @@ ROOT = os.path.dirname(HERE)
 KITHANN = os.path.join(ROOT, "kithann")
 KARI = os.path.join(ROOT, "Kari-SRT")
 
+# 族語E樂園 教材匯出：原檔在 kithann/E樂園/（含音檔，大的 tar 1–2 GB），
+# 文字檔（csv、xml）另外解到 E樂園-解壓/ 給 scripts/lexicon/klokah.py 讀；
+# 語言別編號表跟著原檔放。《開會了》清洗與新聞平行語料（萬山詞表）都讀。
+# 沒有 SFTP 來源：換機器要把 kithann/E樂園/ 搬過去再解壓。
+KLOKAH_SOURCE = os.path.join(KITHANN, "E樂園-解壓")
+KLOKAH_NAMES = os.path.join(KITHANN, "E樂園", "E樂園方言編號.txt")
+
 # The only places a path-shaped CLI argument may legitimately point.
 # Deliberately NOT the whole repo -- scripts/ and openspec/ are code and
 # specs, not data, and nothing should be reading or writing episodes there.

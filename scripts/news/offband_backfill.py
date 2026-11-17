@@ -673,7 +673,7 @@ def apply(name, reader, keep_store_table=False):
 
     # 平行語料是 whisper 段落配交付 SRT 做出來ê，SRT 一改就愛重做。
     from scripts.news import pairs_run
-    if pairs_run.in_scope(name):
+    if pairs_run.ready(name):
         pairs_run.main([name])
 
     table_path = paths.segments_file(out)

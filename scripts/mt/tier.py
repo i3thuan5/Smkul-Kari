@@ -2,8 +2,8 @@
 """高信心／中信心／不採用, and the one reason a group was dropped.
 
 Every threshold of the pipeline lives here, the merge threshold
-included: tuning changes one number in one place, then the whole
-2021-01～10 batch is produced again.
+included: tuning changes one number in one place, then every episode
+is produced again.
 
 The rules (whisper-parallel-corpus spec) come from the explore phase:
 the dictionary hit rate separated good pairs from bad best (AUC

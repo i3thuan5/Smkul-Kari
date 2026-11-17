@@ -426,7 +426,7 @@ class TestStoreMode(unittest.TestCase):
                                   lambda name: [self.folder]),
                 mock.patch("scripts.news.rebuild.rebuild_one",
                            self.fake_rebuild),
-                mock.patch("scripts.news.pairs_run.in_scope",
+                mock.patch("scripts.news.pairs_run.ready",
                            lambda name: False)):
             patch.start()
             self.addCleanup(patch.stop)
