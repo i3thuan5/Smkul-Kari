@@ -73,3 +73,21 @@ class Store(object):
 
 def parse(text):
     return srt.parse_srt(text)
+
+
+def write_marks(path, rows):
+    """合成 `4-語言檢查/逐條語言標記.csv`：rows 是 [(成果檔名, 字幕編號,
+    這列的語言)…]。表頭照正式的 MARK_HEADER，用不到的欄留空。"""
+    from scripts.aiyalaeho.langcheck import report
+    header = report.MARK_HEADER
+    table = []
+    for srt_name, number, label in rows:
+        cells = dict.fromkeys(header, "")
+        cells["成果檔名"] = srt_name
+        cells["字幕編號"] = str(number)
+        cells["這列的語言"] = label
+        line = []
+        for column in header:
+            line.append(cells[column])
+        table.append(line)
+    return report.write_table(path, header, table)

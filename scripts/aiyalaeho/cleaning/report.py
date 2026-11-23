@@ -15,6 +15,7 @@ Claude 的建議記在依據欄。判語言別差異的不給建議。
 import collections
 import os
 
+from scripts import languages
 from scripts.aiyalaeho.cleaning import apply
 from scripts.aiyalaeho.cleaning import candidates
 from scripts.aiyalaeho.cleaning import paths
@@ -60,12 +61,21 @@ def _display(built, word):
 
 
 def suggestion_for(key, built, verdict):
-    """(建議寫法, 依據補註)。補註空字串表示照 Claude 的建議。"""
+    """(建議寫法, 依據補註, 待討論)。補註空字串表示照 Claude 的建議。
+
+    Claude 的建議不在該集語別權威裡、權威另有相近的詞時，只有「語別
+    替換」才改用權威的詞：Claude 的建議見於別的語別教材，而且權威的詞
+    跟它只差一個字母（087 西群：Claude 建議南王的 garem，改用 harem）。
+    其餘情形權威裡長得像的詞只是猜測（2026-11-23 擴到 39 集時量到 35
+    處，泰雅 118 Isat：Claude 依華語「印刷」建議借詞 Insat，程式挑到
+    iyat「不是」）：保留 Claude 的建議、補註列出權威的相近詞、待討論，
+    不修改。
+    """
     claude = verdict.suggestion
     wanted = candidates.tokens(claude)
     target = " ".join(wanted).lower() if wanted else claude.lower()
     if built.authorised(target, key):
-        return claude, ""
+        return claude, "", False
     word = built.words[key]
     options = []
     for other in list(word.neighbours) + list(word.nearest):
@@ -74,10 +84,15 @@ def suggestion_for(key, built, verdict):
         if candidates.distance(other, target) <= SUGGEST_DISTANCE:
             options.append(other)
     if not options:
-        return claude, ""
+        return claude, "", False
     chosen = sorted(options, key=lambda w: _rank(built, w))[0]
     shown = _display(built, chosen)
-    return shown, "依該集語別權威改用 %s（Claude 建議 %s）" % (shown, claude)
+    if (candidates.distance(chosen, target) <= 1
+            and candidates.attested(target, built.evidence)):
+        return shown, "依該集語別權威改用 %s（Claude 建議 %s）" % (
+            shown, claude), False
+    return claude, ("該集語別權威另有相近的 %s，與 Claude 建議的 %s 不同，"
+                    "未修改" % (shown, claude)), True
 
 
 # --------------------------------------------------------- 判定 → 修改
@@ -110,7 +125,7 @@ def typo_items(built, text, texts, strips_for):
     """判錯字的詞，逐處做成看圖項目。strips_for(成果檔名, 字幕編號)→[路徑]。"""
     items = []
     for key, verdict in _typos(built, text):
-        target, _note = suggestion_for(key, built, verdict)
+        target, _note, _held = suggestion_for(key, built, verdict)
         for srt_name, number in _occurrences(built.words[key]):
             entry = texts[(srt_name, number)]
             form = _form_in(entry, key)
@@ -131,7 +146,9 @@ def typo_fixes(built, text, image, texts, overrides=None):
     for key, verdict in _typos(built, text):
         if key in (overrides or {}):
             continue
-        target, note = suggestion_for(key, built, verdict)
+        target, note, held = suggestion_for(key, built, verdict)
+        if held:
+            continue
         for srt_name, number in _occurrences(built.words[key]):
             form = _form_in(texts[(srt_name, number)], key)
             if form is None:
@@ -200,9 +217,11 @@ def _fixed_share(word, changed):
     return done, len(places)
 
 
-def _typo_handling(word, changed, overrides=None):
+def _typo_handling(word, changed, overrides=None, held=""):
     if word.key in (overrides or {}):
         return DISCUSS, "人工改判：" + overrides[word.key]
+    if held:
+        return DISCUSS, held
     done, total = _fixed_share(word, changed)
     if done == total:
         return CHANGED, ""
@@ -235,7 +254,9 @@ def _dictionary_verdict(built, word, text, changed, overrides=None):
     if verdict is None:
         raise PipelineError("「%s」送了文字分類卻沒有判定" % word.display)
     if verdict.kind == verdicts.TYPO:
-        handling, extra = _typo_handling(word, changed, overrides)
+        _target, note, held = suggestion_for(word.key, built, verdict)
+        handling, extra = _typo_handling(word, changed, overrides,
+                                         note if held else "")
         basis = "錯字：" + verdict.reason
         if extra:
             basis += "；" + extra
@@ -293,12 +314,12 @@ def _spelling_groups(built, text, changed, overrides=None):
     groups = []
     targets = collections.OrderedDict()
     for key, verdict in _typos(built, text):
-        target, note = suggestion_for(key, built, verdict)
+        target, note, held = suggestion_for(key, built, verdict)
         handling, extra = _typo_handling(built.words[key], changed,
-                                         overrides)
+                                         overrides, note if held else "")
         basis = verdict.reason
         for more in (note, extra):
-            if more:
+            if more and more not in basis:
                 basis += "；" + more
         targets.setdefault(target.lower(), (target, []))[1].append(
             (key, "錯字", target, handling, basis))
@@ -350,8 +371,16 @@ def _percent(rate):
     return "%d%%" % round(rate * 100)
 
 
-def dialect_rows(results):
-    """results：[(成果檔名, 族語別, smkul 標記語別, dialect.Result)…]。"""
+MULTI_GUEST = "多族來賓"
+
+
+def dialect_rows(results, multi_guest=()):
+    """results：[(成果檔名, 族語別, smkul 標記語別, dialect.Result)…]。
+
+    multi_guest 裡的集（無法確定佔一成以上）把握寫「多族來賓」、語言別
+    代號退族語別代號：篩掉無法確定後布農 119 郡群仍只有 34%，照算會判
+    「高」，那是別族來賓拖出來的假把握。
+    """
     out = [list(DIALECT_HEADER)]
     for srt_name, language, labelled, result in sorted(results):
         order = sorted(result.rates, key=lambda n: (-result.rates[n], n))
@@ -376,8 +405,14 @@ def dialect_rows(results):
             "已標記": "smkul.csv 已標語別，照標記",
             "單一語別": "該族只有一個語別",
         }[result.verdict]
+        verdict, code = result.verdict, result.code
+        if srt_name in multi_guest:
+            basis = ("多族來賓集：逐條語言檢查「無法確定」佔一成以上，整集"
+                     "只做 a 項；推測僅供參考（照算是「%s」，%s）"
+                     % (verdict, basis))
+            verdict, code = MULTI_GUEST, languages.code_for(language, "")
         out.append([srt_name, language, labelled, result.variety,
-                    result.code, result.verdict, ";".join(rates),
+                    code, verdict, ";".join(rates),
                     ";".join(windows), basis])
     return out
 

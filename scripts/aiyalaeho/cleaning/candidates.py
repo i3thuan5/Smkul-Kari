@@ -285,6 +285,11 @@ def _attested(key, evidence):
     return found
 
 
+def attested(key, evidence):
+    """key（小寫）見於哪些語別的書面證據；給報表判斷「語別替換」用。"""
+    return _attested(key, evidence)
+
+
 def build(episodes, evidence):
     """一個族語的候選。episodes 是這族要清洗的集（EpisodeText）。"""
     words = {}

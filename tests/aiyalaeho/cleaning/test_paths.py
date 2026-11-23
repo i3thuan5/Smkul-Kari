@@ -30,11 +30,52 @@ class TestLayout(unittest.TestCase):
         self.assertEqual(layout.cleaned, os.path.join(root, "4-清洗版"))
         self.assertEqual(layout.deliver, os.path.join(root, "5-交付"))
 
-    def test_targets_are_the_ten_delivered_episodes(self):
-        # 承辦講的 10 則＝第1期 4 集＋第2-1期新增 6 集。
-        self.assertEqual(len(paths.TARGETS), 10)
-        for name in paths.TARGETS:
-            self.assertTrue(name.startswith("開會了_"))
+
+def _entry(name, tribe, pending=False, abnormal=False):
+    return {"srt_name": name, "族語別(中)": tribe, "pending": pending,
+            "abnormal": abnormal}
+
+
+class TestTargets(unittest.TestCase):
+    """清洗範圍＝節目目錄已交付的集，不寫死清單。"""
+
+    def test_only_delivered_episodes_sorted_by_name(self):
+        # 第2-1期寫死 10 集：目錄長到 39 集，程式仍只跑 10 集，報告寫
+        # 39 集、清洗版只有 10 個檔。版型異常（083 只有華語字幕、088
+        # 無字幕）沒有 SRT，算進來會中途找不到檔倒掉；pending 也一樣。
+        catalogue = [
+            _entry("開會了_092_SaySiyat_賽夏", "賽夏"),
+            _entry("開會了_068_Amis_阿美", "阿美"),
+            _entry("開會了_083_Rukai_魯凱", "魯凱", abnormal=True),
+            _entry("開會了_088_Atayal_泰雅", "泰雅", abnormal=True,
+                   pending=True),
+            _entry("開會了_200_Amis_阿美", "阿美", pending=True),
+        ]
+        self.assertEqual(paths.targets(catalogue),
+                         ["開會了_068_Amis_阿美", "開會了_092_SaySiyat_賽夏"])
+
+    def test_accepts_the_name_keyed_catalogue(self):
+        # __main__ 手上的目錄是 {成果檔名: 條目}，兩種都要吃。
+        name = "開會了_068_Amis_阿美"
+        catalogue = {name: _entry(name, "阿美")}
+        self.assertEqual(paths.targets(catalogue), ["開會了_068_Amis_阿美"])
+
+
+class TestDictionaryVariety(unittest.TestCase):
+    def test_measured_varieties(self):
+        # 2026-11-23 量官方辭典 xlsx「語別」欄。
+        self.assertEqual(paths.dictionary_variety("阿美"), "秀姑巒")
+        self.assertEqual(paths.dictionary_variety("布農"), "郡群")
+        self.assertEqual(paths.dictionary_variety("排灣"), "北排灣")
+        self.assertEqual(paths.dictionary_variety("雅美"), "")
+        self.assertEqual(paths.dictionary_variety("賽夏"), "")
+
+    def test_unmeasured_language_stops_and_names_it(self):
+        # 用 .get(族, "") 的話，沒量過的族語被當成不分語別，辭典永遠
+        # 不當權威，錯得悄悄的。
+        with self.assertRaises(PipelineError) as caught:
+            paths.dictionary_variety("鄒")
+        self.assertIn("鄒", str(caught.exception))
 
 
 class TestNeverWritesKari(unittest.TestCase):

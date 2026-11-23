@@ -56,27 +56,45 @@ class TestSuggestion(unittest.TestCase):
         # harem 才是權威。
         b = built()
         typo = verdict("錯字", "garem")
-        got, note = report.suggestion_for("harum", b, typo)
+        got, note, held = report.suggestion_for("harum", b, typo)
         self.assertEqual(got, "harem")
         self.assertIn("garem", note)
+        self.assertFalse(held)
 
     def test_an_authorised_suggestion_is_kept(self):
-        got, note = report.suggestion_for("likavungg", built(),
-                                          verdict("錯字", "Likavung"))
+        got, note, held = report.suggestion_for(
+            "likavungg", built(), verdict("錯字", "Likavung"))
         self.assertEqual(got, "Likavung")
         self.assertEqual(note, "")
+        self.assertFalse(held)
 
-    def test_corpus_count_breaks_a_tie(self):
-        # Likavng 的兩個相近寫法 likavung、likavong 西群都收，Claude 建議的
-        # Likavang 哪裡都沒有：取開會了全語料出現多的那個。
+    def test_unattested_suggestion_is_held_for_discussion(self):
+        # 2026-11-23 擴到 39 集時踩到：泰雅 118 的 Isat，Claude 依華語「印
+        # 刷」建議日語借詞 Insat（哪個語別教材都沒有），程式改挑權威裡
+        # 只差一兩個字母的 iyat（「不是」）——照改就改壞。Claude 的建議
+        # 不在任何語別教材時，不是語別替換，權威裡長得像的詞只是猜測：
+        # 保留 Claude 的建議、列出權威的相近詞、標待討論、不修改。
         b = built(klokah={"西群": {"likavung", "likavong"}},
                   corpus={"likavung": collections.Counter({"087": 10}),
                           "likavong": collections.Counter({"087": 1})},
                   extra=("Likavng likavong",))
-        got, note = report.suggestion_for(
+        got, note, held = report.suggestion_for(
             "likavng", b, verdict("錯字", "Likavang"))
-        self.assertEqual(got, "Likavung")
-        self.assertIn("Likavang", note)
+        self.assertEqual(got, "Likavang")
+        self.assertTrue(held)
+        # 相近詞照依據順序挑：開會了全語料出現多的 likavung。
+        self.assertIn("Likavung", note)
+
+    def test_variety_substitution_needs_one_letter(self):
+        # Claude 建議的寫法在別的語別教材有，但權威詞差兩個字母（泰雅
+        # 120 Goko：Claude 建議 Gako，四季、澤敖利收；程式挑到 Goho）：
+        # 不是單純的語別替換，一樣標待討論。
+        b = built(klokah={"南王": {"gako"}, "西群": {"goho"}},
+                  extra=("Goko", "goho"))
+        got, note, held = report.suggestion_for(
+            "goko", b, verdict("錯字", "Gako"))
+        self.assertEqual(got, "Gako")
+        self.assertTrue(held)
 
 
 class TestFixes(unittest.TestCase):
@@ -111,6 +129,31 @@ class TestFixes(unittest.TestCase):
         self.assertEqual(fixes[0].kind, "播出端錯字")
         self.assertIn("多一個 g", fixes[0].basis)
         self.assertIn("畫面兩個 g", fixes[0].basis)
+
+    def test_held_suggestion_is_not_applied(self):
+        west = {"harem", "likavung", "likavong"}
+        b = built(klokah={"南王": {"garem"}, "西群": west},
+                  extra=("Likavng",))
+        texts = dict(self.texts)
+        texts[(E087, 4)] = Entry(4, "00:00:04,000", "00:00:04,500",
+                                 "Likavng", "華語4")
+        text = dict(self.text)
+        text["likavng"] = verdict("錯字", "Likavang", "少一個 u")
+        image = {(E087, 4, "Likavng"): verdicts.ImageVerdict(
+            "播出端錯字", "Likavng", "畫面如此", "b01"),
+                 (E087, 1, "Likavungg"): verdicts.ImageVerdict(
+            "播出端錯字", "Likavungg", "畫面兩個 g", "b01")}
+        fixed = []
+        for fix in report.typo_fixes(b, text, image, texts):
+            fixed.append(fix.word)
+        self.assertEqual(fixed, ["likavungg"])
+        rows = report.dictionary_rows({"卑南": b}, text, set(), texts)
+        found = None
+        for row in rows[1:]:
+            if row[1] == "Likavng":
+                found = row
+        self.assertEqual(found[-2], "待討論")
+        self.assertIn("likavung", found[-1].lower())
 
     def test_ocr_misread_takes_what_the_screen_shows(self):
         image = {(E087, 1, "Likavungg"): verdicts.ImageVerdict(
@@ -279,6 +322,23 @@ class TestDialectTable(unittest.TestCase):
                          "西群 55%;知本 53%;建和 43%;南王 34%")
         self.assertEqual(row["分段第一名"], "西群 8/10 段;知本 2/10 段")
         self.assertIn("2 點", row["依據"])
+
+    def test_multi_guest_episode_is_named_and_falls_back(self):
+        # 布農 119 篩掉無法確定後郡群仍只有 34%，卻因領先卡群 16 點判
+        # 「高」、填 bnn-x-isbk——那是別族來賓拖出來的假把握。多族來賓
+        # 集的把握寫「多族來賓」、語言別代號退族語別代號，依據講明。
+        result = dialect.Result("高", "郡群", "bnn-x-isbk",
+                                {"郡群": 0.34, "卡群": 0.18},
+                                {"郡群": 10}, ("郡群",))
+        name = "開會了_119_Bunun_布農"
+        rows = report.dialect_rows([(name, "布農", "", result)],
+                                   multi_guest=[name])
+        row = dict(zip(rows[0], rows[1]))
+        self.assertEqual(row["把握"], "多族來賓")
+        self.assertEqual(row["語言別代號"], "bnn")
+        self.assertEqual(row["推測語別"], "郡群")
+        self.assertIn("多族來賓集", row["依據"])
+        self.assertIn("只做 a 項", row["依據"])
 
 
 class TestFiles(unittest.TestCase):

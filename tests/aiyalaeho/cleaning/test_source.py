@@ -89,5 +89,96 @@ class TestCueMap(SourceCase):
                                    self.store.vision_dir)
 
 
+OTHER = "開會了_119_Bunun_布農"
+
+
+class TestLanguageMarks(SourceCase):
+    """逐條語言標記：b、c 與語言別推測只看本族語的列。
+
+    布農 111／119／122 是多族來賓的集，各約 225 條被標「無法確定」（119
+    疑似賽夏 88、排灣 60、雅美 45、噶瑪蘭 30）；照舊整集拿去比布農辭典，
+    布農會冒出 3,944 個查無詞形，119 的郡群覆蓋率掉到 24%。
+    """
+
+    def marks_path(self, rows):
+        path = os.path.join(self.store.root, "逐條語言標記.csv")
+        return fixtures.write_marks(path, rows)
+
+    def entries(self):
+        return source.read_srt(self.store.srt_path(NAME))
+
+    def full_rows(self, labels):
+        rows = [(OTHER, 1, "純族語")]
+        for number, label in enumerate(labels, start=1):
+            rows.append((NAME, number, label))
+        return rows
+
+    def test_marks_keyed_by_entry_number(self):
+        path = self.marks_path(self.full_rows(
+            ["純族語", "族語夾雜華語", "華語", "無法確定"]))
+        marks = source.language_marks(NAME, self.entries(), path)
+        self.assertEqual(marks, {1: "純族語", 2: "族語夾雜華語", 3: "華語",
+                                 4: "無法確定"})
+
+    def test_own_language_keeps_pure_and_mixed_only(self):
+        # 「華語」是族語列空白；「無法確定」是別族來賓。兩種都不進
+        # b、c，但 a 項照做（那是呼叫端的事，這裡只篩）。
+        path = self.marks_path(self.full_rows(
+            ["純族語", "族語夾雜華語", "華語", "無法確定"]))
+        entries = self.entries()
+        kept = source.own_language(
+            entries, source.language_marks(NAME, entries, path))
+        numbers = []
+        for entry in kept:
+            numbers.append(entry.number)
+        self.assertEqual(numbers, [1, 2])
+
+    def test_labels_come_from_langcheck_constants(self):
+        # 標籤用字面值比對的話，langcheck 改措辭後全部列被篩掉、候選
+        # 變空也不會報錯。
+        from scripts.aiyalaeho.langcheck import mark
+        self.assertEqual(source.OWN_LANGUAGE, (mark.PURE, mark.MIXED))
+
+    def test_missing_entry_names_episode_and_number(self):
+        # 交付 SRT 重組過、多了一條，逐條語言標記沒跟著重建。
+        rows = self.full_rows(["純族語", "純族語", "純族語"])
+        with self.assertRaises(PipelineError) as caught:
+            source.language_marks(NAME, self.entries(), self.marks_path(rows))
+        self.assertIn(NAME, str(caught.exception))
+        self.assertIn("4", str(caught.exception))
+
+    def test_extra_number_names_episode_and_number(self):
+        rows = self.full_rows(["純族語"] * 4) + [(NAME, 9, "純族語")]
+        with self.assertRaises(PipelineError) as caught:
+            source.language_marks(NAME, self.entries(), self.marks_path(rows))
+        self.assertIn(NAME, str(caught.exception))
+        self.assertIn("9", str(caught.exception))
+
+    def test_duplicate_number_stops(self):
+        rows = self.full_rows(["純族語"] * 4) + [(NAME, 2, "華語")]
+        with self.assertRaises(PipelineError) as caught:
+            source.language_marks(NAME, self.entries(), self.marks_path(rows))
+        self.assertIn("2", str(caught.exception))
+
+    def test_multi_guest_episode_is_one_in_ten_unsure(self):
+        # 布農 111／119／122 的「無法確定」佔 23.5%／22.0%／27.1%；其他
+        # 集最高是阿美 082 的 6.0%。門檻一成，切在兩群中間。
+        self.assertTrue(source.multi_guest({1: "純族語", 2: "無法確定",
+                                            3: "純族語", 4: "華語"}))
+        marks = {}
+        for number in range(1, 18):
+            marks[number] = "純族語"
+        marks[18] = "無法確定"
+        self.assertFalse(source.multi_guest(marks))
+        marks[19] = "無法確定"
+        self.assertTrue(source.multi_guest(marks))
+
+    def test_episode_absent_from_marks_stops(self):
+        with self.assertRaises(PipelineError) as caught:
+            source.language_marks(NAME, self.entries(),
+                                  self.marks_path([(OTHER, 1, "純族語")]))
+        self.assertIn(NAME, str(caught.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -59,11 +59,25 @@ def _language_dirs(base, language):
 
 # ------------------------------------------------------------------ 詞庫
 
+def _multi_episode_languages(catalogue, targets):
+    """清洗範圍內多於 1 集的族語（b、c 只做這些，承辦原文）。"""
+    counts = collections.Counter()
+    for srt_name in targets:
+        counts[catalogue[srt_name]["族語別(中)"]] += 1
+    found = []
+    for language in sorted(counts):
+        if counts[language] > 1:
+            found.append(language)
+    return found
+
+
 def step_lexicon(layout):
     vocabs = klokah.vocabularies(paths.KLOKAH_SOURCE, paths.KLOKAH_NAMES)
     written = klokah.write_all(vocabs, layout.klokah)
     print("E樂園 %d 個語別 → %s" % (len(written), layout.klokah))
-    for language in sorted(paths.DICTIONARY_VARIETY):
+    catalogue = _catalogue()
+    for language in _multi_episode_languages(catalogue,
+                                             paths.targets(catalogue)):
         model = asrmt_run.model_id_of(languages.english_for(language))
         words = kaldi_words.words_of(kaldi_words.find(model))
         path = os.path.join(layout.kaldi, language + ".txt")
@@ -83,41 +97,50 @@ class Context(object):
         for name, words in klokah.load_all(layout.klokah).items():
             language, variety, _code = klokah.variety_of(name)
             by_language[language][variety] = words
+        self.targets = paths.targets(catalogue)
         self.entries = {}
+        # 本族語的列（純族語、族語夾雜華語）：b、c 候選、語言別推測、
+        # 全語料次數只吃這些；別族來賓與族語列空白的只做 a 項。
+        self.own = {}
+        # 多族來賓集（無法確定佔一成以上）：整集不做 b、c，只做 a 項。
+        self.multi_guest = []
         self.texts = {}
         self.results = []
+        self.language_of = {}
         targets = collections.defaultdict(list)
-        for srt_name in paths.TARGETS:
+        for srt_name in self.targets:
             row = catalogue[srt_name]
             language = row["族語別(中)"]
+            self.language_of[srt_name] = language
             entries = source.read_srt(_srt(srt_name))
             self.entries[srt_name] = entries
             for entry in entries:
                 self.texts[(srt_name, entry.number)] = entry
+            marks = source.language_marks(srt_name, entries)
+            own = source.own_language(entries, marks)
             lines = []
-            for entry in entries:
+            for entry in own:
                 lines.append(entry.formosan)
             result = dialect.infer(lines, by_language[language], language,
                                    labelled=row["語言別"])
             self.results.append((srt_name, language, row["語言別"], result))
+            if source.multi_guest(marks):
+                self.multi_guest.append(srt_name)
+                continue
+            self.own[srt_name] = own
             targets[language].append(
                 candidates.EpisodeText(srt_name, language, result.considered,
-                                       entries))
-        self.language_of = {}
-        for srt_name in paths.TARGETS:
-            self.language_of[srt_name] = catalogue[srt_name]["族語別(中)"]
+                                       own))
         self.builts = {}
-        for language in sorted(targets):
-            # b、c 只做「多於 1 則影片」的族語（承辦原文）。
-            if len(targets[language]) < 2:
-                continue
+        for language in _multi_episode_languages(catalogue, self.targets):
             evidence = candidates.Evidence(
                 dictionary.load(store.lexicon_path(language)),
                 by_language[language],
                 dictionary.load(os.path.join(layout.kaldi,
                                              language + ".txt")),
-                _corpus(catalogue, language), _transcripts(language),
-                paths.DICTIONARY_VARIETY[language])
+                _corpus(self.own, self.language_of, language),
+                _transcripts(language),
+                paths.dictionary_variety(language))
             self.builts[language] = candidates.build(targets[language],
                                                      evidence)
         self._maps = {}
@@ -149,7 +172,7 @@ class Context(object):
         for language, built in self.builts.items():
             by_language[language].extend(report.typo_items(
                 built, text[language], self.texts, self.strips_for))
-        for srt_name in paths.TARGETS:
+        for srt_name in self.targets:
             by_language[self.language_of[srt_name]].extend(report.gap_items(
                 srt_name, self.entries[srt_name], self.strips_for))
         return by_language
@@ -180,21 +203,26 @@ class Context(object):
                                            self.texts,
                                            overrides.get(language, {})))
         gaps = []
-        for srt_name in paths.TARGETS:
+        for srt_name in self.targets:
             gaps.extend(report.gap_items(srt_name, self.entries[srt_name],
                                          self.strips_for))
         merges = report.gap_merges(gaps, image)
         return text, fixes, merges
 
 
-def _corpus(catalogue, language):
-    """{詞: Counter(集數)}：開會了該族全部已交付集。"""
+def _corpus(own, language_of, language):
+    """{詞: Counter(集數)}：開會了該族全部已交付集的本族語列。
+
+    own 是 {成果檔名: 本族語 Entry…}（清洗範圍＝全部已交付集，多族來賓
+    集除外）。別族來賓的列算進來的話，布農 119 的賽夏詞會變成「布農開會
+    了見過」。
+    """
     out = collections.defaultdict(collections.Counter)
-    for srt_name, row in catalogue.items():
-        if row["族語別(中)"] != language or row["pending"] or row["abnormal"]:
+    for srt_name in sorted(own):
+        if language_of[srt_name] != language:
             continue
         number = candidates.episode_number(srt_name)
-        for entry in source.read_srt(_srt(srt_name)):
+        for entry in own[srt_name]:
             for token in candidates.tokens(
                     candidates.tentative(entry.formosan)):
                 out[token.lower()][number] += 1
@@ -270,10 +298,10 @@ def step_ingest_image(layout):
     print("看圖 %d 處 %s" % (len(image), dict(kinds)))
 
 
-def _clean_all(fixes, merges):
+def _clean_all(targets, fixes, merges):
     changes = []
     bodies = {}
-    for srt_name in paths.TARGETS:
+    for srt_name in targets:
         with open(_srt(srt_name), encoding="utf-8") as handle:
             original = handle.read()
         body, found = apply.clean_episode(original, srt_name, fixes, merges)
@@ -285,7 +313,7 @@ def _clean_all(fixes, merges):
 def step_clean(layout):
     context = Context(layout)
     _text, fixes, merges = context.plan()
-    bodies, changes = _clean_all(fixes, merges)
+    bodies, changes = _clean_all(context.targets, fixes, merges)
     os.makedirs(paths.guard(layout.cleaned), exist_ok=True)
     for srt_name, body in bodies.items():
         path = paths.guard(os.path.join(layout.cleaned, srt_name + ".srt"))
@@ -318,7 +346,8 @@ def step_report(layout):
         (DICTIONARY_CSV, report.dictionary_rows(context.builts, merged,
                                                 changed, context.texts,
                                                 overrides)),
-        (DIALECT_CSV, report.dialect_rows(context.results)),
+        (DIALECT_CSV, report.dialect_rows(context.results,
+                                          context.multi_guest)),
     )
     for name, rows in outputs:
         path = os.path.join(layout.deliver, name)

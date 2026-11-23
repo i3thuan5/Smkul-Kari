@@ -13,21 +13,23 @@ from scripts.errors import PipelineError
 
 OUT = os.path.join(KITHANN, "out", "aiyalaeho-清洗")
 
-# 承辦講的「10 則影片」：第1期交付 4 集（068、079、081、082）加第2-1期
-# 新增 6 集。清單正本是 kithann/驗收/第2-1期/開會了清單.csv（gitignore），
-# 所以這裡跟著 repo 留一份。
-TARGETS = (
-    "開會了_068_Amis_阿美",
-    "開會了_079_SaySiyat_賽夏",
-    "開會了_081_Bunun_布農",
-    "開會了_082_Amis_阿美",
-    "開會了_084_Amis_阿美",
-    "開會了_085_Atayal_泰雅",
-    "開會了_086_Pinuyumayan_卑南",
-    "開會了_087_Pinuyumayan_卑南",
-    "開會了_091_Atayal_泰雅",
-    "開會了_092_SaySiyat_賽夏",
-)
+
+def targets(catalogue):
+    """清洗範圍：節目目錄已交付的集（交付 SRT 已存在、不在版型異常表），
+    照成果檔名排序。
+
+    第2-1期寫死承辦指名的 10 集；第2-2期要全交，範圍就跟著目錄走
+    （使用者裁定 2026-11-23）。catalogue 是 `episodes.load()` 的條目，
+    list 或 {成果檔名: 條目} 都可以。
+    """
+    if isinstance(catalogue, dict):
+        catalogue = catalogue.values()
+    names = []
+    for entry in catalogue:
+        if entry["pending"] or entry["abnormal"]:
+            continue
+        names.append(entry["srt_name"])
+    return sorted(names)
 
 
 def _inside(path, folder):
@@ -64,7 +66,20 @@ class Layout(object):
 KLOKAH_SOURCE = datadirs.KLOKAH_SOURCE
 KLOKAH_NAMES = datadirs.KLOKAH_NAMES
 
-# 官方辭典各族只收一個語別（xlsx「語別」欄，2026-10-15 量）。賽夏不分
-# 語別，欄是空的。
+# 官方辭典各族只收一個語別（xlsx「語別」欄）。值是語言別名稱（E樂園
+# 語別全名剝掉族語別），整欄空白的族語寫空字串。阿美、泰雅、卑南、
+# 賽夏 2026-10-15 量；其餘 2026-11-23 量（魯凱、賽德克、拉阿魯哇、
+# 太魯閣目前各 1 集、用不到，先記上）。
 DICTIONARY_VARIETY = {"阿美": "秀姑巒", "泰雅": "賽考利克", "卑南": "南王",
-                      "賽夏": ""}
+                      "賽夏": "", "布農": "郡群", "排灣": "北排灣",
+                      "雅美": "", "魯凱": "霧台", "賽德克": "德固達雅",
+                      "拉阿魯哇": "", "太魯閣": ""}
+
+
+def dictionary_variety(language):
+    """該族官方辭典收的語別。沒量過就中止——當成不分語別的話，辭典
+    永遠不會被當權威，錯得悄悄的。"""
+    if language not in DICTIONARY_VARIETY:
+        raise PipelineError("辭典語別表沒有「%s」：先量官方辭典 xlsx 的"
+                            "「語別」欄再補進 DICTIONARY_VARIETY" % language)
+    return DICTIONARY_VARIETY[language]

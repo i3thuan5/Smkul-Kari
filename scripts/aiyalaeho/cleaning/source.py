@@ -9,6 +9,7 @@
 （交付版就是它們做的）算出每條的真實區間，再找落在區間裡的 cue。
 """
 import collections
+import csv
 import json
 import os
 
@@ -16,6 +17,7 @@ from scripts import datadirs
 from scripts.aiyalaeho import make_srt
 from scripts.aiyalaeho import paths
 from scripts.aiyalaeho import rebuild
+from scripts.aiyalaeho.langcheck import mark
 from scripts.errors import PipelineError
 from scripts.srtlib import assemble
 
@@ -97,6 +99,79 @@ def checked_cue_map(srt_name, srt_path, cues_dir=None, vision_dir=None):
             raise PipelineError("%s 第 %d 條找不到對應的 cue"
                                 % (srt_name, entry.number))
     return mapping
+
+
+# 逐條語言標記裡算「本族語」的兩種。「華語」是族語列空白；「無法確定」
+# 是別族來賓講自己的族語（布農 111／119／122 各約 225 條）。這兩種只做
+# a 項，不進 b、c 候選、語言別推測、全語料次數。
+OWN_LANGUAGE = (mark.PURE, mark.MIXED)
+
+
+def language_marks(srt_name, entries, path=None):
+    """{字幕編號: 這列的語言}，讀 `4-語言檢查/逐條語言標記.csv` 該集的列。
+
+    要跟交付 SRT 一條對一條：缺、多、重複都中止並指名集數與編號——
+    3-srt 重組過而語言檢查沒重建時，篩到的會是別條字幕的標籤。
+    """
+    marks = {}
+    with open(path or paths.LANGCHECK_MARKS, encoding="utf-8-sig",
+              newline="") as handle:
+        for row in csv.DictReader(handle):
+            if row["成果檔名"] != srt_name:
+                continue
+            number = int(row["字幕編號"])
+            if number in marks:
+                raise PipelineError("%s 第 %d 條在逐條語言標記裡重複"
+                                    % (srt_name, number))
+            marks[number] = row["這列的語言"]
+    if not marks:
+        raise PipelineError("%s 不在逐條語言標記裡；先重建 4-語言檢查"
+                            % srt_name)
+    wanted = set()
+    for entry in entries:
+        wanted.add(entry.number)
+    missing = sorted(wanted - set(marks))
+    extra = sorted(set(marks) - wanted)
+    if missing or extra:
+        raise PipelineError(
+            "%s：逐條語言標記和交付 SRT 對不上（標記缺第 %s 條；多了第 %s 條）"
+            "；先重建 4-語言檢查"
+            % (srt_name, _numbers(missing), _numbers(extra)))
+    return marks
+
+
+def _numbers(numbers):
+    if not numbers:
+        return "無"
+    texts = []
+    for number in numbers[:10]:
+        texts.append(str(number))
+    return "、".join(texts)
+
+
+# 多族來賓集：「無法確定」佔一成以上的集（2026-11-23 量：布農 111／119
+# ／122 是 23.5%／22.0%／27.1%，其他集最高是阿美 082 的 6.0%）。這種集
+# 標「純族語」的列也還混著別族語（逐條語言檢查要別族高 40 個百分點才
+# 標無法確定），整集不做 b、c，只做 a 項（使用者裁定 2026-11-23）。
+MULTI_GUEST_SHARE = 0.10
+
+
+def multi_guest(marks):
+    """這集是不是多族來賓集。marks 是 language_marks 的結果。"""
+    unsure = 0
+    for label in marks.values():
+        if label == mark.UNSURE:
+            unsure += 1
+    return unsure >= MULTI_GUEST_SHARE * len(marks)
+
+
+def own_language(entries, marks):
+    """只留本族語（純族語、族語夾雜華語）的字幕。"""
+    kept = []
+    for entry in entries:
+        if marks[entry.number] in OWN_LANGUAGE:
+            kept.append(entry)
+    return kept
 
 
 def strips(srt_name, cues, work_root=None):
