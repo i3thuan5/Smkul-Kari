@@ -107,25 +107,56 @@ class TestTrackMaps(EncodeMasterDryRun):
             self.assertIn("-map 0:a:%d" % index, out)
 
 
-class TestMd5Outputs(EncodeMasterDryRun):
-    def test_one_md5_output_per_track(self):
+class TestFingerprintOutputs(EncodeMasterDryRun):
+    def test_one_sha256_output_per_track(self):
         out = self.run_dry(tracks=3)
         for index in range(3):
-            self.assertIn("a.src-a%d.md5" % index, out)
+            self.assertIn("a.src-a%d.sha256" % index, out)
 
-    def test_md5_output_count_matches_tracks(self):
+    def test_fingerprint_output_count_matches_tracks(self):
         out = self.run_dry(tracks=2)
-        self.assertEqual(out.count("-f md5"), 2)
-        self.assertNotIn("a.src-a2.md5", out)
+        self.assertEqual(out.count("-f hash -hash sha256"), 2)
+        self.assertNotIn("a.src-a2.sha256", out)
 
-    def test_md5_is_paired_with_its_own_track(self):
-        """第 i 个 md5 輸出頭前愛是第 i 軌ê -map，順序袂使走精。"""
+    def test_fingerprint_is_paired_with_its_own_track(self):
+        """第 i 个指紋輸出頭前愛是第 i 軌ê -map，順序袂使走精。"""
         out = self.run_dry(tracks=2)
-        first = out.index("a.src-a0.md5")
-        second = out.index("a.src-a1.md5")
-        self.assertLess(out.index("-map 0:a:0", out.index("-f md5") - 200),
+        first = out.index("a.src-a0.sha256")
+        second = out.index("a.src-a1.sha256")
+        self.assertLess(out.index("-map 0:a:0", out.index("-f hash") - 200),
                         first)
         self.assertLess(first, second)
+
+    def test_md5_is_gone(self):
+        """使用者裁定雜湊全部改 SHA-256（2026-11-23）。"""
+        out = self.run_dry(tracks=2)
+        self.assertNotIn("md5", out)
+
+
+class TestFullBitDepth(EncodeMasterDryRun):
+    """ffmpeg ê -f md5／-f hash 無指定 codec ê時，會先共聲音轉做 16-bit
+    才算（實測：-f md5 ê值＝-f s16le | md5sum，≠ -f s32le | md5sum）。
+    封存檔ê聲音是 24-bit，下跤 8 位元出錯從來毋捌驗著；兩條音軌干焦
+    差佇下跤 8 位元，閣會予當做相仝、擲掉一條。"""
+
+    def _fingerprint_args(self, out, index):
+        name = "a.src-a%d.sha256" % index
+        end = out.index(name)
+        begin = out.rindex("-map 0:a:%d" % index, 0, end)
+        return out[begin:end]
+
+    def test_pcm_fingerprints_are_taken_at_32_bit(self):
+        out = self.run_dry(tracks=2, codec="pcm_s24le")
+        for index in range(2):
+            self.assertIn("-c:a pcm_s32le", self._fingerprint_args(out, index))
+
+    def test_copied_aac_is_still_fingerprinted_as_packets(self):
+        """AAC 原樣複製：指紋比封裝資料，毋是解碼取樣——mkv 無記 AAC ê
+        預備框，解碼會濟一框，逐个取樣攏對袂起來。"""
+        out = self.run_dry(tracks=1, codec="aac")
+        args = self._fingerprint_args(out, 0)
+        self.assertIn("-c:a copy", args)
+        self.assertNotIn("pcm_s32le", args)
 
 
 class TestAudioCodec(EncodeMasterDryRun):

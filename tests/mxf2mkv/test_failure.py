@@ -1,8 +1,9 @@
-"""批次ê失敗處理：一支倒袂使拖累其他支。
+"""mxf2mkv 對批次迴圈ê接法：掃資料夾、--limit、對照表格式。
 
-一批走幾若點鐘，為著一支歹檔案停落來傷貴。所以記落來、行下一支，
-規批走煞才用離開碼講「有出代誌」。
+失敗續跑、中斷、危險檔名、工作目錄ê測試已經綴迴圈搬去
+tests/sftpbatch/test_batch.py；這搭干焦賰 mxf2mkv 家己ê部分。
 """
+import json
 import os
 import shutil
 import tempfile
@@ -31,112 +32,6 @@ class BatchCase(unittest.TestCase):
             stamp="0905-2017", one_file=one_file, **kwargs)
 
 
-class TestKeepGoing(BatchCase):
-    def test_one_failure_does_not_stop_the_rest(self):
-        seen = []
-
-        def one_file(job, log):
-            seen.append(job.relative)
-            if job.relative == "b.mxf":
-                raise RuntimeError("音訊對袂起來")
-            return {"結果": "成功"}
-
-        result = self.go(one_file)
-        self.assertEqual(seen, ["a.mxf", "b.mxf", "c.mxf"])
-        self.assertEqual(result.failed, ["b.mxf"])
-
-    def test_exit_code_is_non_zero_when_anything_failed(self):
-        def one_file(job, log):
-            if job.relative == "b.mxf":
-                raise RuntimeError("倒去")
-            return {"結果": "成功"}
-
-        self.assertNotEqual(self.go(one_file).exit_code, 0)
-
-    def test_exit_code_is_zero_when_everything_worked(self):
-        def one_file(job, log):
-            return {"結果": "成功"}
-
-        self.assertEqual(self.go(one_file).exit_code, 0)
-
-    def test_skipped_files_are_not_failures(self):
-        def one_file(job, log):
-            return {"結果": "已存在"}
-
-        self.assertEqual(self.go(one_file).exit_code, 0)
-
-    def test_the_worker_can_write_to_the_run_log(self):
-        """逐支ê外部指令 stderr 愛入 log，所以 worker 提會著伊。"""
-        def one_file(job, log):
-            log("ffmpeg 講：%s 有代誌" % job.relative)
-            return {"結果": "成功"}
-
-        result = self.go(one_file)
-        with open(result.log_path, encoding="utf-8") as handle:
-            self.assertIn("a.mxf 有代誌", handle.read())
-
-    def test_the_reason_is_written_down(self):
-        """歹去ê理由愛入 log——隨身硬碟拔掉了後就賰彼份通看。"""
-        def one_file(job, log):
-            raise RuntimeError("音訊對袂起來：第 2 軌")
-
-        result = self.go(one_file)
-        with open(result.log_path, encoding="utf-8") as handle:
-            text = handle.read()
-        self.assertIn("音訊對袂起來：第 2 軌", text)
-        self.assertIn("b.mxf", text)
-
-    def test_every_file_gets_a_manifest_entry(self):
-        def one_file(job, log):
-            if job.relative == "b.mxf":
-                raise RuntimeError("倒去")
-            return {"結果": "成功"}
-
-        result = self.go(one_file)
-        names = []
-        for entry in result.entries:
-            names.append(entry["src"])
-        self.assertEqual(names, ["a.mxf", "b.mxf", "c.mxf"])
-        self.assertEqual(result.entries[1]["結果"], "失敗")
-
-
-class TestUnsafeNames(BatchCase):
-    def test_a_dangerous_name_fails_that_file_only(self):
-        with open(os.path.join(self.src, 'q"uote.mxf'), "w") as handle:
-            handle.write("x")
-
-        def one_file(job, log):
-            return {"結果": "成功"}
-
-        result = self.go(one_file)
-        self.assertIn('q"uote.mxf', result.failed)
-        self.assertEqual(result.exit_code, 1)
-
-
-class TestWorkDir(BatchCase):
-    def test_work_dir_is_kept_when_something_failed(self):
-        def one_file(job, log):
-            raise RuntimeError("倒去")
-
-        result = self.go(one_file)
-        self.assertTrue(result.keep_work)
-
-    def test_work_dir_is_disposable_when_all_is_well(self):
-        def one_file(job, log):
-            return {"結果": "成功"}
-
-        self.assertFalse(self.go(one_file).keep_work)
-
-    def test_the_work_dir_path_is_recorded_when_kept(self):
-        """留現場ê時陣，路徑愛講出來，無人揣無。"""
-        def one_file(job, log):
-            raise RuntimeError("倒去")
-
-        result = self.go(one_file)
-        with open(result.log_path, encoding="utf-8") as handle:
-            self.assertIn(self.work, handle.read())
-
-
 class TestLimit(BatchCase):
     def test_limit_stops_after_n_files(self):
         seen = []
@@ -149,20 +44,23 @@ class TestLimit(BatchCase):
         self.assertEqual(seen, ["a.mxf", "b.mxf"])
 
 
-class TestDryRun(BatchCase):
-    def test_dry_run_touches_nothing(self):
-        """試走袂使建、改、抑是刣任何檔案，嘛袂使送出改變遠端ê指令。"""
-        called = []
+class TestReportLayout(unittest.TestCase):
+    """外層是**來源資料夾名**（無帶時間），按呢仝一个來源走幾若擺攏佇仝
+    一个資料夾內底，看會出來試過幾擺、佗一擺成功。檔名才帶日期時間，
+    閣重複來源名，檔案拖出去嘛講會出是啥。使用者裁定 2026-09-06。
+    """
 
-        def one_file(job, log):
-            called.append(job.relative)
-            return {"結果": "成功"}
+    def test_outer_folder_is_the_source_name_only(self):
+        """外層無帶時間——帶ê話一擺一个資料夾，就無「囥做伙」矣。"""
+        got = batch.report_folder("/r", "2月原始mxf檔")
+        self.assertEqual(got, os.path.join("/r", "2月原始mxf檔"))
 
-        result = self.go(one_file, dry_run=True)
-        self.assertEqual(called, [])
-        self.assertFalse(os.path.exists(self.reports))
-        self.assertEqual(result.exit_code, 0)
+    def test_file_names_carry_time_and_source(self):
+        got = batch.report_stem("2月原始mxf檔", "0905-2017")
+        self.assertEqual(got, "0905-2017_2月原始mxf檔")
 
+
+class TestPlan(BatchCase):
     def test_dry_run_lists_source_and_remote(self):
         def one_file(job, log):
             return {"結果": "成功"}
@@ -173,6 +71,35 @@ class TestDryRun(BatchCase):
             planned.append((job.relative, job.remote))
         self.assertEqual(planned[0],
                          ("a.mxf", "/home/mkv-raw/2月原始mxf檔/a.mkv"))
+
+    def test_manifest_entries_are_still_keyed_by_src(self):
+        """批次迴圈搬去 tools/sftpbatch 了後，mxf2mkv 對照表逐筆ê鍵
+        猶原是 src——對照表格式袂使因為搬位改變。"""
+        def one_file(job, log):
+            return {"結果": "成功"}
+
+        result = self.go(one_file)
+        with open(result.manifest_path, encoding="utf-8") as handle:
+            loaded = json.load(handle)
+        names = []
+        for entry in loaded["檔案"]:
+            names.append(entry["src"])
+        self.assertEqual(names, ["a.mxf", "b.mxf", "c.mxf"])
+        self.assertEqual(loaded["來源資料夾"], "2月原始mxf檔")
+
+    def test_log_and_manifest_land_where_they_always_did(self):
+        """紀錄落點佮檔名佮搬位進前完全仝款：
+        <report>/<來源名>/<MMDD-HHMM>_<來源名>.log、.manifest.json。"""
+        def one_file(job, log):
+            return {"結果": "成功"}
+
+        result = self.go(one_file)
+        folder = os.path.join(self.reports, "2月原始mxf檔")
+        self.assertEqual(result.log_path,
+                         os.path.join(folder, "0905-2017_2月原始mxf檔.log"))
+        self.assertEqual(
+            result.manifest_path,
+            os.path.join(folder, "0905-2017_2月原始mxf檔.manifest.json"))
 
 
 if __name__ == "__main__":

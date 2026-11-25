@@ -8,6 +8,7 @@ text, which nothing reports.
 import json
 import os
 import unittest
+from unittest import mock
 
 from scripts.aiyalaeho import paths
 from scripts.errors import PipelineError
@@ -344,6 +345,46 @@ class TestTextLayout(unittest.TestCase):
         self.assertTrue(paths.TEXT_REMOTE.startswith("/"))
         self.assertIn("開會了", paths.TEXT_REMOTE)
         self.assertIn("上字文稿", paths.TEXT_REMOTE)
+
+
+class TestPreviewAndWavPaths(unittest.TestCase):
+    """mkv2mp4wav ê兩種產出：預覽 mp4 佮訓練用 WAV。開會了無播出日期，
+    放 `/home/aiyalaeho/mp4/`、`/home/aiyalaeho/wav/`，不分子資料夾
+    （使用者裁定 2026-11-23）。"""
+
+    NAME = "開會了_107_Hla'alua_拉阿魯哇"
+
+    def test_the_roots_are_where_the_spec_says(self):
+        self.assertEqual(paths.PREVIEW_ROOT, "/home/aiyalaeho/mp4")
+        self.assertEqual(paths.WAV_ROOT, "/home/aiyalaeho/wav")
+
+    def test_apostrophe_and_chinese_survive_whole(self):
+        self.assertEqual(paths.preview_path(self.NAME),
+                         "/home/aiyalaeho/mp4/開會了_107_Hla'alua_拉阿魯哇.mp4")
+        self.assertEqual(paths.wav_path(self.NAME),
+                         "/home/aiyalaeho/wav/開會了_107_Hla'alua_拉阿魯哇.wav")
+
+    def test_no_sub_folder(self):
+        self.assertEqual(os.path.dirname(paths.preview_path(self.NAME)),
+                         paths.PREVIEW_ROOT)
+        self.assertEqual(os.path.dirname(paths.wav_path(self.NAME)),
+                         paths.WAV_ROOT)
+
+    def test_a_bad_name_is_refused_before_any_path_is_built(self):
+        for bad in ("開會了_68_Amis_阿美", "../開會了_068_x", ""):
+            with self.assertRaises(PipelineError):
+                paths.preview_path(bad)
+            with self.assertRaises(PipelineError):
+                paths.wav_path(bad)
+
+    def test_swapping_the_roots_moves_the_paths_with_them(self):
+        """防有人佇別位閣寫死 /home/aiyalaeho/mp4。"""
+        with mock.patch.object(paths, "PREVIEW_ROOT", "/x/mp4"), \
+                mock.patch.object(paths, "WAV_ROOT", "/x/wav"):
+            self.assertEqual(paths.preview_path(self.NAME),
+                             "/x/mp4/%s.mp4" % self.NAME)
+            self.assertEqual(paths.wav_path(self.NAME),
+                             "/x/wav/%s.wav" % self.NAME)
 
 
 if __name__ == "__main__":

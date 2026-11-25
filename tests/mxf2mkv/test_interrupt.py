@@ -3,7 +3,7 @@
 2026-10-06 查著 SFTP 頂懸有 8 支 mkv 只有 0.7 秒到 23 分 53 秒（正常
 一集 48 分鐘）：檔頭佮每軌 DURATION 攏是短ê長度、解到尾無錯——ffmpeg
 是收著 Ctrl+C（抑是 q）好好仔收尾，短檔照樣傳起去。音訊指紋擋袂著，
-因為 encode_master.sh ê md5 是仝一擺 ffmpeg 順紲算ê，ffmpeg 停佇佗，
+因為 encode_master.sh ê指紋是仝一擺 ffmpeg 順紲算ê，ffmpeg 停佇佗，
 來源指紋就算到佗，兩爿仝款短、仝款「逐位元相符」。
 """
 import os
@@ -47,14 +47,15 @@ class OneFileCase(unittest.TestCase):
             name = cmd[4]
             with open(os.path.join(work, name + ".all.mkv"), "w") as h:
                 h.write("v")
-            with open(os.path.join(work, name + ".src-a0.md5"), "w") as h:
-                h.write("MD5=%s\n" % ("0" * 32))
+            with open(os.path.join(work, name + ".src-a0.sha256"),
+                      "w") as h:
+                h.write("SHA256=%s\n" % ("0" * 64))
             return _done(code)
 
         mock.patch.object(runner.subprocess, "run",
                           side_effect=fake_encode).start()
-        mock.patch.object(runner, "encoded_md5s",
-                          return_value=["0" * 32]).start()
+        mock.patch.object(runner, "encoded_sha256s",
+                          return_value=["0" * 64]).start()
         mock.patch.object(runner, "is_stream_copied",
                           return_value=False).start()
 
@@ -77,7 +78,7 @@ class OneFileCase(unittest.TestCase):
 
 
 class TestShortArchiveIsNotUploaded(OneFileCase):
-    def test_short_archive_with_matching_md5_is_refused(self):
+    def test_short_archive_with_matching_fingerprint_is_refused(self):
         """ffmpeg 按 q 收尾離開碼是 0，指紋兩爿仝款短——干焦時長看會出來。
 
         24NL003_152 午間魯凱：來源 48 分鐘，mkv 21 秒，傳起去矣。
@@ -133,50 +134,32 @@ class TestInterruptedEncodeStopsEverything(OneFileCase):
         self.assertEqual(left, ["a.mxf"])
 
 
-class TestBatchStopsOnInterrupt(unittest.TestCase):
-    def setUp(self):
-        self.tmp = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, self.tmp, True)
-        self.src = os.path.join(self.tmp, "2月原始mxf檔")
-        os.makedirs(self.src)
-        for name in ["a.mxf", "b.mxf", "c.mxf"]:
-            with open(os.path.join(self.src, name), "w") as handle:
-                handle.write("x")
-        self.reports = os.path.join(self.tmp, "reports")
+class TestEncodedFingerprints(unittest.TestCase):
+    """封存端重算指紋愛佮 encode_master.sh 仝算法（FLAC → 32-bit 取樣、
+    原樣複製 → 封裝資料），無仝ê話規批攏會誤判無相符。"""
 
-    def go(self, one_file):
-        return batch.run(
-            src_root=self.src, dst_root="/home/mkv-raw",
-            work_dir=self.tmp, report_root=self.reports,
-            stamp="1006-2210", one_file=one_file)
-
-    def test_interrupt_is_not_swallowed_as_a_failure(self):
-        """「一支倒袂使拖累其他支」是講檔案歹，毋是講人喝停。"""
+    def _commands(self, stream_copy):
         seen = []
 
-        def one_file(job, log):
-            seen.append(job.relative)
-            raise KeyboardInterrupt()
+        def run(cmd, **kwargs):
+            seen.append(cmd)
+            return subprocess.CompletedProcess(
+                cmd, 0, "SHA256=%s\n" % ("b" * 64), "")
 
-        with self.assertRaises(KeyboardInterrupt):
-            self.go(one_file)
-        self.assertEqual(seen, ["a.mxf"])
+        with mock.patch.object(runner.subprocess, "run", run):
+            got = runner.encoded_sha256s("x.mkv", 1, stream_copy)
+        return " ".join(seen[0]), got
 
-    def test_interrupt_is_written_to_the_log(self):
-        def one_file(job, log):
-            raise KeyboardInterrupt()
+    def test_flac_is_hashed_as_32_bit_samples(self):
+        text, got = self._commands(False)
+        self.assertIn("-c:a pcm_s32le", text)
+        self.assertIn("-f hash -hash sha256", text)
+        self.assertEqual(got, ["b" * 64])
 
-        with self.assertRaises(KeyboardInterrupt):
-            self.go(one_file)
-        folder = os.path.join(self.reports, "2月原始mxf檔")
-        logs = []
-        for name in os.listdir(folder):
-            if name.endswith(".log"):
-                logs.append(name)
-        with open(os.path.join(folder, logs[0]), encoding="utf-8") as h:
-            text = h.read()
-        self.assertIn("中斷", text)
-        self.assertIn("a.mxf", text)
+    def test_copied_audio_is_hashed_as_packets(self):
+        text, _ = self._commands(True)
+        self.assertIn("-c:a copy", text)
+        self.assertNotIn("pcm_s32le", text)
 
 
 class TestMainExitsOnInterrupt(unittest.TestCase):

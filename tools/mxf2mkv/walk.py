@@ -14,23 +14,6 @@ import os
 MASTER_EXT = ".mxf"
 ARCHIVE_EXT = ".mkv"
 
-# sftp -b re-parses every line of its batch file, so a quote inside a path
-# can end the argument and a newline can start a whole new command.
-# scripts/news/sftp.sh refuses these too; catching them here as well means
-# the failure names the offending file instead of surfacing as a broken
-# sftp batch. No broadcast master legitimately has one.
-UNSAFE = ('"', "\\", "\n", "\r", "\t")
-
-
-def is_safe(relative):
-    """Whether this path may be handed to sftp at all."""
-    if not relative:
-        return False
-    for bad in UNSAFE:
-        if bad in relative:
-            return False
-    return True
-
 
 def src_label(src_root):
     """The source folder's own name -- the layer that goes on the server.

@@ -165,6 +165,24 @@ TRACKER_STORE = os.path.join(AIYA_STORE, "smkul.csv")
 ABNORMAL_STORE = os.path.join(AIYA_STORE, "smkul-字幕版型異常.csv")
 ABNORMAL_CACHE = os.path.join(WORK, "smkul-字幕版型異常.csv")
 
+# tools.mkv2mp4wav ê兩種產出佇伺服器頂ê位置：字幕編輯器用ê預覽 mp4、
+# 語音辨識訓練用ê WAV。開會了無播出日期，不分子資料夾（使用者裁定
+# 2026-11-23）。兩个根各干焦佇遮定義一擺；函式呼叫ê時才讀，換根
+# 立刻綴咧變。
+PREVIEW_ROOT = "/home/aiyalaeho/mp4"
+WAV_ROOT = "/home/aiyalaeho/wav"
+
+
+def preview_path(srt_name):
+    """<PREVIEW_ROOT>/<成果檔名>.mp4 on the server."""
+    return "%s/%s.mp4" % (PREVIEW_ROOT, check_srt_name(srt_name))
+
+
+def wav_path(srt_name):
+    """<WAV_ROOT>/<成果檔名>.wav on the server."""
+    return "%s/%s.wav" % (WAV_ROOT, check_srt_name(srt_name))
+
+
 # The upstream text transcripts sit beside 1-ocr/, not inside it: they are
 # a different technique (typed by hand, not read off the picture) for a
 # different, non-overlapping set of episodes (001-045, no video) -- see

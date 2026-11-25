@@ -41,30 +41,6 @@ class TestRemotePath(unittest.TestCase):
         self.assertEqual(got, "/home/mkv-raw/y/a.mkv")
 
 
-class TestDangerousPaths(unittest.TestCase):
-    """sftp -b 會共批次檔逐逝重讀，所以路徑內底ê引號會共引數煞尾，
-    換逝會開一條新ê指令。sftp.sh 家己嘛擋，毋過佇遮就擋起來，
-    失敗ê時陣講會出是佗一支檔案。
-    """
-
-    def test_quote_is_rejected(self):
-        self.assertFalse(walk.is_safe('a"b.mxf'))
-
-    def test_backslash_is_rejected(self):
-        self.assertFalse(walk.is_safe("a\\b.mxf"))
-
-    def test_newline_is_rejected(self):
-        self.assertFalse(walk.is_safe("a\nb.mxf"))
-
-    def test_tab_and_carriage_return_are_rejected(self):
-        self.assertFalse(walk.is_safe("a\tb.mxf"))
-        self.assertFalse(walk.is_safe("a\rb.mxf"))
-
-    def test_ordinary_names_pass(self):
-        self.assertTrue(walk.is_safe("21NL004_41晚間族語新聞.mxf"))
-        self.assertTrue(walk.is_safe("夜間/a b-c_d.mxf"))
-
-
 class TestScan(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()

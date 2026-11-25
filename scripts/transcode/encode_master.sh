@@ -4,9 +4,9 @@
 #
 # This script does ONE thing: a single ffmpeg pass that writes the archive
 # with **every** source audio track kept, and -- in that same pass -- an
-# MD5 of each source audio track. It does not decide which tracks to keep
-# and it does not verify anything. Both of those are the caller's job,
-# using the .md5 files this leaves behind (scripts/transcode/audio_tracks.py
+# SHA-256 of each source audio track. It does not decide which tracks to
+# keep and it does not verify anything. Both of those are the caller's job,
+# using the .sha256 files this leaves behind (scripts/transcode/audio_tracks.py
 # answers them; archive_batch.py and tools/mxf2mkv/ both go through it).
 #
 # Why one pass. The old shape read the source three times: once to compare
@@ -15,7 +15,7 @@
 # reads from, a 19 GB master became 57 GB of reading, and the two extra
 # reads bought one bit of information ("are the tracks the same?"). ffmpeg
 # takes several outputs off one input -- the source is decoded once and fed
-# to the video encoder, the audio encoder and one md5 muxer per track -- so
+# to the video encoder, the audio encoder and one hash muxer per track -- so
 # that bit now falls out of the encode for free. Hashing is cheaper than
 # x264 by orders of magnitude; the cost is that the command line got long,
 # which is what ENCODE_DRY_RUN and tests/transcode/test_encode_master.py
@@ -62,19 +62,30 @@
 #                     differed). For that case the only lossless move is to
 #                     not touch the audio at all: -c:a copy.
 #
-# The .md5 files are written through the same codec path the archive took,
-# because that is what the caller has to compare against: for flac that
-# means decoded PCM (what the corpus actually trains on); for copy it must
+# The .sha256 files are written through the same codec path the archive
+# took, because that is what the caller has to compare against: for flac
+# that means decoded PCM (what the corpus actually trains on); for copy it must
 # mean the encoded packets, not decoded PCM -- Matroska doesn't carry AAC's
 # skip_samples priming-delay side data the way mp4's edit list does, so
 # decoding a stream-copied AAC track picks up an extra encoder-priming frame
 # at the front and every sample after it reads as "different" even though
 # the copied bytes are identical.
 #
+# Decoded PCM is hashed as 32-bit samples (-c:a pcm_s32le). Left to itself,
+# ffmpeg's hash muxers (-f md5, -f hash) convert to 16-bit before hashing:
+# measured 2026-11-18, `-f md5` equals `-f s16le | md5sum` and not
+# `-f s32le | md5sum`. The masters are 24-bit, so the bottom 8 bits were
+# never checked, and two tracks differing only there read as duplicates
+# and one was dropped. FLAC 24-bit decodes to s32 with the low 8 bits zero,
+# so 32-bit covers all 24. With pcm_s32le, `-f hash -hash sha256` equals
+# `-f s32le | sha256sum` -- the same algorithm as sha256sum, done inside
+# this one ffmpeg pass because a pipe could only carry one of the N outputs.
+#
 # Usage:
 #   bash scripts/transcode/encode_master.sh SRC WORKDIR NAME [CRF] [PIX_FMT]
 #
-# Writes WORKDIR/NAME.all.mkv and WORKDIR/NAME.src-a<i>.md5 (one per track).
+# Writes WORKDIR/NAME.all.mkv and WORKDIR/NAME.src-a<i>.sha256 (one per
+# track, "SHA256=<hex>").
 # ENCODE_DRY_RUN=1 prints the ffmpeg command that would run and exits, so
 # the argument assembly is testable without ffmpeg or a real video.
 set -euo pipefail
@@ -103,9 +114,9 @@ audio_codec=$(ffprobe -v error -select_streams a:0 \
                       -of csv=p=0 "$SRC")
 case "$audio_codec" in
   pcm_*) audio_args=(-c:a flac -compression_level 8)
-         md5_args=() ;;
+         hash_args=(-c:a pcm_s32le) ;;
   *)     audio_args=(-c:a copy)
-         md5_args=(-c:a copy) ;;
+         hash_args=(-c:a copy) ;;
 esac
 
 # Every source track is carried into the archive; nothing is dropped here.
@@ -114,15 +125,15 @@ for ((i = 0; i < tracks; i++)); do
     maps+=(-map "0:a:$i")
 done
 
-# One md5 output per track, each one its own ffmpeg output file. The -map
-# belongs to the output that follows it, so track i's -map has to sit
-# immediately before track i's md5 destination -- getting this order wrong
+# One fingerprint output per track, each one its own ffmpeg output file.
+# The -map belongs to the output that follows it, so track i's -map has to
+# sit immediately before track i's fingerprint destination -- getting this order wrong
 # fingerprints the wrong track, and a fingerprint attributed to the wrong
 # track can read as "these two are duplicates" and drop one for real.
-md5_outputs=()
+hash_outputs=()
 for ((i = 0; i < tracks; i++)); do
-    md5_outputs+=(-map "0:a:$i" "${md5_args[@]}" -f md5
-                  "$WORKDIR/$NAME.src-a$i.md5")
+    hash_outputs+=(-map "0:a:$i" "${hash_args[@]}" -f hash -hash sha256
+                   "$WORKDIR/$NAME.src-a$i.sha256")
 done
 
 # A batch of these runs for hours in the background; nice/ionice it down
@@ -135,7 +146,7 @@ cmd=(nice -n 15 ionice -c 3
      ffmpeg -nostdin -v error -stats -i "$SRC" "${maps[@]}"
      -c:v libx264 -preset medium -pix_fmt "$PIX" -crf "$CRF"
      "${audio_args[@]}" "$ARCHIVE"
-     "${md5_outputs[@]}")
+     "${hash_outputs[@]}")
 
 if [[ -n "${ENCODE_DRY_RUN:-}" ]]; then
     printf '%s\n' "${cmd[*]}"
@@ -152,4 +163,4 @@ awk -v d="$ARCHIVE" -v b="$before" -v a="$after" 'BEGIN {
     printf "%s\n  %d bytes -> %d bytes  (%.1f%%, %.1fx smaller)\n",
            d, b, a, 100 * a / b, b / a
 }'
-echo "  音軌 $tracks 條，指紋佇 $WORKDIR/$NAME.src-a<i>.md5"
+echo "  音軌 $tracks 條，指紋佇 $WORKDIR/$NAME.src-a<i>.sha256"

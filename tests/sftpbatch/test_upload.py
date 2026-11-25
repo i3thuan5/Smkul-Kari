@@ -7,7 +7,7 @@ SSH_ASKPASS 加密碼檔解決矣，而且路徑ê引號佮控制字元伊嘛家
 import unittest
 from unittest import mock
 
-from tools.mxf2mkv import upload
+from tools.sftpbatch import upload
 
 
 class TestRemoteDirs(unittest.TestCase):

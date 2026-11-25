@@ -128,6 +128,44 @@ class TestUsageErrors(unittest.TestCase):
         self.assertEqual(run("ls", "/a", "/b").returncode, 2)
 
 
+class TestDeadConnectionIsNoticed(unittest.TestCase):
+    """連上了後伺服器若消失（斷電、網路斷去），無 ServerAlive 的話愛等
+    系統 TCP keepalive：7200＋9×75 秒＝2 點 11 分鐘才發現。新聞
+    mkv2mp4wav 一跑十幾工，一擺斷線就恬恬停兩點外鐘。加
+    ServerAliveInterval=30、ServerAliveCountMax=4 → 約 2 分鐘就斷。
+    SFTP_DRY_RUN 時 sftp 欲用的參數印去 stderr，stdout 照舊干焦批次內容。"""
+
+    CASES = (
+        ("get", "/docker/a.mkv", "/tmp/a.mkv"),
+        ("put", "/tmp/a.mp4", "/home/news/mp4/2021-01/a.mp4"),
+        ("ls", "/home/news/mp4/2021-01"),
+        ("mkdir", "/home/news/mp4"),
+        ("rename", "/home/a.partial", "/home/a"),
+        ("rmdir", "/home/x"),
+    )
+
+    def test_every_verb_carries_server_alive(self):
+        for case in self.CASES:
+            proc = run(*case)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertIn("ServerAliveInterval=30", proc.stderr, case[0])
+            self.assertIn("ServerAliveCountMax=4", proc.stderr, case[0])
+
+    def test_stdin_batch_carries_server_alive(self):
+        env = dict(os.environ)
+        env["SFTP_DRY_RUN"] = "1"
+        proc = subprocess.run(["bash", SFTP, "-"], input="ls /docker\n",
+                              capture_output=True, text=True, env=env)
+        self.assertIn("ServerAliveInterval=30", proc.stderr)
+        self.assertIn("ServerAliveCountMax=4", proc.stderr)
+
+    def test_stdout_is_still_only_the_batch(self):
+        """既有測試比對 stdout，袂使予參數輸出污染。"""
+        proc = run("ls", "/home/news/mp4/2021-01")
+        self.assertEqual(proc.stdout, 'ls -l "/home/news/mp4/2021-01"\n')
+        self.assertNotIn("ServerAlive", proc.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()
 

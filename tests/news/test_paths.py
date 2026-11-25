@@ -662,5 +662,40 @@ class TestSegmentsLayout(unittest.TestCase):
                          os.path.join(work, "0-segments.csv"))
 
 
+class TestPreviewAndWavPaths(unittest.TestCase):
+    """mkv2mp4wav ê兩種產出：`/home/news/mp4/<年-月>/<srt_name>.mp4`、
+    `/home/news/wav/<年-月>/<srt_name>.wav`。年-月對成果檔名來，毋是對
+    影片本底囥ê資料夾（原始位置 `/home/mkv-raw/9月/…` 彼集是 2024-10）。"""
+
+    NAME = "20210103_003_晨間_Hla'alua_拉阿魯哇"
+
+    def test_the_roots_are_where_the_spec_says(self):
+        self.assertEqual(paths.PREVIEW_ROOT, "/home/news/mp4")
+        self.assertEqual(paths.WAV_ROOT, "/home/news/wav")
+
+    def test_month_comes_from_the_name_and_apostrophe_survives(self):
+        self.assertEqual(
+            paths.preview_path(self.NAME),
+            "/home/news/mp4/2021-01/20210103_003_晨間_Hla'alua_拉阿魯哇.mp4")
+        self.assertEqual(
+            paths.wav_path(self.NAME),
+            "/home/news/wav/2021-01/20210103_003_晨間_Hla'alua_拉阿魯哇.wav")
+
+    def test_a_bad_name_is_refused_before_any_path_is_built(self):
+        for bad in ("20210103_03_晨間_X", "20219903_003_晨間_X", "../x"):
+            with self.assertRaises(PipelineError):
+                paths.preview_path(bad)
+            with self.assertRaises(PipelineError):
+                paths.wav_path(bad)
+
+    def test_swapping_the_roots_moves_the_paths_with_them(self):
+        with mock.patch.object(paths, "PREVIEW_ROOT", "/x/mp4"), \
+                mock.patch.object(paths, "WAV_ROOT", "/x/wav"):
+            self.assertEqual(paths.preview_path(self.NAME),
+                             "/x/mp4/2021-01/%s.mp4" % self.NAME)
+            self.assertEqual(paths.wav_path(self.NAME),
+                             "/x/wav/2021-01/%s.wav" % self.NAME)
+
+
 if __name__ == "__main__":
     unittest.main()

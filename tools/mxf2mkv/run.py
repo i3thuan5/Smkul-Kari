@@ -12,12 +12,12 @@ the first place.
 """
 import glob
 import os
-import signal
 import subprocess
 import time
 
 from scripts.transcode import audio_tracks
-from tools.mxf2mkv import upload
+from tools.sftpbatch import batch
+from tools.sftpbatch import upload
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
@@ -28,14 +28,8 @@ class EncodeError(Exception):
     """This master did not become a faithful archive."""
 
 
-# How an encode that was told to stop comes back. ffmpeg catches SIGINT,
-# SIGTERM and SIGHUP, closes its outputs properly and exits 255; a shell
-# killed outright reads as the negative signal; 130 is a shell's own
-# "stopped by Ctrl+C". None of these is a bad file -- someone wants the
-# whole run to stop -- so they must not fall into batch.py's "log it and
-# carry on with the next one".
-INTERRUPTED_CODES = (255, 130, -signal.SIGINT, -signal.SIGTERM,
-                     -signal.SIGHUP)
+# How an encode that was told to stop comes back; see sftpbatch.batch.
+INTERRUPTED_CODES = batch.INTERRUPTED_CODES
 
 # An archive a frame or so off the master is rounding; seconds off is a
 # short file. Measured on the 8 short uploads found 2026-10-06: 0.7 s to
@@ -72,20 +66,20 @@ def check_length(source, archive, relative):
                           % (relative, got, want))
 
 
-def _read_md5(path):
+def _read_sha256(path):
     with open(path, encoding="utf-8") as handle:
         return handle.read().strip().split("=", 1)[-1]
 
 
-def source_md5s(work, name):
+def source_sha256s(work, name):
     """The per-track source fingerprints encode_master.sh left behind."""
     out = []
     index = 0
     while True:
-        path = os.path.join(work, "%s.src-a%d.md5" % (name, index))
+        path = os.path.join(work, "%s.src-a%d.sha256" % (name, index))
         if not os.path.exists(path):
             return out
-        out.append(_read_md5(path))
+        out.append(_read_sha256(path))
         index += 1
 
 
@@ -98,7 +92,7 @@ def is_stream_copied(archive):
     return done.stdout.strip() != "flac"
 
 
-def encoded_md5s(archive, tracks, stream_copy):
+def encoded_sha256s(archive, tracks, stream_copy):
     """The same fingerprints, taken off the encoded archive on the SSD.
 
     `stream_copy` has to match the path the encode took: a copied AAC
@@ -111,9 +105,14 @@ def encoded_md5s(archive, tracks, stream_copy):
     for index in range(tracks):
         cmd = ["ffmpeg", "-v", "error", "-i", archive,
                "-map", "0:a:%d" % index]
+        # Same codec path as encode_master.sh: packets for a copied track,
+        # 32-bit samples for FLAC -- without a codec ffmpeg's hash muxer
+        # drops to 16-bit and the bottom 8 bits of 24-bit audio go unseen.
         if stream_copy:
             cmd += ["-c:a", "copy"]
-        cmd += ["-f", "md5", "-"]
+        else:
+            cmd += ["-c:a", "pcm_s32le"]
+        cmd += ["-f", "hash", "-hash", "sha256", "-"]
         done = subprocess.run(cmd, capture_output=True, text=True)
         if done.returncode:
             raise EncodeError("讀無封存ê音軌指紋：%s a:%d" % (archive, index))
@@ -164,12 +163,12 @@ def one_file(job, work_dir, crf=23, pix_fmt="yuv420p", log=None):
             raise EncodeError("編碼失敗：%s\n%s"
                               % (job.relative, done.stderr))
 
-        sources = source_md5s(work_dir, name)
+        sources = source_sha256s(work_dir, name)
         if not sources:
             raise EncodeError("%s 無產出音軌指紋" % job.relative)
 
-        encoded = encoded_md5s(everything, len(sources),
-                               is_stream_copied(everything))
+        encoded = encoded_sha256s(everything, len(sources),
+                                  is_stream_copied(everything))
         verdict = audio_tracks.decide(sources, encoded)
         if not verdict.bit_exact:
             raise EncodeError("%s %s" % (job.relative, verdict.summary))
@@ -196,7 +195,7 @@ def one_file(job, work_dir, crf=23, pix_fmt="yuv420p", log=None):
         # 目錄本身會留（batch.py 決定ê），毋過這支ê半成品無路用。
         # 指紋檔用 glob 揣：編碼若中途停，猶未行到讀指紋彼步。
         pattern = os.path.join(glob.escape(work_dir),
-                               glob.escape(name) + ".src-a*.md5")
+                               glob.escape(name) + ".src-a*.sha256")
         for path in glob.glob(pattern):
             made.append(path)
         for path in made:

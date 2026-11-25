@@ -28,8 +28,9 @@
 #                       for the password from a child ssh process. `sshpass`
 #                       does not reach that child and fails the same way.
 #
-# SFTP_DRY_RUN=1 prints the batch that would be sent and exits, so the
-# quoting is testable offline (tests/news/test_sftp_cli.py).
+# SFTP_DRY_RUN=1 prints the batch that would be sent (stdout) and the sftp
+# options (stderr) and exits, so both are testable offline
+# (tests/news/test_sftp_cli.py).
 set -u
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -132,10 +133,23 @@ case "$verb" in
         ;;
 esac
 
+# ServerAlive*: once connected, sftp otherwise only notices a server that
+# has vanished (power cut, network gone) through the kernel's TCP
+# keepalive -- 7200 s idle plus 9 probes 75 s apart, 2 h 11 min of a batch
+# sitting still. Asking every 30 s and giving up after 4 unanswered asks
+# drops a dead connection in about 2 minutes; a merely slow transfer still
+# answers, so it is not affected.
+sftp_args=(-o ConnectTimeout=20 -o ServerAliveInterval=30
+           -o ServerAliveCountMax=4 -o BatchMode=no
+           -o NumberOfPasswordPrompts=1 -o PubkeyAuthentication=no
+           -b "$batch" "$SFTP_HOST")
+
 if [[ -n "${SFTP_DRY_RUN:-}" ]]; then
+    # The batch on stdout (callers' tests compare it exactly), the options
+    # sftp would have been given on stderr.
     cat "$batch"
+    echo "sftp ${sftp_args[*]}" >&2
     exit 0
 fi
 
-exec sftp -o ConnectTimeout=20 -o BatchMode=no -o NumberOfPasswordPrompts=1 \
-          -o PubkeyAuthentication=no -b "$batch" "$SFTP_HOST"
+exec sftp "${sftp_args[@]}"

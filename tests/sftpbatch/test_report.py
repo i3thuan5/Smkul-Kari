@@ -1,8 +1,8 @@
-"""report: 執行紀錄佮對照表囥佗位、叫啥名、按怎袂共舊ê拭掉。
+"""report: 執行紀錄佮對照表按怎袂共舊ê拭掉、按怎逐筆寫入。
 
-外層是**來源資料夾名**（無帶時間），按呢仝一个來源走幾若擺攏佇仝
-一个資料夾內底，看會出來試過幾擺、佗一擺成功。檔名才帶日期時間。
-使用者裁定 2026-09-06。
+囥佗一个資料夾、檔名按怎號，是呼叫ê工具家己決定ê（mxf2mkv 見
+tests/mxf2mkv/test_failure.py ê TestReportLayout；mkv2mp4wav 見
+tests/mkv2mp4wav/test_report.py）。這搭管ê是兩个工具共用ê規矩。
 """
 import json
 import os
@@ -10,7 +10,9 @@ import shutil
 import tempfile
 import unittest
 
-from tools.mxf2mkv import report
+from tools.sftpbatch import report
+
+HEADER = {"來源資料夾": "2月原始mxf檔", "開始時間": "0905-2017"}
 
 
 class ReportCase(unittest.TestCase):
@@ -19,35 +21,19 @@ class ReportCase(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.tmp, True)
 
 
-class TestLayout(ReportCase):
-    def test_outer_folder_is_the_source_name_only(self):
-        """外層無帶時間——帶ê話一擺一个資料夾，就無「囥做伙」矣。"""
-        got = report.folder_for(self.tmp, "2月原始mxf檔")
-        self.assertEqual(got, os.path.join(self.tmp, "2月原始mxf檔"))
-
-    def test_file_names_carry_time_and_source(self):
-        got = report.stem("2月原始mxf檔", "0905-2017")
-        self.assertEqual(got, "0905-2017_2月原始mxf檔")
-
-    def test_second_run_lands_in_the_same_folder(self):
-        one = report.folder_for(self.tmp, "2月原始mxf檔")
-        two = report.folder_for(self.tmp, "2月原始mxf檔")
-        self.assertEqual(one, two)
-
-
 class TestNeverOverwrite(ReportCase):
     def test_creates_both_files(self):
-        got = report.open_run(self.tmp, "2月原始mxf檔", "0905-2017")
+        got = report.open_run(self.tmp, "0905-2017_2月原始mxf檔", HEADER)
         self.assertTrue(os.path.exists(got.log_path))
         self.assertTrue(os.path.exists(got.manifest_path))
         got.close([])
 
     def test_same_minute_twice_gets_a_suffix(self):
         """仝一分鐘走兩擺會挵名，愛加後綴，袂使共頭一擺ê蓋過去。"""
-        first = report.open_run(self.tmp, "src", "0905-2017")
+        first = report.open_run(self.tmp, "0905-2017_src", {})
         with open(first.log_path, "a", encoding="utf-8") as handle:
             handle.write("頭一擺\n")
-        second = report.open_run(self.tmp, "src", "0905-2017")
+        second = report.open_run(self.tmp, "0905-2017_src", {})
         self.assertNotEqual(first.log_path, second.log_path)
         self.assertIn("-2", os.path.basename(second.log_path))
         with open(first.log_path, encoding="utf-8") as handle:
@@ -56,17 +42,17 @@ class TestNeverOverwrite(ReportCase):
         second.close([])
 
     def test_third_run_in_the_same_minute(self):
-        one = report.open_run(self.tmp, "src", "0905-2017")
-        two = report.open_run(self.tmp, "src", "0905-2017")
-        three = report.open_run(self.tmp, "src", "0905-2017")
+        one = report.open_run(self.tmp, "0905-2017_src", {})
+        two = report.open_run(self.tmp, "0905-2017_src", {})
+        three = report.open_run(self.tmp, "0905-2017_src", {})
         paths = {one.log_path, two.log_path, three.log_path}
         self.assertEqual(len(paths), 3)
         for run in (one, two, three):
             run.close([])
 
     def test_a_different_minute_does_not_need_a_suffix(self):
-        one = report.open_run(self.tmp, "src", "0905-2017")
-        two = report.open_run(self.tmp, "src", "0906-0930")
+        one = report.open_run(self.tmp, "0905-2017_src", {})
+        two = report.open_run(self.tmp, "0906-0930_src", {})
         self.assertNotIn("-2", os.path.basename(two.log_path))
         one.close([])
         two.close([])
@@ -78,18 +64,66 @@ class TestNeverOverwrite(ReportCase):
         manifest 開袂起來，若無共已經開ê彼个抾轉來，資料夾內底就會
         濟一个空ê .log，看起來若像有走過彼擺，其實無。
         """
-        taken = report.open_run(self.tmp, "src", "0905-2017")
+        taken = report.open_run(self.tmp, "0905-2017_src", {})
         os.remove(taken.log_path)          # 干焦賰 manifest
-        run = report.open_run(self.tmp, "src", "0905-2017")
+        run = report.open_run(self.tmp, "0905-2017_src", {})
         self.assertIn("-2", os.path.basename(run.log_path))
         self.assertFalse(os.path.exists(
-            os.path.join(self.tmp, "src", "0905-2017_src.log")))
+            os.path.join(self.tmp, "0905-2017_src.log")))
         run.close([])
+
+
+class TestWrittenAsItGoes(ReportCase):
+    """對照表本來規批走煞才寫：kithann/mxf2mkv/ 有 3 份空ê對照表，就是
+    走到一半停去留落來ê。mkv2mp4wav 新聞走十幾工，這个缺口愛補。"""
+
+    def _load(self, run):
+        with open(run.manifest_path, encoding="utf-8") as handle:
+            return json.load(handle)
+
+    def test_first_n_entries_are_readable_mid_run(self):
+        run = report.open_run(self.tmp, "0905-2017_src", {"來源": "x"})
+        run.write([{"src": "a"}])
+        run.write([{"src": "a"}, {"src": "b"}])
+        loaded = self._load(run)
+        self.assertEqual(len(loaded["檔案"]), 2)
+        self.assertFalse(loaded["已收尾"])
+        self.assertEqual(loaded["來源"], "x")
+
+    def test_close_marks_it_finished(self):
+        run = report.open_run(self.tmp, "0905-2017_src", {})
+        run.write([{"src": "a"}])
+        run.close([{"src": "a"}])
+        self.assertTrue(self._load(run)["已收尾"])
+
+    def test_a_crash_while_writing_leaves_the_previous_complete_json(self):
+        """寫暫存檔寫到一半當掉，磁碟頂懸ê對照表猶原是頂一擺完整ê JSON。"""
+        run = report.open_run(self.tmp, "0905-2017_src", {})
+        run.write([{"src": "a"}])
+
+        class Boom(Exception):
+            pass
+
+        real_dump = report.json.dump
+
+        def half_dump(document, handle, **kwargs):
+            handle.write('{"檔案": [')
+            raise Boom()
+
+        report.json.dump = half_dump
+        try:
+            with self.assertRaises(Boom):
+                run.write([{"src": "a"}, {"src": "b"}])
+        finally:
+            report.json.dump = real_dump
+        loaded = self._load(run)
+        self.assertEqual(loaded["檔案"], [{"src": "a"}])
+        self.assertFalse(os.path.exists(run.manifest_path + ".tmp"))
 
 
 class TestManifest(ReportCase):
     def _write(self, entries):
-        run = report.open_run(self.tmp, "src", "0905-2017")
+        run = report.open_run(self.tmp, "0905-2017_src", {})
         run.close(entries)
         with open(run.manifest_path, encoding="utf-8") as handle:
             return handle.read()
@@ -108,7 +142,7 @@ class TestManifest(ReportCase):
         self.assertLess(entry.index('"a"'), entry.index('"z"'))
 
     def test_run_level_fields(self):
-        run = report.open_run(self.tmp, "2月原始mxf檔", "0905-2017")
+        run = report.open_run(self.tmp, "0905-2017_2月原始mxf檔", HEADER)
         run.close([])
         with open(run.manifest_path, encoding="utf-8") as handle:
             loaded = json.load(handle)

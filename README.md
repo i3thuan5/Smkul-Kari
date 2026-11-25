@@ -120,6 +120,21 @@ python3 -m tools.mxf2mkv --src /media/hong/USB/2月原始mxf檔
 互不相干、重複的照轉。序列處理（同一顆碟的 I/O 會互搶），不同硬碟
 可以各自起一個同時跑。執行紀錄與對照表在 `kithann/mxf2mkv/`。
 
+### 字幕編輯預覽 mp4 與訓練用 WAV（開會了、族語新聞）
+
+照目錄逐集從 SFTP 下載影片一次，做瀏覽器字幕編輯器用的預覽 mp4（720p、
+去交錯、GPU 編碼）和語音辨識訓練用的 WAV（24 kHz、16-bit、單聲道），
+各自驗收、上傳。細節見 [tools/mkv2mp4wav/README.md](tools/mkv2mp4wav/README.md)。
+
+```bash
+python3 -m tools.mkv2mp4wav.aiyalaeho --dry-run   # 全部幾集、已完成幾集
+python3 -m tools.mkv2mp4wav.aiyalaeho             # 開會了，產出在 /home/aiyalaeho/{mp4,wav}/
+python3 -m tools.mkv2mp4wav.news                  # 新聞，產出在 /home/news/{mp4,wav}/<年-月>/
+```
+
+每做完一集印進度與預計剩餘時間；Ctrl+C 停，再打同一行接著做。紀錄與
+對照表在 `kithann/mkv2mp4wav/<aiyalaeho|news>/`。
+
 ## 驗收（每次改程式後）
 
 ```bash

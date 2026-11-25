@@ -313,6 +313,25 @@ def video_read_paths(srt_name):
     return out
 
 
+# tools.mkv2mp4wav ê兩種產出：字幕編輯器用ê預覽 mp4、語音辨識訓練用ê
+# WAV。`<根>/<年-月>/<成果檔名>`，年-月照影片仝款對成果檔名來。兩个根
+# 各干焦佇遮定義一擺。
+PREVIEW_ROOT = "/home/news/mp4"
+WAV_ROOT = "/home/news/wav"
+
+
+def preview_path(srt_name):
+    """<PREVIEW_ROOT>/<年-月>/<成果檔名>.mp4 on the server."""
+    name = check_srt_name(srt_name)
+    return "%s/%s/%s.mp4" % (PREVIEW_ROOT, month_of(name), name)
+
+
+def wav_path(srt_name):
+    """<WAV_ROOT>/<年-月>/<成果檔名>.wav on the server."""
+    name = check_srt_name(srt_name)
+    return "%s/%s/%s.wav" % (WAV_ROOT, month_of(name), name)
+
+
 def video_dirs_to_make(srt_name):
     """Every level of the video folder, outermost first.
 

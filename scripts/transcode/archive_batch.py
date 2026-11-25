@@ -299,25 +299,25 @@ def encode_lock(dst):
             os.remove(path)
 
 
-def _read_md5(path):
-    """The hash out of one of ffmpeg's md5-muxer files ("MD5=<hex>")."""
+def _read_sha256(path):
+    """The hash out of one of ffmpeg's hash-muxer files ("SHA256=<hex>")."""
     with open(path, encoding="utf-8") as handle:
         return handle.read().strip().split("=", 1)[-1]
 
 
-def _source_md5s(work, name):
+def _source_sha256s(work, name):
     """The per-track source fingerprints encode_master.sh left behind."""
     out = []
     index = 0
     while True:
-        path = os.path.join(work, "%s.src-a%d.md5" % (name, index))
+        path = os.path.join(work, "%s.src-a%d.sha256" % (name, index))
         if not os.path.exists(path):
             return out
-        out.append(_read_md5(path))
+        out.append(_read_sha256(path))
         index += 1
 
 
-def _encoded_md5s(archive, tracks, stream_copy):
+def _encoded_sha256s(archive, tracks, stream_copy):
     """The same fingerprints, taken off the encoded archive.
 
     Read from the local SSD, so this costs nothing like the source read
@@ -331,9 +331,14 @@ def _encoded_md5s(archive, tracks, stream_copy):
     for index in range(tracks):
         cmd = ["ffmpeg", "-v", "error", "-i", archive,
                "-map", "0:a:%d" % index]
+        # Same codec path as encode_master.sh: packets for a copied track,
+        # 32-bit samples for FLAC -- without a codec ffmpeg's hash muxer
+        # drops to 16-bit and the bottom 8 bits of 24-bit audio go unseen.
         if stream_copy:
             cmd += ["-c:a", "copy"]
-        cmd += ["-f", "md5", "-"]
+        else:
+            cmd += ["-c:a", "pcm_s32le"]
+        cmd += ["-f", "hash", "-hash", "sha256", "-"]
         done = subprocess.run(cmd, capture_output=True, text=True)
         if done.returncode:
             raise PipelineError("讀無封存ê音軌指紋：%s a:%d"
@@ -367,8 +372,8 @@ def _encode(src, dst):
 
     Three stages, because `encode_master.sh` deliberately stops after the
     first one (see its header): it does a single ffmpeg pass that writes
-    an archive holding *every* source audio track plus one md5 per source
-    track, and leaves the judgement to us.
+    an archive holding *every* source audio track plus one SHA-256 per
+    source track, and leaves the judgement to us.
 
     1. encode + fingerprint the source, one read of the master
     2. compare against the archive's own tracks and decide what to keep
@@ -393,9 +398,9 @@ def _encode(src, dst):
         try:
             subprocess.run(["bash", ENCODE_SCRIPT, src, work, name],
                            check=True)
-            sources = _source_md5s(work, name)
-            encoded = _encoded_md5s(everything, len(sources),
-                                    _is_stream_copied(everything))
+            sources = _source_sha256s(work, name)
+            encoded = _encoded_sha256s(everything, len(sources),
+                                       _is_stream_copied(everything))
             verdict = audio_tracks.decide(sources, encoded)
             if not verdict.bit_exact:
                 raise PipelineError("%s 音訊無逐位元相符：%s"
@@ -408,7 +413,7 @@ def _encode(src, dst):
                 if os.path.exists(leftover):
                     os.remove(leftover)
             for index in range(16):
-                path = os.path.join(work, "%s.src-a%d.md5" % (name, index))
+                path = os.path.join(work, "%s.src-a%d.sha256" % (name, index))
                 if os.path.exists(path):
                     os.remove(path)
 

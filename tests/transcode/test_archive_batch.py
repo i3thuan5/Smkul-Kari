@@ -383,9 +383,10 @@ class TestEncodeThreeStages(unittest.TestCase):
                 with open(os.path.join(work, name + ".all.mkv"), "w") as fh:
                     fh.write("all")
                 for index, value in enumerate(sources):
-                    path = os.path.join(work, "%s.src-a%d.md5" % (name, index))
+                    path = os.path.join(work,
+                                        "%s.src-a%d.sha256" % (name, index))
                     with open(path, "w", encoding="utf-8") as fh:
-                        fh.write("MD5=%s\n" % value)
+                        fh.write("SHA256=%s\n" % value)
             else:                                   # remux
                 with open(cmd[-1], "w", encoding="utf-8") as fh:
                     fh.write("kept")
@@ -395,7 +396,7 @@ class TestEncodeThreeStages(unittest.TestCase):
 
     def test_bit_exact_archive_is_kept(self):
         run, calls = self._fake_run(["aa", "aa"], ["aa", "aa"])
-        with mock.patch.object(archive_batch, "_encoded_md5s",
+        with mock.patch.object(archive_batch, "_encoded_sha256s",
                                return_value=["aa", "aa"]), \
                 mock.patch.object(archive_batch.subprocess, "run", run):
             archive_batch._encode(self.src, self.dst)
@@ -403,7 +404,7 @@ class TestEncodeThreeStages(unittest.TestCase):
 
     def test_two_identical_tracks_are_remuxed_down_to_one(self):
         run, calls = self._fake_run(["aa", "aa"], ["aa", "aa"])
-        with mock.patch.object(archive_batch, "_encoded_md5s",
+        with mock.patch.object(archive_batch, "_encoded_sha256s",
                                return_value=["aa", "aa"]), \
                 mock.patch.object(archive_batch.subprocess, "run", run):
             archive_batch._encode(self.src, self.dst)
@@ -414,7 +415,7 @@ class TestEncodeThreeStages(unittest.TestCase):
 
     def test_two_differing_tracks_are_both_remuxed(self):
         run, calls = self._fake_run(["aa", "bb"], ["aa", "bb"])
-        with mock.patch.object(archive_batch, "_encoded_md5s",
+        with mock.patch.object(archive_batch, "_encoded_sha256s",
                                return_value=["aa", "bb"]), \
                 mock.patch.object(archive_batch.subprocess, "run", run):
             archive_batch._encode(self.src, self.dst)
@@ -429,9 +430,55 @@ class TestEncodeThreeStages(unittest.TestCase):
         失敗——半成品袂當留佇正式位置。
         """
         run, _ = self._fake_run(["aa", "bb"], ["aa", "cc"])
-        with mock.patch.object(archive_batch, "_encoded_md5s",
+        with mock.patch.object(archive_batch, "_encoded_sha256s",
                                return_value=["aa", "cc"]), \
                 mock.patch.object(archive_batch.subprocess, "run", run):
             with self.assertRaises(PipelineError):
                 archive_batch._encode(self.src, self.dst)
         self.assertFalse(os.path.exists(self.dst))
+
+    def test_fingerprint_files_are_cleaned_up(self):
+        """指紋檔是 .sha256；比了愛清掉，袂使留佇工作目錄。"""
+        run, _ = self._fake_run(["aa"], ["aa"])
+        with mock.patch.object(archive_batch, "_encoded_sha256s",
+                               return_value=["aa"]), \
+                mock.patch.object(archive_batch.subprocess, "run", run):
+            archive_batch._encode(self.src, self.dst)
+        left = []
+        for name in os.listdir(self.tmp):
+            if ".src-a" in name:
+                left.append(name)
+        self.assertEqual(left, [])
+
+
+class TestEncodedFingerprints(unittest.TestCase):
+    """封存端重算指紋愛佮 encode_master.sh 仝算法：FLAC 解碼做 32-bit
+    取樣（無指定 codec，ffmpeg 會先轉 16-bit、下跤 8 位元無驗著）；
+    原樣複製ê AAC 比封裝資料。兩爿算法無仝，會規批誤判無相符。"""
+
+    def _commands(self, stream_copy):
+        seen = []
+
+        def run(cmd, **kwargs):
+            seen.append(cmd)
+            return mock.Mock(returncode=0, stdout="SHA256=%s\n" % ("a" * 64))
+
+        with mock.patch.object(archive_batch.subprocess, "run", run):
+            got = archive_batch._encoded_sha256s("x.mkv", 2, stream_copy)
+        return seen, got
+
+    def test_flac_is_hashed_as_32_bit_samples(self):
+        seen, got = self._commands(False)
+        self.assertEqual(len(seen), 2)
+        for cmd in seen:
+            text = " ".join(cmd)
+            self.assertIn("-c:a pcm_s32le", text)
+            self.assertIn("-f hash -hash sha256", text)
+            self.assertNotIn("md5", text)
+        self.assertEqual(got, ["a" * 64, "a" * 64])
+
+    def test_copied_audio_is_hashed_as_packets(self):
+        seen, _ = self._commands(True)
+        text = " ".join(seen[0])
+        self.assertIn("-c:a copy", text)
+        self.assertNotIn("pcm_s32le", text)

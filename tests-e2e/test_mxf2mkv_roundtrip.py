@@ -11,6 +11,7 @@ Fixture 是走測試ê時陣才用 ffmpeg 家己ê lavfi 合成ê，走煞就刣
 SFTP 彼爿用假ê替代——網路毋是這篇欲測ê物件，這篇欲測ê是「聲音有無
 逐位元活過來」佮「軌留了著無」。
 """
+import math
 import os
 import shutil
 import subprocess
@@ -20,7 +21,7 @@ from unittest import mock
 
 from tools.mxf2mkv import batch
 from tools.mxf2mkv import run as runner
-from tools.mxf2mkv import upload
+from tools.sftpbatch import upload
 
 
 def have_ffmpeg():
@@ -49,13 +50,50 @@ def make_mxf(path, tones):
         raise AssertionError("合成 mxf 失敗：%s" % done.stderr)
 
 
-def audio_md5s(path):
+def write_s24le(path, low_byte_xor=0):
+    """兩秒 440 Hz ê 24-bit 單聲道原始 PCM；`low_byte_xor` 改逐个取樣
+    上低彼个位元組——干焦下跤 8 位元無仝，上懸 16 位元一模一樣。"""
+    data = bytearray()
+    for index in range(2 * 48000):
+        value = int(math.sin(2 * math.pi * 440 * index / 48000)
+                    * 0.5 * (2 ** 23 - 1))
+        raw = bytearray(value.to_bytes(4, "little", signed=True)[:3])
+        raw[0] ^= low_byte_xor
+        data += raw
+    with open(path, "wb") as handle:
+        handle.write(bytes(data))
+
+
+def make_mxf_low_bits_differ(path, work):
+    """一支兩軌ê mxf：第二軌是第一軌干焦改下跤 8 位元。"""
+    first = os.path.join(work, "a0.s24")
+    second = os.path.join(work, "a1.s24")
+    write_s24le(first)
+    write_s24le(second, low_byte_xor=0x5A)
+    cmd = ["ffmpeg", "-hide_banner", "-v", "error", "-y",
+           "-f", "lavfi", "-i", "testsrc2=s=320x240:r=25:d=2"]
+    for raw in (first, second):
+        cmd += ["-f", "s24le", "-ar", "48000", "-ac", "1", "-i", raw]
+    cmd += ["-map", "0:v", "-map", "1:a", "-map", "2:a",
+            "-c:v", "mpeg2video", "-pix_fmt", "yuv420p", "-b:v", "500k",
+            "-c:a", "pcm_s24le", "-ar", "48000", "-ac", "1", "-f", "mxf",
+            path]
+    done = subprocess.run(cmd, capture_output=True, text=True)
+    os.remove(first)
+    os.remove(second)
+    if done.returncode:
+        raise AssertionError("合成 mxf 失敗：%s" % done.stderr)
+
+
+def audio_sha256s(path):
+    """逐軌取樣ê SHA-256，以 32-bit 算——佮封存程式仝款涵蓋 24 位元。"""
     out = []
     index = 0
     while True:
         done = subprocess.run(
             ["ffmpeg", "-v", "error", "-i", path, "-map", "0:a:%d" % index,
-             "-f", "md5", "-"], capture_output=True, text=True)
+             "-c:a", "pcm_s32le", "-f", "hash", "-hash", "sha256", "-"],
+            capture_output=True, text=True)
         if done.returncode:
             return out
         out.append(done.stdout.strip())
@@ -97,31 +135,47 @@ class RoundTrip(unittest.TestCase):
         self.assertEqual(entry["audio_tracks_src"], 2)
         self.assertEqual(entry["audio_tracks_kept"], 1)
         self.assertEqual(entry["音軌"], "兩軌相同，留一軌")
-        self.assertEqual(len(audio_md5s(archive)), 1)
+        self.assertEqual(len(audio_sha256s(archive)), 1)
 
     def test_two_differing_tracks_both_survive(self):
         source, entry, archive = self.one([440, 660])
         self.assertEqual(entry["audio_tracks_kept"], 2)
         self.assertEqual(entry["音軌"], "兩軌不同，兩條都留")
-        self.assertEqual(len(audio_md5s(archive)), 2)
+        self.assertEqual(len(audio_sha256s(archive)), 2)
 
     def test_three_tracks_with_a_duplicate_pair(self):
         """舊版干焦 map a:0 佮 a:1，第三軌會恬恬無去。"""
         source, entry, archive = self.one([440, 440, 660])
         self.assertEqual(entry["audio_tracks_src"], 3)
         self.assertEqual(entry["audio_tracks_kept"], 2)
-        self.assertEqual(len(audio_md5s(archive)), 2)
+        self.assertEqual(len(audio_sha256s(archive)), 2)
 
     def test_a_single_track_is_carried_through(self):
         source, entry, archive = self.one([440])
         self.assertEqual(entry["audio_tracks_kept"], 1)
         self.assertEqual(entry["音軌"], "一軌")
 
+    def test_tracks_differing_only_in_the_low_8_bits_are_both_kept(self):
+        """ffmpeg ê -f md5 預設先轉 16-bit 才算：兩條 24-bit 音軌干焦差佇
+        下跤 8 位元，舊算法會講「兩軌相同」、擲掉一條真正無仝ê聲音。"""
+        source = os.path.join(self.src_root, "low.mxf")
+        make_mxf_low_bits_differ(source, self.tmp)
+        job = batch.Job("low.mxf", source, "/home/mkv-raw/2月原始mxf檔/low.mkv")
+        with self.fake_upload():
+            entry = runner.one_file(job, self.work)
+        archive = os.path.join(self.landed, "low.mkv")
+        self.assertEqual(entry["audio_tracks_kept"], 2)
+        self.assertEqual(entry["音軌"], "兩軌不同，兩條都留")
+        self.assertEqual(audio_sha256s(source), audio_sha256s(archive))
+        hashes = audio_sha256s(archive)
+        self.assertNotEqual(hashes[0], hashes[1])
+        self.assertEqual(len(hashes[0]), len("SHA256=") + 64)
+
     def test_the_audio_survives_bit_for_bit(self):
         """這篇上要緊ê一條：語料就是欲提去訓練聲學模型ê。"""
         source, entry, archive = self.one([440, 660])
         self.assertTrue(entry["音訊逐位元相符"])
-        self.assertEqual(audio_md5s(source), audio_md5s(archive))
+        self.assertEqual(audio_sha256s(source), audio_sha256s(archive))
 
     def test_nothing_is_left_in_the_work_dir(self):
         """隨身硬碟本身欲滇矣，中間產物袂使留咧。"""

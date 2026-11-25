@@ -25,9 +25,12 @@ tests/
 │   │             組裝、九欄進度表、0-cue 交付、離線重建）
 │   ├── langcheck/  逐條語言判定（對照表佇該目錄ê README）
 │   └── cleaning/   字幕清洗試做：承辦第2-1期第 3 點 a–d（對照表佇該目錄ê README）
+├── sftpbatch/    mxf2mkv、mkv2mp4wav 共用的批次迴圈、紀錄與對照表、SFTP 上傳（對照表在該目錄的 README）
+├── mkv2mp4wav/   開會了與新聞的字幕編輯預覽 mp4、訓練用 WAV（對照表在該目錄的 README）
 └── …
 
 tests-e2e/        fixture.py  test_roundtrip  test_mxf2mkv_roundtrip
+                  test_mkv2mp4wav_roundtrip
                   （合成影片端對端，tox -e e2etest；放在 tests/ 外面，
                   單元測試才能一次 discover 整個 tests/）
 ```
@@ -159,7 +162,11 @@ tests-e2e/        fixture.py  test_roundtrip  test_mxf2mkv_roundtrip
 | aiyalaeho-language-check | 逐條語言判定ê規組（逐條標記、兩張 CSV）——對照表佇 `aiyalaeho/langcheck/README.md` | `aiyalaeho/langcheck/*.py` |
 | aiyalaeho-language-check | 官方族語辭典（字元分類、辭典蒸餾、詞庫比對、語言別正音）——13 逝ê對照表佇 `lexicon/README.md` | `lexicon/*.py` |
 | aiyalaeho-cleaning | 開會了交付字幕清洗試做（規則清洗、語言別推測、拼寫候選、Claude 判定ê送出匯入、清洗版、四份交付 CSV）——對照表佇 `aiyalaeho/cleaning/README.md`；E樂園、Kaldi 詞表ê蒸餾佇 `lexicon/README.md` | `aiyalaeho/cleaning/*.py`、`lexicon/test_klokah.py`、`lexicon/test_kaldi_words.py` |
+| master-archival | 音軌指紋是 SHA-256、整數 PCM 以 32-bit 取樣算：ffmpeg 雜湊無指定格式會先轉 16-bit（實測 `-f md5` ＝ `-f s16le \| md5sum`），24-bit 下跤 8 位元從來無驗著，兩條干焦差佇遐ê音軌閣會予當做相仝、刣一條；原樣複製ê AAC 照舊比封裝資料 | `transcode/test_encode_master.py`、`transcode/test_archive_batch.py`、`mxf2mkv/test_interrupt.py`、`../tests-e2e/test_mxf2mkv_roundtrip.py` |
+| episode-video-location | sftp.sh 無 ServerAlive，連上了後伺服器消失愛等 TCP keepalive 2 點 11 分（7200＋9×75 秒）才發現；`SFTP_DRY_RUN` ê stdout 袂使予參數污染 | `news/test_sftp_cli.py` |
 | mxf2mkv | 轉到一半停掉的短檔袂使上傳：ffmpeg 收著 Ctrl+C／q 會好好收尾，封存佮音軌指紋（仝一擺 ffmpeg 算ê）仝款短、照樣「逐位元相符」——2026-10-06 查著 8 支 0.7 秒到 23 分 53 秒ê mkv 傳起去矣（正常 48 分鐘）；上傳前比母帶時長（差 2 秒以上就擋）、離開碼 255／130／-SIGINT 當做中斷規批停（毋是「記落來、行下一支」）、中斷了指紋檔嘛愛清、`-nostdin` 予 ffmpeg 袂讀鍵盤 | `mxf2mkv/test_interrupt.py`、`transcode/test_encode_master.py` |
+| mxf2mkv-batch | 批次迴圈、對照表逐筆寫入（中途停掉不再留下空對照表）、上傳——對照表在 `sftpbatch/README.md` | `sftpbatch/*.py` |
+| mkv2mp4wav-batch | 預覽 mp4 與 WAV：兩個指令、各自跳過與上傳、編碼路徑（4:2:2 走混合、混合路徑要單執行緒解碼否則檔尾少格）、音軌選第一條有聲音的、驗收、進度與剩餘時間、開跑前檢查——對照表在 `mkv2mp4wav/README.md` | `mkv2mp4wav/*.py`、`../tests-e2e/test_mkv2mp4wav_roundtrip.py` |
 | subtitle-text-source | 兩逝一 cue ê TSV：列名毋著／cue 無佇 sheet 頂懸／仝一 cue 兩批攏有——規批拒收 | `aiyalaeho/test_ingest.py` |
 | srt-data-store | store 版面（`aiyalaeho/1-ocr/{1-cues,2-vision,3-srt}`、不分層）；inventory 欄位宣告 | `aiyalaeho/test_paths.py` |
 | —（成本防線） | preset ê列懸度愛予一張 sheet 囥會落四條 cue（1.10 MP 預算；超過就恬恬加三成閱讀量） | `aiyalaeho/test_paths.py` |
