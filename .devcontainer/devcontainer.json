@@ -1,6 +1,9 @@
 {
     "name": "Claude Code Sandbox",
-    "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+    // 【釘住 Ubuntu 版本：不要用會移動的 base:ubuntu】
+    // 2026-11-25 實查 base:ubuntu 已和 base:ubuntu26.04 同一個 digest，當時容器還是 24.04；
+    // 不釘的話，單純重建就會順便把 ffmpeg、Mesa 換成新的大版本。要換版本就改這一行。
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu26.04",
     "features": {
         "ghcr.io/devcontainers/features/node:1": {},
         "ghcr.io/devcontainers/features/python:1": {
@@ -18,8 +21,13 @@
         "CLAUDE_CONFIG_DIR": "/home/vscode/.claude"
     },
     // 【VAAPI實驗：kā host ê GPU裝置傳入容器內，AMD內顯用Mesa radeonsi驅動】
+    // 【SYS_PTRACE：讓 Mesa 判斷得出兩個開啟的 GPU 裝置是不是同一份】
+    // Mesa 用 kcmp 系統呼叫比對；Docker 預設 seccomp 只在容器有 SYS_PTRACE 時才放行 kcmp，
+    // 沒有的話每個用 GPU 的 ffmpeg 都會印 "amdgpu: os_same_file_description couldn't determine..."。
+    // 不用 seccomp=unconfined：那會把整個系統呼叫過濾關掉，範圍太大。
     "runArgs": [
-        "--device=/dev/dri:/dev/dri"
+        "--device=/dev/dri:/dev/dri",
+        "--cap-add=SYS_PTRACE"
     ],
     "customizations": {
         "vscode": {
@@ -28,6 +36,10 @@
             ]
         }
     },
-    "postCreateCommand": "npm install -g @fission-ai/openspec@latest && pip install tox && bash .devcontainer/post-create.sh",
+    // 【重建後要關掉 VS Code 視窗再開一次，終端機才打得開 GPU】
+    // VS Code 伺服器比 post-create.sh 把 vscode 加進 GPU 群組更早啟動（2026-11-26 實測差一分半），
+    // 從它開出來的終端機與 Claude Code 都是舊群組。關掉視窗再開（容器停下再啟動）就好；
+    // 不想停容器（例如有批次在跑）就用 `sudo su - vscode` 開新登入，在裡面跑用 GPU 的指令。
+    "postCreateCommand":"npm install -g @fission-ai/openspec@latest && pip install tox && bash .devcontainer/post-create.sh",
     "remoteUser": "vscode"
 }

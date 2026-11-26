@@ -153,6 +153,13 @@ source venv/bin/activate   # ta̍k-kái攏ài開，才來開發
 pip install tox
 ```
 
+devcontainer 釘在 Ubuntu 26.04，把主機的 GPU（`/dev/dri`）傳進容器。
+**重建容器之後要關掉 VS Code 視窗再開一次**，終端機才打得開 GPU：VS Code
+伺服器比 `post-create.sh` 把 `vscode` 加進 GPU 群組更早啟動，舊終端機拿不到
+新群組。不想停容器（例如有批次在跑）就先 `sudo su - vscode` 開新登入，在裡面
+跑 `tools.mkv2mp4wav` 這類用 GPU 的指令。設定的原因寫在
+`.devcontainer/devcontainer.json` 的註解裡。
+
 套件版本管理用 [pip-tools](https://github.com/jazzband/pip-tools)：
 `requirements.in` 記直接依賴，`pip-compile` 產 `requirements.txt`
 鎖全部版本；語音側另有 `~/.venvs/asrmt`（vosk、huggingface_hub、
